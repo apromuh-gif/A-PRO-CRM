@@ -8,27 +8,16 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;font-family:'DM Sans',sans-serif;color:#e6edf3;min-height:100vh}
-::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:#0d1117}::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
-input,select,textarea{font-family:'DM Sans',sans-serif}
-select option{background:#161b22}
-.rh:hover{background:#1c2128!important}
+body{background:#eef2f7;font-family:'Inter',sans-serif;color:#1e293b;min-height:100vh}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#eef2f7}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+input,select,textarea{font-family:'Inter',sans-serif}
+select option{background:#ffffff;color:#1e293b}
+.rh:hover{background:#f1f5f9!important}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes fu{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes si{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px}
-.modal-box{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:24px;width:100%;max-height:90vh;overflow-y:auto}
-.inp{width:100%;padding:9px 12px;background:#0d1117;border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-size:13px;font-family:'DM Sans',sans-serif}
-.inp:focus{outline:none;border-color:#6366f1}
-.btn{border:none;border-radius:8px;padding:9px 16px;color:#fff;font-weight:600;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif}
-.badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
-.tag{background:#1c2128;color:#8b949e;padding:3px 9px;border-radius:6px;font-size:11px;white-space:nowrap}
-.lbl{display:block;font-size:11px;color:#8b949e;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
-table{width:100%;border-collapse:collapse}
-th{padding:10px 13px;text-align:left;font-size:10px;color:#8b949e;font-weight:700;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;background:#0d1117}
-td{padding:11px 13px;font-size:13px;border-top:1px solid #21262d}
 </style>
 </head>
 <body>
@@ -60,9 +49,9 @@ const PROP_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Reddedild
 const SERV_ST = ["Gönderildi","Revize","Onaylandı","Randevu"];
 const MAINT_ST = ["Hizmet Verildi","Hizmet Henüz Verilmedi"];
 const HOT = ["SICAK-1","SICAK-2","A-PRO","KAÇTI"];
-const SC = {"A-PRO":"#6366f1","TEKLİF":"#3b82f6","SICAK-1":"#f97316","SICAK-2":"#ef4444","KAÇTI":"#64748b","NO GO":"#475569","FIRSAT ÖLDÜ":"#374151","ERTELENDİ":"#d97706"};
-const PS = {"Hazırlanıyor":"#f59e0b","Gönderildi":"#3b82f6","Revize":"#8b5cf6","Onaylandı":"#10b981","Reddedildi":"#ef4444","Randevu":"#06b6d4"};
-const MS = {"Hizmet Verildi":"#10b981","Hizmet Henüz Verilmedi":"#f59e0b"};
+const SC = {"A-PRO":"#4f46e5","TEKLİF":"#0284c7","SICAK-1":"#ea580c","SICAK-2":"#dc2626","KAÇTI":"#64748b","NO GO":"#475569","FIRSAT ÖLDÜ":"#374151","ERTELENDİ":"#b45309"};
+const PS = {"Hazırlanıyor":"#d97706","Gönderildi":"#0284c7","Revize":"#7c3aed","Onaylandı":"#16a34a","Reddedildi":"#dc2626","Randevu":"#0891b2"};
+const MS = {"Hizmet Verildi":"#16a34a","Hizmet Henüz Verilmedi":"#d97706"};
 
 // Kullanıcılar (Firebase Auth + Firestore'da saklanır)
 const DEFAULT_USERS = [
@@ -74,7 +63,9 @@ const DEFAULT_USERS = [
 
 const eur = v => new Intl.NumberFormat("tr-TR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(v||0);
 const today = () => new Date().toISOString().slice(0,10);
-const G="#0d1117",G2="#161b22",G3="#21262d",G4="#30363d",T1="#e6edf3",T2="#c9d1d9",T3="#8b949e",T4="#484f58";
+// Açık tema renk paleti
+const G="#eef2f7",G2="#ffffff",G3="#e2e8f0",G4="#cbd5e1",T1="#1e293b",T2="#334155",T3="#64748b",T4="#94a3b8";
+const ACCENT="#4f46e5"; // Ana vurgu rengi (indigo)
 
 // ═══════════════════════════════════════════════════════
 // UYGULAMA DURUMU
@@ -190,24 +181,29 @@ function h(tag, attrs={}, ...children) {
 }
 
 function badge(lbl, color) {
-  return h('span',{style:{background:color+'22',color,padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},lbl);
+  return h('span',{style:{background:color+'18',color,padding:'4px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:'700',whiteSpace:'nowrap',border:`1px solid ${color}33`}},lbl);
 }
 function tag(lbl) {
-  return h('span',{style:{background:'#1c2128',color:T3,padding:'3px 9px',borderRadius:'6px',fontSize:'11px',whiteSpace:'nowrap'}},lbl);
+  return h('span',{style:{background:'#f1f5f9',color:T3,padding:'4px 10px',borderRadius:'6px',fontSize:'12px',fontWeight:'500',whiteSpace:'nowrap',border:`1px solid ${G3}`}},lbl);
 }
 function lbl(text) {
-  return h('label',{style:{display:'block',fontSize:'11px',color:T3,marginBottom:'4px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'.06em'}},text);
+  return h('label',{style:{display:'block',fontSize:'12px',color:T3,marginBottom:'5px',fontWeight:'600',textTransform:'uppercase',letterSpacing:'.05em'}},text);
 }
-function btn(text, onClick, bg, fg='#fff', p='9px 16px', extra={}) {
-  return h('button',{onClick,style:{background:bg,border:'none',borderRadius:'8px',padding:p,color:fg,fontWeight:'600',fontSize:'13px',cursor:'pointer',fontFamily:"'DM Sans',sans-serif",...extra}},text);
+function btn(text, onClick, bg, fg='#fff', p='10px 18px', extra={}) {
+  const el = h('button',{onClick,style:{background:bg,border:'none',borderRadius:'9px',padding:p,color:fg,fontWeight:'600',fontSize:'14px',cursor:'pointer',fontFamily:"'Inter',sans-serif",transition:'opacity .15s',...extra}},text);
+  el.addEventListener('mouseenter',()=>el.style.opacity='.88');
+  el.addEventListener('mouseleave',()=>el.style.opacity='1');
+  return el;
 }
 function inp(placeholder, value, onChange, type='text', extra={}) {
-  const el = h('input',{type,placeholder,value:value||'',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",...extra}});
+  const el = h('input',{type,placeholder,value:value||'',style:{width:'100%',padding:'10px 13px',background:'#ffffff',border:`1.5px solid ${G4}`,borderRadius:'9px',color:T1,fontSize:'14px',boxSizing:'border-box',fontFamily:"'Inter',sans-serif",transition:'border-color .15s',...extra}});
+  el.addEventListener('focus',()=>el.style.borderColor=ACCENT);
+  el.addEventListener('blur',()=>el.style.borderColor=G4);
   el.addEventListener('input', e=>onChange(e.target.value));
   return el;
 }
 function sel(options, value, onChange, extra={}) {
-  const el = h('select',{style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",...extra}});
+  const el = h('select',{style:{width:'100%',padding:'10px 13px',background:'#ffffff',border:`1.5px solid ${G4}`,borderRadius:'9px',color:T1,fontSize:'14px',boxSizing:'border-box',fontFamily:"'Inter',sans-serif",...extra}});
   options.forEach(o=>{
     const opt = document.createElement('option');
     opt.value = o.v!==undefined?o.v:o;
@@ -219,20 +215,20 @@ function sel(options, value, onChange, extra={}) {
   return el;
 }
 function field(labelTxt, child, half=false) {
-  return h('div',{style:{marginBottom:'11px',flex:half?'1 1 45%':'1 1 100%',minWidth:half?'150px':'0'}},lbl(labelTxt),child);
+  return h('div',{style:{marginBottom:'13px',flex:half?'1 1 45%':'1 1 100%',minWidth:half?'150px':'0'}},lbl(labelTxt),child);
 }
 function row(...children) {
-  return h('div',{style:{display:'flex',gap:'11px',flexWrap:'wrap'}},...children);
+  return h('div',{style:{display:'flex',gap:'12px',flexWrap:'wrap'}},...children);
 }
 function modal(title, content, onClose, maxWidth='640px') {
-  const box = h('div',{style:{background:G2,border:`1px solid ${G4}`,borderRadius:'14px',padding:'24px',width:'100%',maxWidth,maxHeight:'90vh',overflowY:'auto'}},
-    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px'}},
-      h('h3',{style:{margin:'0',color:T1,fontSize:'16px',fontWeight:'700'}},title),
-      h('button',{onClick:onClose,style:{background:'none',border:'none',color:T3,cursor:'pointer',fontSize:'22px',lineHeight:'1'}},'×')
+  const box = h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'16px',padding:'28px',width:'100%',maxWidth,maxHeight:'92vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,.15)'}},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'22px',paddingBottom:'16px',borderBottom:`1px solid ${G3}`}},
+      h('h3',{style:{margin:'0',color:T1,fontSize:'20px',fontWeight:'800',color:T1}},title),
+      h('button',{onClick:onClose,style:{background:'#f1f5f9',border:'none',color:T3,cursor:'pointer',fontSize:'18px',lineHeight:'1',width:'32px',height:'32px',borderRadius:'8px',display:'flex',alignItems:'center',justifyContent:'center'}},'×')
     ),
     content
   );
-  const bg = h('div',{style:{position:'fixed',inset:'0',background:'rgba(0,0,0,.82)',zIndex:'999',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px'}},box);
+  const bg = h('div',{style:{position:'fixed',inset:'0',background:'rgba(15,23,42,.55)',zIndex:'999',display:'flex',alignItems:'center',justifyContent:'center',padding:'16px',backdropFilter:'blur(4px)'}},box);
   bg.addEventListener('click',e=>{if(e.target===bg)onClose();});
   return bg;
 }
@@ -273,29 +269,29 @@ function renderLogin() {
     const pwInp = inp('••••••', loginState.pw, v=>{loginState.pw=v;loginState.err='';}, 'password', {letterSpacing:'0.18em',textAlign:'center',fontSize:'16px'});
     pwInp.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
 
-    const errDiv = loginState.err ? h('div',{style:{background:'#2a0f0f',border:'1px solid #ef4444',borderRadius:'8px',padding:'9px 12px',color:'#f87171',fontSize:'12px',marginBottom:'14px',textAlign:'center'}},loginState.err) : null;
+    const errDiv = loginState.err ? h('div',{style:{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:'9px',padding:'10px 14px',color:'#dc2626',fontSize:'13px',marginBottom:'14px',textAlign:'center'}},loginState.err) : null;
 
     const content = loginState.locked
-      ? h('div',{style:{background:'#2a0f0f',border:'1px solid #ef4444',borderRadius:'10px',padding:'18px',textAlign:'center'}},
+      ? h('div',{style:{background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:'12px',padding:'20px',textAlign:'center'}},
           h('div',{style:{fontSize:'28px',marginBottom:'8px'}},'🚫'),
-          h('div',{style:{color:'#f87171',fontWeight:'700',fontSize:'14px',marginBottom:'4px'}},'Erişim Engellendi'),
-          h('div',{style:{color:'#f87171',fontSize:'12px'}},'5 hatalı deneme. Sayfayı yenileyip tekrar deneyin.')
+          h('div',{style:{color:'#dc2626',fontWeight:'700',fontSize:'15px',marginBottom:'4px'}},'Erişim Engellendi'),
+          h('div',{style:{color:'#ef4444',fontSize:'13px'}},'5 hatalı deneme. Sayfayı yenileyip tekrar deneyin.')
         )
       : h('div',{},
           field('E-posta', emailInp),
           field('Şifre', pwInp),
           errDiv||h('span'),
-          btn('Giriş Yap', doLogin, 'linear-gradient(135deg,#6366f1,#8b5cf6)', '#fff', '12px 16px', {width:'100%',fontSize:'14px'}),
-          h('div',{style:{textAlign:'center',marginTop:'14px',fontSize:'11px',color:T4}},'Yetkisiz erişim yasaktır.')
+          btn('Giriş Yap', doLogin, 'linear-gradient(135deg,#4f46e5,#7c3aed)', '#fff', '13px 16px', {width:'100%',fontSize:'15px',borderRadius:'10px',fontWeight:'700'}),
+          h('div',{style:{textAlign:'center',marginTop:'16px',fontSize:'12px',color:T4}},'Yetkisiz erişim yasaktır.')
         );
 
     root.appendChild(
-      h('div',{style:{minHeight:'100vh',background:G,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'DM Sans',sans-serif"}},
-        h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'16px',padding:'40px 36px',width:'100%',maxWidth:'380px',animation:'fu .35s ease'}},
-          h('div',{style:{textAlign:'center',marginBottom:'28px'}},
-            h('div',{style:{width:'52px',height:'52px',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',borderRadius:'13px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'24px',margin:'0 auto 14px'}},'⚡'),
-            h('div',{style:{fontWeight:'800',fontSize:'18px',color:T1,marginBottom:'5px'}},'A-PRO İş Takip CRM'),
-            h('div',{style:{fontSize:'12px',color:T3,textTransform:'uppercase',letterSpacing:'0.07em'}},'Mühendislik · Satış & Servis')
+      h('div',{style:{minHeight:'100vh',background:'linear-gradient(135deg,#eef2f7 0%,#e0e7ff 100%)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:"'Inter',sans-serif"}},
+        h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'20px',padding:'44px 40px',width:'100%',maxWidth:'400px',animation:'fu .35s ease',boxShadow:'0 20px 60px rgba(79,70,229,.12)'}},
+          h('div',{style:{textAlign:'center',marginBottom:'32px'}},
+            h('div',{style:{width:'58px',height:'58px',background:'linear-gradient(135deg,#4f46e5,#7c3aed)',borderRadius:'16px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'26px',margin:'0 auto 16px'}},'⚡'),
+            h('div',{style:{fontWeight:'800',fontSize:'22px',color:T1,marginBottom:'6px'}},'A-PRO İş Takip CRM'),
+            h('div',{style:{fontSize:'13px',color:T3,textTransform:'uppercase',letterSpacing:'0.07em'}})
           ),
           content
         )
@@ -390,7 +386,7 @@ function buildCustomerModal(item) {
     function renderContacts() {
       contactsDiv.innerHTML='';
       f.contacts.forEach(c=>{
-        contactsDiv.appendChild(h('div',{style:{background:G,border:`1px solid ${G4}`,borderRadius:'9px',padding:'10px 13px',marginBottom:'8px',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+        contactsDiv.appendChild(h('div',{style:{background:'#f8fafc',border:`1px solid ${G3}`,borderRadius:'10px',padding:'10px 13px',marginBottom:'8px',display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
           h('div',{},
             h('div',{style:{fontWeight:'700',fontSize:'13px',color:T1,marginBottom:'3px'}},c.name+(c.title?` — ${c.title}`:'')),
             h('div',{style:{display:'flex',gap:'12px',flexWrap:'wrap'}},
@@ -406,7 +402,7 @@ function buildCustomerModal(item) {
     renderContacts();
 
     const addArea = h('div',{});
-    const addBtn2 = btn('+ Kişi Ekle', ()=>{addMode=true;renderAdd();}, 'linear-gradient(135deg,#6366f1,#8b5cf6)', '#fff', '5px 12px', {fontSize:'12px'});
+    const addBtn2 = btn('+ Kişi Ekle', ()=>{addMode=true;renderAdd();}, 'linear-gradient(135deg,#4f46e5,#7c3aed)', '#fff', '5px 12px', {fontSize:'12px'});
     function renderAdd() {
       addArea.innerHTML='';
       if(!addMode){addArea.appendChild(addBtn2);return;}
@@ -414,7 +410,7 @@ function buildCustomerModal(item) {
       const nTitle=inp('Müdür…',nc.title,v=>nc.title=v);
       const nEmail=inp('kisi@firma.com',nc.email,v=>nc.email=v);
       const nPhone=inp('0532 000 00 00',nc.phone,v=>nc.phone=v);
-      addArea.appendChild(h('div',{style:{background:G,border:'1px solid #6366f1',borderRadius:'10px',padding:'13px'}},
+      addArea.appendChild(h('div',{style:{background:'#f8fafc',border:'2px solid #4f46e5',borderRadius:'10px',padding:'13px'}},
         row(field('Ad Soyad *',nName,true),field('Ünvan',nTitle,true)),
         row(field('E-posta',nEmail,true),field('Cep Tel',nPhone,true)),
         h('div',{style:{display:'flex',gap:'8px'}},
@@ -445,8 +441,8 @@ function buildCustomerModal(item) {
         contactsDiv
       ),
       h('div',{style:{display:'flex',gap:'10px'}},
-        btn('Kaydet',()=>{if(f.firmName)saveFirm(f,!!item);},'linear-gradient(135deg,#6366f1,#8b5cf6)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
-        btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
+        btn('Kaydet',()=>{if(f.firmName)saveFirm(f,!!item);},'linear-gradient(135deg,#4f46e5,#7c3aed)','#fff','12px 18px',{flex:'1',fontSize:'15px',borderRadius:'10px'}),
+        btn('İptal',()=>setState({modal:null}),'#f1f5f9',T3,'12px 20px',{fontSize:'15px',borderRadius:'10px',border:`1px solid ${G3}`})
       )
     );
   }
@@ -468,7 +464,7 @@ function buildOppModal(item) {
   const fAssigned=inp('Ad Soyad',f.assignedTo,v=>f.assignedTo=v);
   const fDue=inp('',f.dueDate,v=>f.dueDate=v,'date');
   const fRef=inp('REF-2024-001',f.tenderRef,v=>f.tenderRef=v);
-  const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
+  const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:'#ffffff',border:`1.5px solid ${G4}`,borderRadius:'9px',color:T1,fontSize:'14px',minHeight:'60px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
 
   const probLabel = lbl(`Olasılık %${f.probability}`);
@@ -485,8 +481,8 @@ function buildOppModal(item) {
     field('Teklif Referansı',fRef),
     field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.title&&f.customerId)saveOpp({...f,value:Number(f.value)||0},!!item);},'linear-gradient(135deg,#f97316,#f59e0b)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
-      btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
+      btn('Kaydet',()=>{if(f.title&&f.customerId)saveOpp({...f,value:Number(f.value)||0},!!item);},'linear-gradient(135deg,#ea580c,#d97706)','#fff','12px 18px',{flex:'1',fontSize:'15px',borderRadius:'10px'}),
+      btn('İptal',()=>setState({modal:null}),'#f1f5f9',T3,'12px 20px',{fontSize:'15px',borderRadius:'10px',border:`1px solid ${G3}`})
     )
   );
   return modal(item?'Fırsatı Düzenle':'Yeni Fırsat', content, ()=>setState({modal:null}), '700px');
@@ -504,7 +500,7 @@ function buildPropModal(item) {
   const fAmt=inp('0',f.amount,v=>f.amount=v,'number');
   const fCreated=inp('',f.createdAt,v=>f.createdAt=v,'date');
   const fValid=inp('',f.validUntil,v=>f.validUntil=v,'date');
-  const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
+  const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:'#ffffff',border:`1.5px solid ${G4}`,borderRadius:'9px',color:T1,fontSize:'14px',minHeight:'60px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
   const content = h('div',{},
     field('Fırsat Başlığı *',fTitle),
@@ -513,8 +509,8 @@ function buildPropModal(item) {
     row(field('Tutar (€)',fAmt,true),field('Oluşturma',fCreated,true)),
     field('Geçerlilik Tarihi',fValid),field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.title&&f.preparedBy)saveProp({...f,amount:Number(f.amount)||0},!!item);},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
-      btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
+      btn('Kaydet',()=>{if(f.title&&f.preparedBy)saveProp({...f,amount:Number(f.amount)||0},!!item);},'linear-gradient(135deg,#0284c7,#4f46e5)','#fff','12px 18px',{flex:'1',fontSize:'15px',borderRadius:'10px'}),
+      btn('İptal',()=>setState({modal:null}),'#f1f5f9',T3,'12px 20px',{fontSize:'15px',borderRadius:'10px',border:`1px solid ${G3}`})
     )
   );
   return modal(item?'Teklifi Düzenle':'Yeni Teklif', content, ()=>setState({modal:null}), '640px');
@@ -532,7 +528,7 @@ function buildServModal(item) {
   const fCreated=inp('',f.createdAt,v=>f.createdAt=v,'date');
   const fValid=inp('',f.validUntil,v=>f.validUntil=v,'date');
   const fApp=inp('',f.appointmentDate||'',v=>f.appointmentDate=v,'date');
-  const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
+  const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:'#ffffff',border:`1.5px solid ${G4}`,borderRadius:'9px',color:T1,fontSize:'14px',minHeight:'60px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
   const content = h('div',{},
     field('İşin Adı *',fJob),
@@ -542,8 +538,8 @@ function buildServModal(item) {
     row(field('Oluşturma',fCreated,true),field('Geçerlilik',fValid,true)),
     field('Randevu Tarihi',fApp),field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.jobName&&f.preparedBy)saveServ({...f,amount:Number(f.amount)||0},!!item);},'linear-gradient(135deg,#06b6d4,#0284c7)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
-      btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
+      btn('Kaydet',()=>{if(f.jobName&&f.preparedBy)saveServ({...f,amount:Number(f.amount)||0},!!item);},'linear-gradient(135deg,#0891b2,#0284c7)','#fff','12px 18px',{flex:'1',fontSize:'15px',borderRadius:'10px'}),
+      btn('İptal',()=>setState({modal:null}),'#f1f5f9',T3,'12px 20px',{fontSize:'15px',borderRadius:'10px',border:`1px solid ${G3}`})
     )
   );
   return modal(item?'Teknik Servisi Düzenle':'Yeni Teknik Servis', content, ()=>setState({modal:null}), '660px');
@@ -559,7 +555,7 @@ function buildMaintModal(item) {
   const fSt=sel(MAINT_ST,f.status,v=>f.status=v);
   const fStart=inp('',f.appointmentStart||'',v=>f.appointmentStart=v,'date');
   const fEnd=inp('',f.appointmentEnd||'',v=>f.appointmentEnd=v,'date');
-  const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
+  const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:'#ffffff',border:`1.5px solid ${G4}`,borderRadius:'9px',color:T1,fontSize:'14px',minHeight:'60px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
   const content = h('div',{},
     field('İşin Adı *',fJob),
@@ -572,8 +568,8 @@ function buildMaintModal(item) {
     ),
     field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>saveMaint({...f,amount:Number(f.amount)||0},!!item),'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
-      btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
+      btn('Kaydet',()=>saveMaint({...f,amount:Number(f.amount)||0},!!item),'linear-gradient(135deg,#16a34a,#15803d)','#fff','12px 18px',{flex:'1',fontSize:'15px',borderRadius:'10px'}),
+      btn('İptal',()=>setState({modal:null}),'#f1f5f9',T3,'12px 20px',{fontSize:'15px',borderRadius:'10px',border:`1px solid ${G3}`})
     )
   );
   return modal(item?'Periyodik Bakımı Düzenle':'Yeni Periyodik Bakım', content, ()=>setState({modal:null}), '660px');
@@ -651,7 +647,7 @@ function buildBackupModal() {
   statusDiv.style.marginTop='10px';
 
   const content = h('div',{},
-    h('div',{style:{background:'#0f0f0f',borderRadius:'10px',padding:'14px',marginBottom:'16px',border:`1px solid ${G3}`}},
+    h('div',{style:{background:'#f8fafc',borderRadius:'12px',padding:'14px',marginBottom:'16px',border:`1px solid ${G3}`}},
       lbl('Mevcut Veri'),
       h('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'6px',marginTop:'8px'}},
         ...[{l:'Firma',v:state.customers.length,c:'#6366f1'},{l:'Fırsat',v:state.opportunities.length,c:'#f97316'},{l:'Teklif',v:state.proposals.length,c:'#3b82f6'},{l:'T.Servis',v:state.services.length,c:'#06b6d4'},{l:'P.Bakım',v:state.maintenances.length,c:'#10b981'}].map(s=>
@@ -677,7 +673,7 @@ function buildBackupModal() {
     dropZone,
     statusDiv,
     h('div',{style:{marginTop:'12px'}}),
-    btn('Kapat',()=>setState({modal:null}),'#21262d','#8b949e','10px 16px',{width:'100%'})
+    btn('Kapat',()=>setState({modal:null}),'#f1f5f9',T2,'11px 16px',{width:'100%',border:`1px solid ${G3}`,borderRadius:'10px'})
   );
   return modal('🗄️ Yedekleme & Geri Yükleme', content, ()=>setState({modal:null}), '460px');
 }
@@ -716,7 +712,7 @@ function buildAdminModal() {
       const card = h('div',{style:{background:G,border:`1px solid ${u.email===state.currentUser.email?'#6366f1':u.active!==false?G4:'#3b1a1a'}`,borderRadius:'10px',padding:'12px 14px'}});
       const topRow = h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}},
         h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flex:'1',minWidth:'0'}},
-          h('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:u.active!==false?'linear-gradient(135deg,#6366f1,#8b5cf6)':'#374151',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',flexShrink:'0'}},u.displayName.slice(0,2).toUpperCase()),
+          h('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:u.active!==false?'linear-gradient(135deg,#4f46e5,#7c3aed)':'#374151',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',flexShrink:'0'}},u.displayName.slice(0,2).toUpperCase()),
           h('div',{style:{minWidth:'0'}},
             h('div',{style:{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}},
               h('span',{style:{fontWeight:'700',fontSize:'13px',color:u.active!==false?T1:T4}},u.displayName),
@@ -758,7 +754,7 @@ function buildAdminModal() {
 
     // Yeni kullanıcı ekle
     if(!adding) {
-      container.appendChild(btn('+ Yeni Kullanıcı Ekle',()=>{adding=true;rerender();},'linear-gradient(135deg,#6366f1,#8b5cf6)','#fff','9px 16px',{width:'100%',marginBottom:'10px'}));
+      container.appendChild(btn('+ Yeni Kullanıcı Ekle',()=>{adding=true;rerender();},'linear-gradient(135deg,#4f46e5,#7c3aed)','#fff','9px 16px',{width:'100%',marginBottom:'10px'}));
     } else {
       const nName=inp('Ad Soyad',newU.displayName,v=>newU.displayName=v);
       const nPw=inp('Şifre',newU.password,v=>newU.password=v);
@@ -766,7 +762,7 @@ function buildAdminModal() {
       const cbAdmin=h('input',{type:'checkbox',style:{accentColor:'#6366f1'}});
       cbAdmin.checked=newU.isAdmin;
       cbAdmin.addEventListener('change',e=>newU.isAdmin=e.target.checked);
-      const addBox = h('div',{style:{background:G,border:'1px solid #6366f1',borderRadius:'10px',padding:'14px',marginBottom:'10px'}},
+      const addBox = h('div',{style:{background:'#f8fafc',border:'2px solid #4f46e5',borderRadius:'10px',padding:'14px',marginBottom:'10px'}},
         row(field('Görünen Ad *',nName,true),field('Şifre *',nPw,true)),
         field('E-posta *',nEmail),
         h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'12px'}},cbAdmin,h('label',{style:{fontSize:'12px',color:T2,cursor:'pointer'}},'Yönetici yetkisi ver')),
@@ -782,7 +778,7 @@ function buildAdminModal() {
       );
       container.appendChild(addBox);
     }
-    container.appendChild(btn('Kapat',()=>setState({modal:null}),'#21262d','#8b949e','10px 16px',{width:'100%',marginTop:'4px'}));
+    container.appendChild(btn('Kapat',()=>setState({modal:null}),'#f1f5f9',T2,'11px 16px',{width:'100%',marginTop:'6px',border:`1px solid ${G3}`,borderRadius:'10px'}));
   }
 
   rerender();
@@ -799,16 +795,16 @@ function renderDashboard() {
   HOT.forEach(s=>{
     const items=O.filter(o=>o.stage===s);
     const val=items.reduce((a,o)=>a+(Number(o.value)||0),0);
-    hotCards.appendChild(h('div',{style:{background:G2,border:`1px solid ${SC[s]}44`,borderRadius:'11px',padding:'15px 17px'}},
-      h('div',{style:{fontSize:'10px',color:T3,textTransform:'uppercase',letterSpacing:'.08em',fontWeight:'700',marginBottom:'4px'}},s),
-      h('div',{style:{fontSize:'21px',fontWeight:'700',color:SC[s],marginBottom:'2px'}},String(items.length),' ',h('span',{style:{fontSize:'12px',fontWeight:'400',color:T3}},'fırsat')),
+    hotCards.appendChild(h('div',{style:{background:'#ffffff',border:`1px solid ${SC[s]}44`,borderRadius:'11px',padding:'15px 17px'}},
+      h('div',{style:{fontSize:'11px',color:T3,textTransform:'uppercase',letterSpacing:'.06em',fontWeight:'700',marginBottom:'6px'}},s),
+      h('div',{style:{fontSize:'24px',fontWeight:'800',color:SC[s],marginBottom:'2px'}},String(items.length),' ',h('span',{style:{fontSize:'12px',fontWeight:'400',color:T3}},'fırsat')),
       h('div',{style:{fontSize:'12px',color:T3}},eur(val))
     ));
   });
   const active=O.filter(o=>!["KAÇTI","NO GO","FIRSAT ÖLDÜ"].includes(o.stage)).reduce((a,o)=>a+(Number(o.value)||0),0);
   const approvedServ=S.filter(s=>s.status==="Onaylandı").reduce((a,s)=>a+(Number(s.amount)||0),0);
-  hotCards.appendChild(h('div',{style:{background:G2,border:'1px solid #10b98144',borderRadius:'11px',padding:'15px 17px'}},h('div',{style:{fontSize:'10px',color:T3,textTransform:'uppercase',letterSpacing:'.08em',fontWeight:'700',marginBottom:'4px'}},'AKTİF FIRSAT'),h('div',{style:{fontSize:'17px',fontWeight:'700',color:'#10b981',marginBottom:'2px'}},eur(active)),h('div',{style:{fontSize:'12px',color:T3}},String(O.filter(o=>!["KAÇTI","NO GO","FIRSAT ÖLDÜ"].includes(o.stage)).length)+' aktif')));
-  hotCards.appendChild(h('div',{style:{background:G2,border:'1px solid #06b6d444',borderRadius:'11px',padding:'15px 17px'}},h('div',{style:{fontSize:'10px',color:T3,textTransform:'uppercase',letterSpacing:'.08em',fontWeight:'700',marginBottom:'4px'}},'ONAYLANAN T.SERVİS'),h('div',{style:{fontSize:'17px',fontWeight:'700',color:'#06b6d4',marginBottom:'2px'}},eur(approvedServ)),h('div',{style:{fontSize:'12px',color:T3}},String(S.filter(s=>s.status==="Onaylandı").length)+' onaylı')));
+  hotCards.appendChild(h('div',{style:{background:G2,border:'1px solid #10b98144',borderRadius:'11px',padding:'15px 17px'}},h('div',{style:{fontSize:'11px',color:T3,textTransform:'uppercase',letterSpacing:'.06em',fontWeight:'700',marginBottom:'6px'}},'AKTİF FIRSAT'),h('div',{style:{fontSize:'20px',fontWeight:'800',color:'#10b981',marginBottom:'2px'}},eur(active)),h('div',{style:{fontSize:'12px',color:T3}},String(O.filter(o=>!["KAÇTI","NO GO","FIRSAT ÖLDÜ"].includes(o.stage)).length)+' aktif')));
+  hotCards.appendChild(h('div',{style:{background:G2,border:'1px solid #06b6d444',borderRadius:'11px',padding:'15px 17px'}},h('div',{style:{fontSize:'11px',color:T3,textTransform:'uppercase',letterSpacing:'.06em',fontWeight:'700',marginBottom:'6px'}},'ONAYLANAN T.SERVİS'),h('div',{style:{fontSize:'20px',fontWeight:'800',color:'#06b6d4',marginBottom:'2px'}},eur(approvedServ)),h('div',{style:{fontSize:'12px',color:T3}},String(S.filter(s=>s.status==="Onaylandı").length)+' onaylı')));
 
   const mx=Math.max(1,...STAGES.map(s=>O.filter(o=>o.stage===s).reduce((a,o)=>a+(Number(o.value)||0),0)));
   const stagesDiv=h('div',{});
@@ -831,7 +827,7 @@ function renderDashboard() {
     bpDiv.appendChild(h('div',{style:{marginBottom:'11px',padding:'12px 13px',background:G,borderRadius:'9px',border:`1px solid ${G3}`}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'7px'}},
         h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
-          h('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},name.split(' ').map(n=>n[0]).join('').slice(0,2)),
+          h('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#4f46e5,#7c3aed)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},name.split(' ').map(n=>n[0]).join('').slice(0,2)),
           h('div',{},h('div',{style:{fontWeight:'600',fontSize:'13px'}},name),h('div',{style:{fontSize:'11px',color:T3}},d.cnt+' fırsat'))
         ),
         h('span',{style:{fontSize:'14px',fontWeight:'700',color:'#6366f1'}},eur(d.tot))
@@ -843,8 +839,8 @@ function renderDashboard() {
   return h('div',{style:{animation:'fu .3s ease'}},
     hotCards,
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px'}},
-      h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'12px',padding:'18px'}},h('h3',{style:{fontSize:'14px',fontWeight:'700',marginBottom:'16px',color:T2}},'🎯 Fırsat Aşamaları'),stagesDiv),
-      h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'12px',padding:'18px'}},h('h3',{style:{fontSize:'14px',fontWeight:'700',marginBottom:'16px',color:T2}},'👤 Sorumlu Bazlı Özet'),bpDiv)
+      h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'14px',boxShadow:'0 1px 4px rgba(0,0,0,.06)',padding:'18px'}},h('h3',{style:{fontSize:'15px',fontWeight:'700',marginBottom:'16px',color:T1}},'🎯 Fırsat Aşamaları'),stagesDiv),
+      h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'14px',boxShadow:'0 1px 4px rgba(0,0,0,.06)',padding:'18px'}},h('h3',{style:{fontSize:'15px',fontWeight:'700',marginBottom:'16px',color:T1}},'👤 Sorumlu Bazlı Özet'),bpDiv)
     )
   );
 }
@@ -854,11 +850,11 @@ function renderDashboard() {
 // ═══════════════════════════════════════════════════════
 function renderCustomers() {
   const list = h('div',{style:{display:'flex',flexDirection:'column',gap:'11px'}});
-  if(!state.customers.length) list.appendChild(h('div',{style:{padding:'44px',textAlign:'center',color:T4,background:G2,borderRadius:'12px',border:`1px solid ${G3}`}},'Henüz firma kaydı yok.'));
+  if(!state.customers.length) list.appendChild(h('div',{style:{padding:'50px',textAlign:'center',color:T3,fontSize:'15px',background:'#ffffff',borderRadius:'14px',border:`1px solid ${G3}`},'Henüz firma kaydı yok.'));
   state.customers.forEach(c=>{
     const contGrid=h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(250px,1fr))',gap:'8px'}});
     (c.contacts||[]).forEach(ct=>{
-      contGrid.appendChild(h('div',{style:{background:G,border:`1px solid ${G3}`,borderRadius:'8px',padding:'9px 13px'}},
+      contGrid.appendChild(h('div',{style:{background:'#f8fafc',border:`1px solid ${G3}`,borderRadius:'10px',padding:'9px 13px'}},
         h('div',{style:{fontWeight:'600',fontSize:'13px',color:T2,marginBottom:'4px'}},ct.name+(ct.title?' — '+ct.title:'')),
         h('div',{style:{display:'flex',gap:'12px',flexWrap:'wrap'}},
           ct.email?h('span',{style:{fontSize:'11px',color:'#58a6ff'}},'✉ '+ct.email):h('span'),
@@ -866,10 +862,10 @@ function renderCustomers() {
         )
       ));
     });
-    const card=h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'12px',padding:'16px 18px'}},
+    const card=h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'14px',boxShadow:'0 1px 4px rgba(0,0,0,.06)',padding:'16px 18px'}},
       h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'12px'}},
         h('div',{},
-          h('div',{style:{fontWeight:'700',fontSize:'16px',marginBottom:'6px'}},c.firmName),
+          h('div',{style:{fontWeight:'800',fontSize:'17px',marginBottom:'8px',color:T1}},c.firmName),
           h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap',marginBottom:'6px'}},badge(c.sector,'#6366f1'),c.city?tag('📍 '+c.city):h('span'),tag('👤 '+(c.contacts||[]).length+' kişi')),
           h('div',{style:{display:'flex',gap:'16px',flexWrap:'wrap'}},
             c.phone?h('span',{style:{fontSize:'12px',color:'#3fb950'}},'📞 '+c.phone):h('span'),
@@ -879,7 +875,7 @@ function renderCustomers() {
         ),
         h('div',{style:{display:'flex',gap:'7px',flexShrink:'0'}},
           btn('Düzenle',()=>setState({modal:{type:'customer',item:c}}),'#21262d','#8b949e','6px 12px',{fontSize:'12px'}),
-          btn('Sil',()=>delItem('customers',c.id),'#3b1a1a','#f87171','6px 12px',{fontSize:'12px'})
+          btn('Sil',()=>delItem('customers',c.id),'#fef2f2','#dc2626','7px 13px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'8px'})
         )
       ),
       c._editedBy?h('div',{style:{fontSize:'10px',color:T4,marginBottom:'8px'}},'✏ Son düzenleyen: ',h('span',{style:{color:T3,fontWeight:'600'}},c._editedBy),' — '+c._editedAt):h('span'),
@@ -889,8 +885,8 @@ function renderCustomers() {
   });
   return h('div',{style:{animation:'fu .3s ease'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px'}},
-      h('h2',{style:{fontSize:'18px',fontWeight:'700'}},'Müşteri Kayıtları ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+state.customers.length+' firma)')),
-      btn('+ Yeni Firma',()=>setState({modal:{type:'customer',item:null}}),'linear-gradient(135deg,#6366f1,#8b5cf6)','#fff','9px 18px',{fontSize:'14px'})
+      h('h2',{style:{fontSize:'20px',fontWeight:'800',color:T1}},'Müşteri Kayıtları ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+state.customers.length+' firma)')),
+      btn('+ Yeni Firma',()=>setState({modal:{type:'customer',item:null}}),'linear-gradient(135deg,#4f46e5,#7c3aed)','#fff','10px 20px',{fontSize:'14px',borderRadius:'10px'})
     ),
     list
   );
@@ -912,8 +908,8 @@ function renderOpportunities() {
   });
   const custById=id=>state.customers.find(c=>c.id===id);
 
-  const filterBox=h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'11px',padding:'13px 15px',marginBottom:'15px'}},
-    h('div',{style:{fontSize:'11px',color:T3,textTransform:'uppercase',letterSpacing:'.06em',fontWeight:'600',marginBottom:'11px'}},'🔍 Filtreler'),
+  const filterBox=h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'12px',boxShadow:'0 1px 4px rgba(0,0,0,.06)',padding:'13px 15px',marginBottom:'15px'}},
+    h('div',{style:{fontSize:'11px',color:T3,textTransform:'uppercase',letterSpacing:'.06em',fontWeight:'600',marginBottom:'11px'}},'🔍 FİLTRELER'),
     h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}},
       h('div',{},lbl('Başlık'),inp('Ara...',f.title,v=>{state.filters.title=v;render();},undefined,{width:'150px',fontSize:'12px'})),
       h('div',{},lbl('Sorumlu'),inp('Ara...',f.assigned,v=>{state.filters.assigned=v;render();},undefined,{width:'130px',fontSize:'12px'})),
@@ -930,20 +926,20 @@ function renderOpportunities() {
   const tbody=h('tbody',{});
   fo.forEach((o,i)=>{
     const c=custById(o.customerId);const ad=custById(o.adminId);
-    const tr=h('tr',{className:'rh',style:{background:i%2===0?G2:G}},
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',fontWeight:'700',maxWidth:'170px'}},o.title),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',fontWeight:'700',color:'#f97316',whiteSpace:'nowrap'}},eur(o.value)),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},badge(o.stage,SC[o.stage]||T3)),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',color:T3,whiteSpace:'nowrap'}},ad?.firmName||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},tag(o.sector||'')),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},tag(o.jobStatus||'')),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',color:T2,whiteSpace:'nowrap'}},o.assignedTo||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'11px',color:T3}},o.tenderRef||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'10px',whiteSpace:'nowrap'}},o._editedBy?h('span',{},h('span',{style:{color:T2,fontWeight:'600'}},o._editedBy),h('br'),h('span',{style:{color:T4}},o._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},
-        btn('Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#1c2f4a','#58a6ff','4px 10px',{fontSize:'11px'}),
-        btn('Sil',()=>delItem('opportunities',o.id),'#3b1a1a','#f87171','4px 10px',{fontSize:'11px'})
+    const tr=h('tr',{className:'rh',style:{background:i%2===0?'#ffffff':'#f8fafc'}},
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',fontWeight:'700',maxWidth:'170px'}},o.title),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',fontWeight:'700',color:'#ea580c',fontWeight:'700',whiteSpace:'nowrap'}},eur(o.value)),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},badge(o.stage,SC[o.stage]||T3)),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',color:T3,whiteSpace:'nowrap'}},ad?.firmName||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},tag(o.sector||'')),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},tag(o.jobStatus||'')),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',color:T2,whiteSpace:'nowrap'}},o.assignedTo||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',color:T3}},o.tenderRef||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',whiteSpace:'nowrap'}},o._editedBy?h('span',{},h('span',{style:{color:T2,fontWeight:'600'}},o._editedBy),h('br'),h('span',{style:{color:T4}},o._editedAt||'')):h('span',{style:{color:T4}},'—')),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},h('div',{style:{display:'flex',gap:'5px'}},
+        btn('Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#eff6ff','#2563eb','6px 12px',{fontSize:'12px',borderRadius:'7px',border:'1px solid #bfdbfe'}),
+        btn('Sil',()=>delItem('opportunities',o.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',borderRadius:'7px',border:'1px solid #fecaca'})
       ))
     );
     tbody.appendChild(tr);
@@ -951,13 +947,13 @@ function renderOpportunities() {
 
   return h('div',{style:{animation:'fu .3s ease'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}},
-      h('h2',{style:{fontSize:'18px',fontWeight:'700'}},'Satış Fırsatları ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+fo.length+'/'+state.opportunities.length+')')),
-      btn('+ Yeni Fırsat',()=>setState({modal:{type:'opportunity',item:null}}),'linear-gradient(135deg,#f97316,#f59e0b)','#fff','9px 18px',{fontSize:'14px'})
+      h('h2',{style:{fontSize:'20px',fontWeight:'800',color:T1}},'Satış Fırsatları ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+fo.length+'/'+state.opportunities.length+')')),
+      btn('+ Yeni Fırsat',()=>setState({modal:{type:'opportunity',item:null}}),'linear-gradient(135deg,#ea580c,#d97706)','#fff','10px 20px',{fontSize:'14px',borderRadius:'10px'})
     ),
     filterBox,
-    h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'12px',overflow:'hidden'}},
+    h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'14px',boxShadow:'0 1px 4px rgba(0,0,0,.06)',overflow:'hidden'}},
       h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'1100px'}},thead,tbody)),
-      !fo.length?h('div',{style:{padding:'38px',textAlign:'center',color:T4}},'Filtreye uygun fırsat bulunamadı.'):h('span')
+      !fo.length?h('div',{style:{padding:'44px',textAlign:'center',color:T3,fontSize:'15px'},'Filtreye uygun fırsat bulunamadı.'):h('span')
     )
   );
 }
@@ -971,26 +967,26 @@ function renderProposals() {
   const tbody=h('tbody',{});
   state.proposals.forEach((p,i)=>{
     const c=custById(p.customerId);
-    tbody.appendChild(h('tr',{className:'rh',style:{background:i%2===0?G2:G}},
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',fontWeight:'700'}},p.title||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',color:T3}},c?.firmName||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},h('div',{style:{display:'flex',alignItems:'center',gap:'7px'}},h('div',{style:{width:'25px',height:'25px',borderRadius:'50%',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},(p.preparedBy||'?').split(' ').map(n=>n[0]).join('').slice(0,2)),h('span',{style:{fontSize:'12px',color:T2}},p.preparedBy||''))),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',fontWeight:'700',color:'#3b82f6'}},eur(p.amount)),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},badge(p.status,PS[p.status]||T3)),
-      h('td',{style:{padding:'11px 13px',fontSize:'11px',color:T3}},p.createdAt||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'11px',color:T3}},p.validUntil||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'10px',whiteSpace:'nowrap'}},p._editedBy?h('span',{},h('span',{style:{color:T2,fontWeight:'600'}},p._editedBy),h('br'),h('span',{style:{color:T4}},p._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#1c2f4a','#58a6ff','4px 10px',{fontSize:'11px'}),btn('Sil',()=>delItem('proposals',p.id),'#3b1a1a','#f87171','4px 10px',{fontSize:'11px'})))
+    tbody.appendChild(h('tr',{className:'rh',style:{background:i%2===0?'#ffffff':'#f8fafc'}},
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',fontWeight:'700'}},p.title||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',color:T3}},c?.firmName||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},h('div',{style:{display:'flex',alignItems:'center',gap:'7px'}},h('div',{style:{width:'25px',height:'25px',borderRadius:'50%',background:'linear-gradient(135deg,#4f46e5,#7c3aed)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},(p.preparedBy||'?').split(' ').map(n=>n[0]).join('').slice(0,2)),h('span',{style:{fontSize:'12px',color:T2}},p.preparedBy||''))),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',fontWeight:'700',color:'#3b82f6'}},eur(p.amount)),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},badge(p.status,PS[p.status]||T3)),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',color:T3}},p.createdAt||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',color:T3}},p.validUntil||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',whiteSpace:'nowrap'}},p._editedBy?h('span',{},h('span',{style:{color:T2,fontWeight:'600'}},p._editedBy),h('br'),h('span',{style:{color:T4}},p._editedAt||'')):h('span',{style:{color:T4}},'—')),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#2563eb','6px 12px',{fontSize:'12px',borderRadius:'7px',border:'1px solid #bfdbfe'}),btn('Sil',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',borderRadius:'7px',border:'1px solid #fecaca'})))
     ));
   });
   return h('div',{style:{animation:'fu .3s ease'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px'}},
-      h('h2',{style:{fontSize:'18px',fontWeight:'700'}},'Teklifler ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+state.proposals.length+')')),
-      btn('+ Yeni Teklif',()=>setState({modal:{type:'proposal',item:null}}),'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','9px 18px',{fontSize:'14px'})
+      h('h2',{style:{fontSize:'20px',fontWeight:'800',color:T1}},'Teklifler ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+state.proposals.length+')')),
+      btn('+ Yeni Teklif',()=>setState({modal:{type:'proposal',item:null}}),'linear-gradient(135deg,#0284c7,#4f46e5)','#fff','10px 20px',{fontSize:'14px',borderRadius:'10px'})
     ),
-    h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'12px',overflow:'hidden'}},
+    h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'14px',boxShadow:'0 1px 4px rgba(0,0,0,.06)',overflow:'hidden'}},
       h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'900px'}},thead,tbody)),
-      !state.proposals.length?h('div',{style:{padding:'38px',textAlign:'center',color:T4}},'Henüz teklif yok.'):h('span')
+      !state.proposals.length?h('div',{style:{padding:'44px',textAlign:'center',color:T3,fontSize:'15px'},'Henüz teklif yok.'):h('span')
     )
   );
 }
@@ -1004,28 +1000,28 @@ function renderServices() {
   const tbody=h('tbody',{});
   state.services.forEach((s,i)=>{
     const c=custById(s.customerId);
-    tbody.appendChild(h('tr',{className:'rh',style:{background:i%2===0?G2:G}},
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',fontWeight:'700',maxWidth:'160px'}},s.jobName||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'12px',color:T2}},s.preparedBy||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'12px',color:T2}},s.serviceContact||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',fontWeight:'700',color:'#06b6d4'}},eur(s.amount)),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},badge(s.status,PS[s.status]||T3)),
-      h('td',{style:{padding:'11px 13px',fontSize:'11px',color:T3}},s.createdAt||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'11px',color:T3}},s.validUntil||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'11px',color:s.appointmentDate?'#06b6d4':T4,fontWeight:s.appointmentDate?'600':'400'}},s.appointmentDate||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'10px',whiteSpace:'nowrap'}},s._editedBy?h('span',{},h('span',{style:{color:T2,fontWeight:'600'}},s._editedBy),h('br'),h('span',{style:{color:T4}},s._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'service',item:s}}),'#1c2f4a','#58a6ff','4px 10px',{fontSize:'11px'}),btn('Sil',()=>delItem('services',s.id),'#3b1a1a','#f87171','4px 10px',{fontSize:'11px'})))
+    tbody.appendChild(h('tr',{className:'rh',style:{background:i%2===0?'#ffffff':'#f8fafc'}},
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',fontWeight:'700',maxWidth:'160px'}},s.jobName||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'13px',color:T2}},s.preparedBy||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'13px',color:T2}},s.serviceContact||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',fontWeight:'700',color:'#06b6d4'}},eur(s.amount)),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},badge(s.status,PS[s.status]||T3)),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',color:T3}},s.createdAt||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',color:T3}},s.validUntil||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',color:s.appointmentDate?'#06b6d4':T4,fontWeight:s.appointmentDate?'600':'400'}},s.appointmentDate||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',whiteSpace:'nowrap'}},s._editedBy?h('span',{},h('span',{style:{color:T2,fontWeight:'600'}},s._editedBy),h('br'),h('span',{style:{color:T4}},s._editedAt||'')):h('span',{style:{color:T4}},'—')),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'service',item:s}}),'#eff6ff','#2563eb','6px 12px',{fontSize:'12px',borderRadius:'7px',border:'1px solid #bfdbfe'}),btn('Sil',()=>delItem('services',s.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',borderRadius:'7px',border:'1px solid #fecaca'})))
     ));
   });
   return h('div',{style:{animation:'fu .3s ease'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px'}},
-      h('h2',{style:{fontSize:'18px',fontWeight:'700'}},'🔧 Teknik Servis ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+state.services.length+')')),
-      btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#06b6d4,#0284c7)','#fff','9px 18px',{fontSize:'14px'})
+      h('h2',{style:{fontSize:'20px',fontWeight:'800',color:T1}},'🔧 Teknik Servis ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+state.services.length+')')),
+      btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#0891b2,#0284c7)','#fff','10px 20px',{fontSize:'14px',borderRadius:'10px'})
     ),
-    h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'12px',overflow:'hidden'}},
+    h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'14px',boxShadow:'0 1px 4px rgba(0,0,0,.06)',overflow:'hidden'}},
       h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'1000px'}},thead,tbody)),
-      !state.services.length?h('div',{style:{padding:'38px',textAlign:'center',color:T4}},'Henüz teknik servis kaydı yok.'):h('span')
+      !state.services.length?h('div',{style:{padding:'44px',textAlign:'center',color:T3,fontSize:'15px'},'Henüz teknik servis kaydı yok.'):h('span')
     )
   );
 }
@@ -1039,26 +1035,26 @@ function renderMaintenances() {
   const tbody=h('tbody',{});
   state.maintenances.forEach((m,i)=>{
     const c=custById(m.customerId);
-    tbody.appendChild(h('tr',{className:'rh',style:{background:i%2===0?G2:G}},
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',fontWeight:'700',maxWidth:'160px'}},m.jobName||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'12px',color:T2}},m.serviceContact||''),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px',fontWeight:'700',color:'#10b981'}},eur(m.amount)),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},badge(m.status,MS[m.status]||T3)),
-      h('td',{style:{padding:'11px 13px',fontSize:'11px',color:m.appointmentStart?'#10b981':T4,fontWeight:m.appointmentStart?'600':'400'}},m.appointmentStart||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'11px',color:m.appointmentEnd?'#10b981':T4,fontWeight:m.appointmentEnd?'600':'400'}},m.appointmentEnd||'-'),
-      h('td',{style:{padding:'11px 13px',fontSize:'10px',whiteSpace:'nowrap'}},m._editedBy?h('span',{},h('span',{style:{color:T2,fontWeight:'600'}},m._editedBy),h('br'),h('span',{style:{color:T4}},m._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'11px 13px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#1c2f4a','#58a6ff','4px 10px',{fontSize:'11px'}),btn('Sil',()=>delItem('maintenances',m.id),'#3b1a1a','#f87171','4px 10px',{fontSize:'11px'})))
+    tbody.appendChild(h('tr',{className:'rh',style:{background:i%2===0?'#ffffff':'#f8fafc'}},
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',fontWeight:'700',maxWidth:'160px'}},m.jobName||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'13px',color:T2}},m.serviceContact||''),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px',fontWeight:'700',color:'#10b981'}},eur(m.amount)),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},badge(m.status,MS[m.status]||T3)),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',color:m.appointmentStart?'#10b981':T4,fontWeight:m.appointmentStart?'600':'400'}},m.appointmentStart||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',color:m.appointmentEnd?'#10b981':T4,fontWeight:m.appointmentEnd?'600':'400'}},m.appointmentEnd||'-'),
+      h('td',{style:{padding:'13px 15px',fontSize:'12px',whiteSpace:'nowrap'}},m._editedBy?h('span',{},h('span',{style:{color:T2,fontWeight:'600'}},m._editedBy),h('br'),h('span',{style:{color:T4}},m._editedAt||'')):h('span',{style:{color:T4}},'—')),
+      h('td',{style:{padding:'13px 15px',fontSize:'14px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#2563eb','6px 12px',{fontSize:'12px',borderRadius:'7px',border:'1px solid #bfdbfe'}),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',borderRadius:'7px',border:'1px solid #fecaca'})))
     ));
   });
   return h('div',{style:{animation:'fu .3s ease'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'18px'}},
-      h('h2',{style:{fontSize:'18px',fontWeight:'700'}},'⚙️ Periyodik Bakım ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+state.maintenances.length+')')),
-      btn('+ Yeni Periyodik Bakım',()=>setState({modal:{type:'maintenance',item:null}}),'linear-gradient(135deg,#10b981,#059669)','#fff','9px 18px',{fontSize:'14px'})
+      h('h2',{style:{fontSize:'20px',fontWeight:'800',color:T1}},'⚙️ Periyodik Bakım ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+state.maintenances.length+')')),
+      btn('+ Yeni Periyodik Bakım',()=>setState({modal:{type:'maintenance',item:null}}),'linear-gradient(135deg,#16a34a,#15803d)','#fff','10px 20px',{fontSize:'14px',borderRadius:'10px'})
     ),
-    h('div',{style:{background:G2,border:`1px solid ${G3}`,borderRadius:'12px',overflow:'hidden'}},
+    h('div',{style:{background:'#ffffff',border:`1px solid ${G3}`,borderRadius:'14px',boxShadow:'0 1px 4px rgba(0,0,0,.06)',overflow:'hidden'}},
       h('div',{style:{overflowX:'auto'}},h('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'900px'}},thead,tbody)),
-      !state.maintenances.length?h('div',{style:{padding:'38px',textAlign:'center',color:T4}},'Henüz periyodik bakım kaydı yok.'):h('span')
+      !state.maintenances.length?h('div',{style:{padding:'44px',textAlign:'center',color:T3,fontSize:'15px'},'Henüz periyodik bakım kaydı yok.'):h('span')
     )
   );
 }
@@ -1073,9 +1069,9 @@ function render() {
   root.innerHTML='';
 
   if(state.loading) {
-    root.appendChild(h('div',{style:{minHeight:'100vh',background:G,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'14px'}},
-      h('div',{style:{width:'40px',height:'40px',border:`3px solid ${G3}`,borderTop:'3px solid #6366f1',borderRadius:'50%',animation:'spin .8s linear infinite'}}),
-      h('div',{style:{color:T3}},'Yükleniyor…')
+    root.appendChild(h('div',{style:{minHeight:'100vh',background:'#eef2f7',display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:'16px'}},
+      h('div',{style:{width:'44px',height:'44px',border:`3px solid ${G3}`,borderTop:`3px solid ${ACCENT}`,borderRadius:'50%',animation:'spin .8s linear infinite'}}),
+      h('div',{style:{color:T3,fontSize:'15px',fontWeight:'500'}},'Yükleniyor…')
     ));
     return;
   }
@@ -1084,36 +1080,41 @@ function render() {
   const cu = state.currentUser;
 
   // NAVBAR
-  const navbar = h('div',{style:{background:G2,borderBottom:`1px solid ${G3}`,padding:'0 22px'}},
-    h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-between',height:'56px'}},
-      h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
-        h('div',{style:{width:'30px',height:'30px',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',borderRadius:'7px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'15px'}},'⚡'),
-        h('div',{},h('div',{style:{fontWeight:'700',fontSize:'14px'}},'A-PRO İş Takip CRM'),h('div',{style:{fontSize:'10px',color:T3}},'SATIŞ & SERVİS YÖNETİMİ'))
+  const navbar = h('div',{style:{background:'#ffffff',borderBottom:`1px solid ${G3}`,padding:'0 24px',boxShadow:'0 1px 3px rgba(0,0,0,.08)'}},
+    h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',alignItems:'center',justifyContent:'space-between',height:'62px'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:'12px'}},
+        h('div',{style:{width:'36px',height:'36px',background:'linear-gradient(135deg,#4f46e5,#7c3aed)',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px'}},'⚡'),
+        h('div',{},
+          h('div',{style:{fontWeight:'800',fontSize:'16px',color:T1}},'A-PRO İş Takip CRM'),
+          h('div',{style:{fontSize:'11px',color:T3,fontWeight:'500'}},'SATIŞ & SERVİS YÖNETİMİ')
+        )
       ),
       h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
-        h('div',{style:{display:'flex',alignItems:'center',gap:'7px',background:G3,border:`1px solid ${G4}`,borderRadius:'7px',padding:'5px 12px'}},
-          h('div',{style:{width:'22px',height:'22px',borderRadius:'50%',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},(cu?.displayName||'?').slice(0,2).toUpperCase()),
-          h('span',{style:{fontSize:'12px',color:T2,fontWeight:'600'}},cu?.displayName||'')
+        h('div',{style:{display:'flex',alignItems:'center',gap:'8px',background:'#f1f5f9',border:`1px solid ${G3}`,borderRadius:'9px',padding:'6px 14px'}},
+          h('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:'linear-gradient(135deg,#4f46e5,#7c3aed)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:'700',color:'#fff'}},(cu?.displayName||'?').slice(0,2).toUpperCase()),
+          h('span',{style:{fontSize:'13px',color:T2,fontWeight:'600'}},cu?.displayName||'')
         ),
-        cu?.isAdmin ? btn('👥 Kullanıcılar',()=>setState({modal:{type:'admin',item:null}}),'#21262d','#8b949e','6px 13px',{fontSize:'12px',border:`1px solid ${G4}`,borderRadius:'7px'}) : h('span'),
-        btn('🗄️ Yedekleme',()=>setState({modal:{type:'backup',item:null}}),'#21262d','#8b949e','6px 13px',{fontSize:'12px',border:`1px solid ${G4}`,borderRadius:'7px'}),
-        btn('Çıkış',()=>{state.currentUser=null;state.view='login';loginState={email:'',pw:'',err:'',attempts:0,locked:false};render();},'#3b1a1a','#f87171','6px 13px',{fontSize:'12px',border:'1px solid #3b1a1a',borderRadius:'7px'})
+        cu?.isAdmin ? btn('👥 Kullanıcılar',()=>setState({modal:{type:'admin',item:null}}),'#f1f5f9',ACCENT,'7px 14px',{fontSize:'13px',border:`1px solid ${G3}`,borderRadius:'9px',fontWeight:'600'}) : h('span'),
+        btn('🗄️ Yedekleme',()=>setState({modal:{type:'backup',item:null}}),'#f1f5f9',T2,'7px 14px',{fontSize:'13px',border:`1px solid ${G3}`,borderRadius:'9px',fontWeight:'600'}),
+        btn('Çıkış',()=>{state.currentUser=null;state.view='login';loginState={email:'',pw:'',err:'',attempts:0,locked:false};render();},'#fef2f2','#dc2626','7px 14px',{fontSize:'13px',border:'1px solid #fca5a5',borderRadius:'9px',fontWeight:'600'})
       )
     )
   );
 
   // INFO BAR
-  const infobar = h('div',{style:{background:G,borderBottom:`1px solid ${G3}`,padding:'5px 22px'}},
-    h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',alignItems:'center',gap:'9px'}},
-      h('span',{},'🌐'),h('span',{style:{fontSize:'11px',color:'#388bfd',fontWeight:'600'}},'Firebase Veritabanı'),h('span',{style:{fontSize:'11px',color:T4}},'— Gerçek zamanlı'),
-      h('span',{style:{marginLeft:'auto',fontSize:'11px',color:T4}},state.customers.length+' firma · '+state.opportunities.length+' fırsat · '+state.proposals.length+' teklif · '+state.services.length+' servis · '+state.maintenances.length+' bakım')
+  const infobar = h('div',{style:{background:'#f8fafc',borderBottom:`1px solid ${G3}`,padding:'6px 24px'}},
+    h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',alignItems:'center',gap:'10px'}},
+      h('span',{},'🌐'),
+      h('span',{style:{fontSize:'12px',color:ACCENT,fontWeight:'700'}},'Firebase Veritabanı'),
+      h('span',{style:{fontSize:'12px',color:T4}},'— Gerçek zamanlı senkronizasyon'),
+      h('span',{style:{marginLeft:'auto',fontSize:'12px',color:T4}},state.customers.length+' firma · '+state.opportunities.length+' fırsat · '+state.proposals.length+' teklif · '+state.services.length+' servis · '+state.maintenances.length+' bakım')
     )
   );
 
   // TABS
-  const tabBar = h('div',{style:{background:G2,borderBottom:`1px solid ${G3}`,padding:'0 22px',overflowX:'auto'}},
+  const tabBar = h('div',{style:{background:'#ffffff',borderBottom:`1px solid ${G3}`,padding:'0 24px',overflowX:'auto'}},
     h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',gap:'2px',minWidth:'max-content'}},
-      ...TABS.map(t=>h('button',{onClick:()=>setState({tab:t.id}),style:{padding:'11px 17px',background:'none',border:'none',cursor:'pointer',fontSize:'13px',fontWeight:'600',fontFamily:"'DM Sans',sans-serif",color:state.tab===t.id?T1:T3,borderBottom:state.tab===t.id?'2px solid #6366f1':'2px solid transparent',whiteSpace:'nowrap'}},t.l))
+      ...TABS.map(t=>h('button',{onClick:()=>setState({tab:t.id}),style:{padding:'13px 18px',background:'none',border:'none',cursor:'pointer',fontSize:'14px',fontWeight:'600',fontFamily:"'Inter',sans-serif",color:state.tab===t.id?ACCENT:T3,borderBottom:state.tab===t.id?`2.5px solid ${ACCENT}`:'2.5px solid transparent',whiteSpace:'nowrap',transition:'color .15s'}},t.l))
     )
   );
 
@@ -1126,13 +1127,13 @@ function render() {
   else if(state.tab==='services') content=renderServices();
   else if(state.tab==='maintenance') content=renderMaintenances();
 
-  const main = h('div',{style:{maxWidth:'1400px',margin:'0 auto',padding:'20px'}},content);
+  const main = h('div',{style:{maxWidth:'1400px',margin:'0 auto',padding:'24px'}},content);
 
   root.appendChild(h('div',{style:{minHeight:'100vh',background:G}},navbar,infobar,tabBar,main));
 
   // TOAST
   if(state.toast) {
-    root.appendChild(h('div',{style:{position:'fixed',bottom:'20px',right:'20px',zIndex:'2000',background:G2,border:`1px solid ${state.toast.color}`,borderRadius:'11px',padding:'11px 16px',color:state.toast.color,fontSize:'13px',animation:'si .25s ease',boxShadow:'0 8px 24px rgba(0,0,0,.5)'}},state.toast.msg));
+    root.appendChild(h('div',{style:{position:'fixed',bottom:'20px',right:'20px',zIndex:'2000',background:'#ffffff',border:`1px solid ${state.toast.color}`,borderRadius:'11px',padding:'11px 16px',color:state.toast.color,fontSize:'13px',animation:'si .25s ease',boxShadow:'0 8px 24px rgba(0,0,0,.5)'}},state.toast.msg));
   }
 
   // MODAL
