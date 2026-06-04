@@ -2259,6 +2259,12 @@ function buildAdminModal() {
         // Silme doğrulaması: belge hâlâ varsa hata fırlat
         const check = await db.collection('users').doc(u.email).get({source:'server'});
         if(check.exists) throw new Error('Kullanici silinemedi: '+u.email);
+        // Teklif programı erişimini iptal et (fire-and-forget)
+        fetch(TEKLIF_USERS_URL, {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+          body: JSON.stringify({ email: u.email }),
+        }).catch(() => {});
       }
       users = list;
       state.users = list;
