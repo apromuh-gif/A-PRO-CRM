@@ -4132,7 +4132,7 @@ function renderProposals() {
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             p.quotationUrl?btn('🔗 Teklif Programı',()=>window.open(p.quotationUrl,'_blank'),'#f0fdf4','#15803d','7px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}):h('span'),
             btn('✏️ Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#1d4ed8','7px 14px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',flex:'1'}),
-            btn('🗑️',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
+            (()=>{const korunan=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];return korunan.includes(p.status)?h('span',{style:{display:'inline-flex',alignItems:'center',padding:'7px 12px',fontSize:'13px',color:'#9ca3af',background:'#f9fafb',border:'1px solid #e5e7eb',borderRadius:'7px'}},'🔒'):btn('🗑️',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'});})()
           )
         );
       }) : [h('div',{style:{padding:'32px',textAlign:'center',color:T4,background:G2,borderRadius:'12px'}},'Filtre sonucu yok veya henüz teklif yok.')]
