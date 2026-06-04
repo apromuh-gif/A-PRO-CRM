@@ -3971,7 +3971,8 @@ function renderOpportunities() {
             o.assignedTo?h('span',{style:{background:'#faf5ff',color:'#7c3aed',padding:'3px 8px',borderRadius:'12px',fontSize:'11px'}},'👤 '+o.assignedTo):h('span')
           ),
           o.dueDate?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'📅 Sipariş: '+_toTR(o.dueDate)):h('span'),
-          h('div',{style:{display:'flex',gap:'8px'}},
+          h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+            o.quotationUrl?h('a',{href:o.quotationUrl,target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#f0fdf4',color:'#15803d',padding:'7px 12px',borderRadius:'7px',fontSize:'12px',textDecoration:'none',border:'1px solid #86efac',fontWeight:'600'}},'🔗 Teklif Programı'):btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','7px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}),
             btn('✏️ Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#fff3cd','#d97706','7px 14px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',flex:'1'}),
             btn('🗑️',()=>{if(confirm('Bu fırsatı silmek istediğinizden emin misiniz?')){deleteDoc('opportunities',o.id).then(()=>setState({opportunities:state.opportunities.filter(x=>x.id!==o.id)}));}},'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
