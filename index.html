@@ -144,29 +144,40 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new Error(body?.error?.message ?? 'Sunucu hatası');
     const { quotationId, quotationUrl } = body.data;
-    // Aşama 1: CRM'e proposal kaydı oluştur (quotationId bağlantısıyla)
-    const propTitle = opportunityTitle || ((customer.firmName || customer.name || '') + ' — Teklif');
-    const propId = genId();
-    const propData = {
-      id: propId,
-      title: propTitle,
-      customerId: customer.id || '',
-      opportunityId: opportunityId || '',
-      preparedBy: state.currentUser?.displayName || '',
-      amount: 0,
-      status: 'Hazırlanıyor',
-      createdAt: today(),
-      validUntil: '',
-      sentDate: '',
-      notes: '',
-      quotationId: quotationId || '',
-      quotationUrl: quotationUrl || '',
-      ...stamp(),
-    };
-    await saveDoc('proposals', propId, propData);
-    setState({ proposals: [...state.proposals, propData] });
+    // Fırsata bağlıysa: mevcut proposal'ı güncelle, yoksa yeni oluştur
+    const existingProp = opportunityId
+      ? state.proposals.find(p => p.opportunityId === opportunityId && !p.quotationId)
+      : null;
+    if (existingProp) {
+      const updated = {...existingProp, quotationId: quotationId||'', quotationUrl: quotationUrl||'', ...stamp()};
+      await saveDoc('proposals', existingProp.id, updated);
+      setState({ proposals: state.proposals.map(p => p.id===existingProp.id ? updated : p) });
+    } else {
+      const propTitle = opportunityTitle || ((customer.firmName || customer.name || '') + ' — Teklif');
+      const propId = genId();
+      const propData = {
+        id: propId, title: propTitle,
+        customerId: customer.id||'', opportunityId: opportunityId||'',
+        preparedBy: state.currentUser?.displayName||'', amount: 0,
+        status: 'Hazırlanıyor', createdAt: today(),
+        validUntil: '', sentDate: '', notes: '',
+        quotationId: quotationId||'', quotationUrl: quotationUrl||'',
+        ...stamp(),
+      };
+      await saveDoc('proposals', propId, propData);
+      setState({ proposals: [...state.proposals, propData] });
+    }
+    // Fırsata doğrudan quotationUrl yaz (hızlı erişim için)
+    if (opportunityId) {
+      const opp = state.opportunities.find(o => o.id === opportunityId);
+      if (opp) {
+        const updatedOpp = {...opp, quotationId: quotationId||'', quotationUrl: quotationUrl||'', ...stamp()};
+        await saveDoc('opportunities', opportunityId, updatedOpp);
+        setState({ opportunities: state.opportunities.map(o => o.id===opportunityId ? updatedOpp : o) });
+      }
+    }
     window.open(quotationUrl, '_blank');
-    showToast('✅ Teklif oluşturuldu ve Teklif Talepleri\'ne eklendi!');
+    showToast('✅ Teklif oluşturuldu — Fırsat ve Teklif Talepleri güncellendi!');
   } catch(e) {
     alert('Teklif oluşturulamadı: ' + e.message);
   }
