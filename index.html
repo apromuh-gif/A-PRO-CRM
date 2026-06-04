@@ -95,9 +95,32 @@ const NAVY="#1e3a5f",NAVY2="#264875",ACC="#2563eb";
 // ═══════════════════════════════════════════════════════
 // A-PRO TEKLİF PROGRAMI ENTEGRASYONU
 // ═══════════════════════════════════════════════════════
-const TEKLIF_API_URL = 'https://apro-platform.vercel.app/api/v1/crm/open-quotation';
-const TEKLIF_SYNC_URL = 'https://apro-platform.vercel.app/api/v1/crm/customers';
-const TEKLIF_API_KEY = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a83ef805af0';
+const TEKLIF_APP_URL  = 'https://apro-platform.vercel.app';
+const TEKLIF_API_URL  = TEKLIF_APP_URL + '/api/v1/crm/open-quotation';
+const TEKLIF_SYNC_URL = TEKLIF_APP_URL + '/api/v1/crm/customers';
+const TEKLIF_AUTH_URL = TEKLIF_APP_URL + '/api/v1/crm/auth';
+const TEKLIF_USERS_URL= TEKLIF_APP_URL + '/api/v1/crm/users';
+const TEKLIF_API_KEY  = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a83ef805af0';
+
+// CRM kullanıcısı için teklif programında oturum açar, session token döndürür.
+async function getCrmSessionToken() {
+  try {
+    const cu = firebase.auth().currentUser;
+    if (!cu) return null;
+    const res = await fetch(TEKLIF_AUTH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+      body: JSON.stringify({
+        email:  cu.email,
+        name:   cu.displayName || state.currentUser?.displayName || cu.email,
+        crmUid: cu.uid,
+      }),
+    });
+    if (!res.ok) return null;
+    const body = await res.json().catch(() => null);
+    return body?.data?.token ?? null;
+  } catch { return null; }
+}
 
 // Aşama 3: Müşteri güncelleme senkronizasyonu (fire-and-forget)
 function syncCustomerToTeklif(customer) {
