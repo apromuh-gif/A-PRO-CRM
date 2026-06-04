@@ -96,9 +96,38 @@ const NAVY="#1e3a5f",NAVY2="#264875",ACC="#2563eb";
 // A-PRO TEKLİF PROGRAMI ENTEGRASYONU
 // ═══════════════════════════════════════════════════════
 const TEKLIF_API_URL = 'https://apro-platform.vercel.app/api/v1/crm/open-quotation';
+const TEKLIF_SYNC_URL = 'https://apro-platform.vercel.app/api/v1/crm/customers';
 const TEKLIF_API_KEY = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a83ef805af0';
 
-async function teklifOlustur(customer, opportunityTitle) {
+// Aşama 3: Müşteri güncelleme senkronizasyonu (fire-and-forget)
+function syncCustomerToTeklif(customer) {
+  if (!customer || !customer.id) return;
+  fetch(TEKLIF_SYNC_URL, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+    body: JSON.stringify({
+      crmCustomerId: customer.id,
+      name: customer.firmName || customer.name || '',
+      phone: customer.phone || '',
+      email: customer.email || '',
+    }),
+  }).catch(() => {}); // Sessizce geç — CRM akışını engelleme
+}
+
+// Aşama 1+2: Teklif oluştur — mükerrer koruma + CRM'e quotationId kaydet
+async function teklifOlustur(customer, opportunityTitle, opportunityId) {
+  // Aşama 2: Fırsata bağlı teklif zaten varsa uyar
+  if (opportunityId) {
+    const existing = state.proposals.find(p =>
+      p.customerId === customer.id && p.quotationId && p.opportunityId === opportunityId
+    );
+    if (existing) {
+      const openExisting = confirm(
+        'Bu fırsat için zaten bir teklif oluşturulmuş:\n"' + existing.title + '"\n\nMevcut teklifi açmak ister misiniz?\n\nTamam = Mevcut teklifi aç\nİptal = Yine de yeni oluştur'
+      );
+      if (openExisting) { window.open(existing.quotationUrl, '_blank'); return; }
+    }
+  }
   try {
     showNotification('teklif-aciliyor', 'Teklif Programı', 'Teklif oluşturuluyor...', 'info');
     const res = await fetch(TEKLIF_API_URL, {
@@ -114,7 +143,30 @@ async function teklifOlustur(customer, opportunityTitle) {
     });
     const body = await res.json().catch(() => null);
     if (!res.ok) throw new Error(body?.error?.message ?? 'Sunucu hatası');
-    window.open(body.data.quotationUrl, '_blank');
+    const { quotationId, quotationUrl } = body.data;
+    // Aşama 1: CRM'e proposal kaydı oluştur (quotationId bağlantısıyla)
+    const propTitle = opportunityTitle || ((customer.firmName || customer.name || '') + ' — Teklif');
+    const propId = genId();
+    const propData = {
+      id: propId,
+      title: propTitle,
+      customerId: customer.id || '',
+      opportunityId: opportunityId || '',
+      preparedBy: state.currentUser?.displayName || '',
+      amount: 0,
+      status: 'Hazırlanıyor',
+      createdAt: today(),
+      validUntil: '',
+      sentDate: '',
+      notes: '',
+      quotationId: quotationId || '',
+      quotationUrl: quotationUrl || '',
+      ...stamp(),
+    };
+    await saveDoc('proposals', propId, propData);
+    setState({ proposals: [...state.proposals, propData] });
+    window.open(quotationUrl, '_blank');
+    showToast('✅ Teklif oluşturuldu ve Teklif Talepleri\'ne eklendi!');
   } catch(e) {
     alert('Teklif oluşturulamadı: ' + e.message);
   }
