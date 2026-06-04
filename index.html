@@ -3761,7 +3761,6 @@ function renderCustomers() {
         ),
         h('div',{style:{display:'flex',gap:'7px',flexShrink:'0'}},
           btn('Düzenle',()=>setState({modal:{type:'customer',item:c}}),'#eff6ff','#1d4ed8','7px 13px',{fontSize:'13px',border:'1px solid #bfdbfe',borderRadius:'7px'}),
-          btn('📋 Teklif Oluştur',()=>teklifOlustur(c,''),'#ecfdf5','#15803d','7px 13px',{fontSize:'13px',border:'1px solid #86efac',borderRadius:'7px'}),
           btn('Sil',()=>delItem('customers',c.id),'#fef2f2','#dc2626','7px 13px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
         )
       ),
