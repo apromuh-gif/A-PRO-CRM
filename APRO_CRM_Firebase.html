@@ -4695,6 +4695,56 @@ function render() {
   const tabBar = h('div',{className:'tab-scroll',style:{background:'#c0daf0',borderBottom:'1px solid #a8c8e4',padding:window.innerWidth<=768?'0 6px':'0 24px',overflowX:'auto'}},
     h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',gap:'2px',minWidth:'max-content'}},
       ...TABS.filter(t=>t.id!=='services'||t.l==='_SERVIS_MENU_').map(t=>{
+        if(t.l==='_TEKLIF_BTN_') {
+          const tBtn = h('button',{
+            style:{padding:window.innerWidth<=768?'8px 10px':'9px 15px',background:'linear-gradient(135deg,#16a34a,#15803d)',border:'none',cursor:'pointer',fontSize:window.innerWidth<=768?'11px':'13px',fontFamily:"'DM Sans',sans-serif",color:'#fff',whiteSpace:'nowrap',fontWeight:'700',borderRadius:'8px',margin:'6px 4px',boxShadow:'0 2px 6px rgba(21,128,61,.35)',display:'flex',alignItems:'center',gap:'5px'}
+          },'📋 Teklif Oluştur');
+          tBtn.addEventListener('click', e=>{
+            e.stopPropagation();
+            document.querySelectorAll('.teklif-dropdown').forEach(m=>m.remove());
+            const menu = document.createElement('div');
+            menu.className = 'teklif-dropdown';
+            menu.style.cssText = 'position:fixed;z-index:99999;background:#fff;border:1px solid #b0c8e0;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.18);min-width:280px;padding:10px;';
+            const rect = tBtn.getBoundingClientRect();
+            menu.style.top = (rect.bottom+6)+'px';
+            menu.style.left = Math.min(rect.left, window.innerWidth-300)+'px';
+            // Başlık
+            const title = document.createElement('div');
+            title.style.cssText = 'font-size:12px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.05em;padding:4px 6px 8px;border-bottom:1px solid #e2e8f0;margin-bottom:8px;';
+            title.textContent = 'Müşteri Seç';
+            menu.appendChild(title);
+            // Arama
+            const srch = document.createElement('input');
+            srch.placeholder = '🔍 Firma ara...';
+            srch.style.cssText = 'width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid #d0daea;border-radius:8px;font-size:13px;outline:none;margin-bottom:8px;';
+            menu.appendChild(srch);
+            // Liste
+            const list = document.createElement('div');
+            list.style.cssText = 'max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;';
+            const sorted = [...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
+            function renderList(q) {
+              list.innerHTML = '';
+              const filtered = q ? sorted.filter(c=>(c.firmName||'').toLowerCase().includes(q.toLowerCase())) : sorted;
+              if(!filtered.length){const emp=document.createElement('div');emp.style.cssText='padding:10px;text-align:center;color:#94a3b8;font-size:13px;';emp.textContent='Müşteri bulunamadı';list.appendChild(emp);return;}
+              filtered.forEach(c=>{
+                const row = document.createElement('button');
+                row.style.cssText = 'display:block;width:100%;padding:8px 12px;border:none;background:transparent;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px;color:#1e293b;text-align:left;font-weight:500;';
+                row.textContent = c.firmName || '—';
+                row.addEventListener('mouseover',()=>{ row.style.background='#f0fdf4';row.style.color='#15803d'; });
+                row.addEventListener('mouseout',()=>{ row.style.background='transparent';row.style.color='#1e293b'; });
+                row.addEventListener('click',()=>{ menu.remove(); teklifOlustur(c,''); });
+                list.appendChild(row);
+              });
+            }
+            renderList('');
+            srch.addEventListener('input',()=>renderList(srch.value));
+            menu.appendChild(list);
+            document.body.appendChild(menu);
+            srch.focus();
+            setTimeout(()=>document.addEventListener('click',function hh(e){if(!menu.contains(e.target)&&e.target!==tBtn){menu.remove();document.removeEventListener('click',hh);}},true),10);
+          });
+          return tBtn;
+        }
         if(t.l==='_SERVIS_MENU_') {
           // Servis dropdown tab butonu
           const isActive = isServiceTab;
