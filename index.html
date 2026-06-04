@@ -238,7 +238,12 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         setState({ opportunities: state.opportunities.map(o => o.id===opportunityId ? updatedOpp : o) });
       }
     }
-    window.open(quotationUrl, '_blank');
+    // Otomatik oturum: CRM kullanıcısı teklif programına direkt girer
+    const sessionToken = await getCrmSessionToken();
+    const openUrl = sessionToken
+      ? `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations/${quotationId}`
+      : quotationUrl;
+    window.open(openUrl, '_blank');
     showToast('✅ Teklif oluşturuldu — Fırsat ve Teklif Talepleri güncellendi!');
   } catch(e) {
     alert('Teklif oluşturulamadı: ' + e.message);
