@@ -519,6 +519,8 @@ async function saveFirm(form, isEdit) {
   const list = isEdit ? state.customers.map(c=>c.id===id?data:c) : [...state.customers, data];
   setState({customers:list, modal:null, saving:false});
   showToast('✅ Firma kaydedildi!');
+  // Aşama 3: Teklif Programı'nı senkronize et (sessiz, fire-and-forget)
+  if (isEdit) syncCustomerToTeklif(data);
 }
 
 async function saveAppointment(form, isEdit) {
