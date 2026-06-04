@@ -3924,8 +3924,13 @@ function makeScrollTable(thead, tbody, colWidths, isEmpty, emptyMsg) {
   strip.addEventListener('scroll',()=>{if(!_s)syncAll(strip.scrollLeft);});
   bodyWrap.addEventListener('scroll',()=>{if(!_s)syncAll(bodyWrap.scrollLeft);});
 
-  outer.appendChild(headWrap);
-  outer.appendChild(stripRow);
+  // Sticky tablo başlığı sarmalayıcısı
+  const stickyHead=document.createElement('div');
+  stickyHead.className='apro-sticky-head';
+  stickyHead.style.cssText='position:sticky;top:0;z-index:10;overflow:hidden;border-radius:14px 14px 0 0';
+  stickyHead.appendChild(headWrap);
+  stickyHead.appendChild(stripRow);
+  outer.appendChild(stickyHead);
   outer.appendChild(bodyWrap);
   if(isEmpty){const e=document.createElement('div');e.style.cssText='padding:38px;text-align:center;color:#8ba3b8';e.textContent=emptyMsg;outer.appendChild(e);}
 
