@@ -3873,7 +3873,7 @@ function makeScrollTable(thead, tbody, colWidths, isEmpty, emptyMsg) {
   }
   const minW=colWidths.reduce((a,b)=>a+b,0)+'px';
   const outer=document.createElement('div');
-  outer.style.cssText='background:#edf5fc;border:1px solid #b0c8e0;border-radius:14px;box-shadow:0 2px 8px rgba(20,40,80,.12);overflow:hidden';
+  outer.style.cssText='background:#edf5fc;border:1px solid #b0c8e0;border-radius:14px;box-shadow:0 2px 8px rgba(20,40,80,.12);overflow:clip';
 
   // HEADER — taşma yok, JS ile kaydırılır
   const headWrap=document.createElement('div');
