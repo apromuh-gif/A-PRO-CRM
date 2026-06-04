@@ -4745,7 +4745,8 @@ function render() {
     return h('div',{style:{background:'#b0cce8',borderBottom:'1px solid #90b4d4',padding:'6px 24px'}},
       h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',alignItems:'center',gap:'9px'}},
         h('span',{},'🌐'),h('span',{style:{fontSize:'12px',color:'#0f2040',fontWeight:'700'}},'Firebase Veritabanı'),h('span',{style:{fontSize:'12px',color:'#2a5080'}},'— Gerçek zamanlı senkronizasyon'),
-        h('span',{style:{marginLeft:'auto',fontSize:'12px',color:'#2a5080',fontWeight:'500'}},state.customers.length+' firma · '+state.opportunities.length+' fırsat · '+state.proposals.length+' teklif · '+state.services.length+' servis · '+state.maintenances.length+' bakım')
+        h('span',{style:{marginLeft:'auto',fontSize:'12px',color:'#2a5080',fontWeight:'500'}},state.customers.length+' firma · '+state.opportunities.length+' fırsat · '+state.proposals.length+' teklif · '+state.services.length+' servis · '+state.maintenances.length+' bakım'),
+        h('a',{href:'KULLANIM_KILAVUZU.html',target:'_blank',style:{marginLeft:'12px',background:'#1e3a6e',color:'#fff',padding:'4px 12px',borderRadius:'20px',fontSize:'11px',fontWeight:'700',textDecoration:'none',whiteSpace:'nowrap',letterSpacing:'.03em'}},'❓ Yardım')
       )
     );
   })()
