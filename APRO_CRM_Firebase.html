@@ -3941,7 +3941,7 @@ function renderOpportunities() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},
         btn('Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),
         (()=>{const cust=state.customers.find(c=>String(c.id)===String(o.customerId)||c.name===o.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),
-        btn('📋 Teklif',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','6px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}),
+        o.quotationUrl?h('a',{href:o.quotationUrl,target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#f0fdf4',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'12px',textDecoration:'none',border:'1px solid #86efac',fontWeight:'600',whiteSpace:'nowrap'}},'🔗 Teklif Programı'):btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','6px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}),
         btn('Sil',()=>delItem('opportunities',o.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})
       ))
     );
