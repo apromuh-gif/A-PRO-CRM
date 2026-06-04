@@ -698,7 +698,17 @@ async function saveSupplier(form, isEdit) {
 }
 
 async function delItem(col, id) {
-  if(!confirm('Silmek istiyor musunuz?')) return;
+  if(col==='proposals') {
+    const p = state.proposals.find(x=>x.id===id);
+    const korunan = ['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];
+    if(p && korunan.includes(p.status)) {
+      showToast('⛔ "'+p.status+'" durumundaki teklif silinemez.');
+      return;
+    }
+    if(!confirm('Bu teklif taslağını silmek istediğinizden emin misiniz?')) return;
+  } else {
+    if(!confirm('Silmek istiyor musunuz?')) return;
+  }
   await deleteDoc(col, id);
   if(col==='customers') setState({customers:state.customers.filter(x=>x.id!==id)});
   else if(col==='opportunities') setState({opportunities:state.opportunities.filter(x=>x.id!==id)});
