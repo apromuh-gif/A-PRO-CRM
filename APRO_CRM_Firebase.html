@@ -4069,7 +4069,8 @@ function renderProposals() {
             p.preparedBy?h('span',{style:{background:'#faf5ff',color:'#7c3aed',padding:'3px 8px',borderRadius:'12px',fontSize:'11px'}},'👤 '+p.preparedBy):h('span')
           ),
           p.validUntil?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'⏰ Dead Line: '+_toTR(p.validUntil)):h('span'),
-          h('div',{style:{display:'flex',gap:'8px'}},
+          h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+            p.quotationUrl?btn('🔗 Teklif Programı',()=>window.open(p.quotationUrl,'_blank'),'#f0fdf4','#15803d','7px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}):h('span'),
             btn('✏️ Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#1d4ed8','7px 14px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',flex:'1'}),
             btn('🗑️',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
