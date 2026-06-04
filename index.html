@@ -4952,7 +4952,13 @@ function render() {
   const isMobMain = window.innerWidth <= 768;
   const main = h('div',{style:{maxWidth:'1400px',margin:'0 auto',padding:isMobMain?'12px':'20px'}},content);
 
-  root.appendChild(h('div',{style:{minHeight:'100vh',background:'#d0e4f4'}},navbar,infobar,tabBar,main));
+  const stickyTop=h('div',{id:'apro-top',style:{position:'sticky',top:'0',zIndex:'200',background:'#d0e4f4'}},navbar,infobar,tabBar);
+  root.appendChild(h('div',{style:{minHeight:'100vh',background:'#d0e4f4'}},stickyTop,main));
+  // Tablo başlıkları sticky top'unu üst bar yüksekliğine göre ayarla
+  requestAnimationFrame(()=>{
+    const topEl=document.getElementById('apro-top');
+    if(topEl){const ht=topEl.offsetHeight+'px';document.querySelectorAll('.apro-sticky-head').forEach(el=>el.style.top=ht);}
+  });
 
   // TOAST
   if(state.toast) {
