@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A-PRO Mühendislik — Kullanım Kılavuzu</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; color: #1e293b; }
+
+  /* Sidebar */
+  .sidebar {
+    position: fixed; top: 0; left: 0; width: 260px; height: 100vh;
+    background: #0f1f35; overflow-y: auto; padding: 24px 0;
+    z-index: 100;
+  }
+  .sidebar-logo {
+    padding: 0 20px 20px; border-bottom: 1px solid rgba(255,255,255,.1);
+    font-size: 13px; font-weight: 800; color: #fff; letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .sidebar-logo span { color: #60a5fa; }
+  .sidebar-logo small { display: block; font-size: 10px; font-weight: 400; color: #94a3b8; margin-top: 3px; text-transform: none; letter-spacing: 0; }
+  .nav-section { padding: 16px 20px 4px; font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .1em; }
+  .nav-item { display: block; padding: 9px 20px; font-size: 13px; color: #94a3b8; text-decoration: none; cursor: pointer; transition: all .15s; border-left: 3px solid transparent; }
+  .nav-item:hover, .nav-item.active { color: #fff; background: rgba(255,255,255,.05); border-left-color: #3b82f6; }
+
+  /* Main */
+  .main { margin-left: 260px; min-height: 100vh; }
+  .hero {
+    background: linear-gradient(135deg, #0f1f35 0%, #1e3a6e 100%);
+    padding: 56px 48px; color: #fff;
+  }
+  .hero h1 { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+  .hero p { color: #94a3b8; font-size: 14px; }
+  .hero-badges { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .badge { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); color: #e2e8f0; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+
+  /* System cards */
+  .sys-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 32px 48px; }
+  .sys-card { background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.06); border: 1px solid #e2e8f0; }
+  .sys-card h3 { font-size: 15px; font-weight: 800; color: #0f1f35; margin-bottom: 4px; }
+  .sys-card .sys-url { font-size: 11px; color: #3b82f6; margin-bottom: 14px; font-weight: 600; }
+  .sys-card ul { list-style: none; }
+  .sys-card ul li { font-size: 13px; color: #475569; padding: 4px 0; display: flex; align-items: center; gap: 8px; }
+  .sys-card ul li::before { content: '✓'; color: #10b981; font-weight: 700; font-size: 11px; }
+
+  /* Content sections */
+  .content { padding: 32px 48px; }
+  .section { background: #fff; border-radius: 16px; padding: 32px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.06); border: 1px solid #e2e8f0; }
+  .section-title { font-size: 20px; font-weight: 800; color: #0f1f35; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; }
+  .section-title .num { width: 32px; height: 32px; background: #1e3a6e; color: #fff; border-radius: 8px; display: flex; align-items: center; justify-Content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+  .section-sub { font-size: 13px; color: #64748b; margin-bottom: 24px; }
+  h3.sub { font-size: 15px; font-weight: 700; color: #1e3a6e; margin: 24px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #e0e7ef; }
+  h3.sub:first-child { margin-top: 0; }
+  p { font-size: 14px; color: #475569; line-height: 1.7; margin-bottom: 12px; }
+
+  /* Steps */
+  .steps { list-style: none; counter-reset: step; }
+  .steps li { counter-increment: step; display: flex; gap: 14px; margin-bottom: 12px; align-items: flex-start; }
+  .steps li::before { content: counter(step); width: 26px; height: 26px; background: #1e3a6e; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .steps li span { font-size: 14px; color: #334155; line-height: 1.6; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+  th { background: #1e2d4a; color: #fff; padding: 10px 14px; text-align: left; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; color: #334155; }
+  tr:hover td { background: #f8fafc; }
+
+  /* Status badges */
+  .status { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+  .s-orange { background: #fff7ed; color: #c2410c; }
+  .s-blue   { background: #eff6ff; color: #1d4ed8; }
+  .s-purple { background: #faf5ff; color: #7c3aed; }
+  .s-green  { background: #f0fdf4; color: #15803d; }
+  .s-red    { background: #fef2f2; color: #dc2626; }
+  .s-gray   { background: #f8fafc; color: #475569; }
+  .s-indigo { background: #eef2ff; color: #4338ca; }
+  .s-yellow { background: #fffbeb; color: #92400e; }
+
+  /* Info box */
+  .info { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 14px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .info p { color: #1e40af; margin: 0; font-size: 13px; }
+  .warn { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 16px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+  .warn p { color: #92400e; margin: 0; font-size: 13px; }
+
+  /* Flow box */
+  .flow { background: #0f1f35; border-radius: 12px; padding: 20px 24px; margin: 16px 0; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; color: #e2e8f0; line-height: 2; }
+  .flow .step-line { display: flex; align-items: center; gap: 10px; }
+  .flow .arrow { color: #60a5fa; }
+  .flow .note { color: #94a3b8; font-size: 11px; margin-left: 8px; }
+
+  /* Button preview */
+  .btn-preview { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 7px; font-size: 12px; font-weight: 600; margin: 2px; }
+  .btn-green { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
+  .btn-blue  { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+  .btn-red   { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+  .btn-link  { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; text-decoration: none; }
+
+  /* FAQ */
+  .faq-item { border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+  .faq-q { padding: 16px 20px; font-size: 14px; font-weight: 700; color: #0f1f35; cursor: pointer; display: flex; justify-content: space-between; align-items: center; background: #f8fafc; }
+  .faq-q:hover { background: #f1f5f9; }
+  .faq-a { padding: 0 20px; max-height: 0; overflow: hidden; transition: max-height .3s ease, padding .3s ease; }
+  .faq-a.open { max-height: 200px; padding: 14px 20px; }
+  .faq-a p { margin: 0; color: #475569; }
+  .chevron { transition: transform .3s; color: #64748b; }
+  .chevron.open { transform: rotate(180deg); }
+
+  /* Mobile */
+  @media (max-width: 768px) {
+    .sidebar { width: 100%; height: auto; position: relative; }
+    .main { margin-left: 0; }
+    .sys-grid { grid-template-columns: 1fr; padding: 16px; }
+    .content { padding: 16px; }
+    .hero { padding: 32px 20px; }
+    .hero h1 { font-size: 22px; }
+    .section { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sidebar-logo">
+    A-PRO <span>Nexora</span>
+    <small>Kullanım Kılavuzu</small>
+  </div>
+
+  <div class="nav-section">Genel</div>
+  <div class="nav-item active" onclick="scrollTo('intro')">🏠 Sistemlere Genel Bakış</div>
+
+  <div class="nav-section">A-PRO CRM</div>
+  <div class="nav-item" onclick="scrollTo('dashboard')">📊 Dashboard</div>
+  <div class="nav-item" onclick="scrollTo('customers')">👥 Müşteriler</div>
+  <div class="nav-item" onclick="scrollTo('opportunities')">🎯 Fırsatlar</div>
+  <div class="nav-item" onclick="scrollTo('proposals')">📄 Teklif Talepleri</div>
+  <div class="nav-item" onclick="scrollTo('appointments')">📅 Randevu & Ziyaret</div>
+  <div class="nav-item" onclick="scrollTo('service')">🔧 Servis & Bakım</div>
+
+  <div class="nav-section">Teklif Programı</div>
+  <div class="nav-item" onclick="scrollTo('tp-intro')">🗂 Genel Bakış</div>
+  <div class="nav-item" onclick="scrollTo('tp-create')">➕ Teklif Oluşturma</div>
+
+  <div class="nav-section">Entegrasyon</div>
+  <div class="nav-item" onclick="scrollTo('integration')">🔗 CRM'den Teklif Aç</div>
+  <div class="nav-item" onclick="scrollTo('workflows')">📋 İş Akışları</div>
+  <div class="nav-item" onclick="scrollTo('faq')">❓ Sık Sorulan Sorular</div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>A-PRO Mühendislik — Kullanım Kılavuzu</h1>
+    <p>A-PRO CRM (Nexora) ve A-PRO Teklif Programı için kapsamlı kullanım rehberi</p>
+    <div class="hero-badges">
+      <span class="badge">📅 Haziran 2026</span>
+      <span class="badge">🌐 apromuh-gif.github.io/A-PRO-CRM</span>
+      <span class="badge">🧾 apro-platform.vercel.app</span>
+    </div>
+  </div>
+
+  <!-- System Overview -->
+  <div class="sys-grid" id="intro">
+    <div class="sys-card">
+      <h3>📱 A-PRO CRM (Nexora)</h3>
+      <div class="sys-url">apromuh-gif.github.io/A-PRO-CRM</div>
+      <ul>
+        <li>Müşteri ilişkileri takibi</li>
+        <li>Satış fırsatı yönetimi</li>
+        <li>Teklif talep takibi</li>
+        <li>Randevu ve ziyaret kaydı</li>
+        <li>Servis ve bakım takibi</li>
+        <li>Bildirim ve görev atama</li>
+      </ul>
+    </div>
+    <div class="sys-card">
+      <h3>🧾 A-PRO Teklif Programı</h3>
+      <div class="sys-url">apro-platform.vercel.app</div>
+      <ul>
+        <li>Detaylı mühendislik teklifi hazırlama</li>
+        <li>Kalem kalem fiyatlandırma</li>
+        <li>Revizyon ve onay süreci</li>
+        <li>TCMB kuru otomatik dönüşüm</li>
+        <li>PDF çıktı ve arşiv</li>
+        <li>Teklif numaralandırma</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- CRM Dashboard -->
+    <div class="section" id="dashboard">
+      <div class="section-title"><div class="num">1</div> Dashboard</div>
+      <div class="section-sub">Sisteme giriş yaptığınızda açılan özet ekran</div>
+
+      <p>Dashboard'da tek bakışta şunları görürsünüz:</p>
+      <table>
+        <tr><th>Alan</th><th>Ne gösterir</th></tr>
+        <tr><td>📊 Pipeline Değeri</td><td>Aktif fırsatların toplam tutarı (EUR)</td></tr>
+        <tr><td>🎯 Bu Ay Hedef</td><td>Yıllık hedefin aylık dağılımı ve gerçekleşme</td></tr>
+        <tr><td>🥧 Fırsat Dağılımı</td><td>Kazanıldı / Devam Eden / Kaybedilen pasta grafik</td></tr>
+        <tr><td>📅 Yaklaşan Randevular</td><td>Bugün ve bu haftaki planlanmış randevular</td></tr>
+        <tr><td>🔔 Bildirimler</td><td>Size atanan görevler ve sistem bildirimleri (sağ üst zil)</td></tr>
+      </table>
+    </div>
+
+    <!-- Müşteriler -->
+    <div class="section" id="customers">
+      <div class="section-title"><div class="num">2</div> Müşteriler</div>
+      <div class="section-sub">Tüm firma ve müşteri bilgilerinin yönetildiği yer</div>
+
+      <h3 class="sub">Yeni Müşteri Eklemek</h3>
+      <ol class="steps">
+        <li><span><strong>👥 Müşteriler</strong> sekmesine gidin</span></li>
+        <li><span><strong>+ Yeni Firma</strong> butonuna tıklayın</span></li>
+        <li><span>Firma adı, telefon, e-posta, web sitesi ve sektör bilgilerini doldurun</span></li>
+        <li><span><strong>Kaydet</strong> — kayıt anında sisteme yazılır</span></li>
+      </ol>
+
+      <div class="warn"><p>⚠️ <strong>Önemli:</strong> Telefon veya e-posta girilmiş müşteriler Teklif Programı ile daha sağlıklı eşleşir. Mümkün olduğunca doldurun.</p></div>
+
+      <h3 class="sub">Müşteri Kartındaki Butonlar</h3>
+      <table>
+        <tr><th>Buton</th><th>Ne yapar</th></tr>
+        <tr><td><span class="btn-preview">💬</span></td><td>WhatsApp'a direkt bağlantı (telefon girilmişse görünür)</td></tr>
+        <tr><td><span class="btn-preview btn-green">📋 Teklif Oluştur</span></td><td>Bu müşteri için Teklif Programı'nda yeni teklif açar</td></tr>
+        <tr><td><span class="btn-preview btn-blue">Düzenle</span></td><td>Bilgileri güncelle — değişiklik Teklif Programı'na da yansır</td></tr>
+        <tr><td><span class="btn-preview btn-red">Sil</span></td><td>Müşteriyi sil</td></tr>
+      </table>
+    </div>
+
+    <!-- Fırsatlar -->
+    <div class="section" id="opportunities">
+      <div class="section-title"><div class="num">3</div> Fırsatlar</div>
+      <div class="section-sub">Satış sürecindeki her iş için bir fırsat açılır</div>
+
+      <h3 class="sub">Yeni Fırsat Eklemek</h3>
+      <ol class="steps">
+        <li><span><strong>🎯 Fırsatlar</strong> sekmesi → <strong>+ Yeni Fırsat</strong></span></li>
+        <li><span>Başlık, müşteri ve tahmini değer (EUR) girin</span></li>
+        <li><span>Aşama ve sorumlu kişiyi seçin</span></li>
+        <li><span>Kaydedin — fırsat pipeline'a eklenir</span></li>
+      </ol>
+
+      <h3 class="sub">Fırsat Aşamaları</h3>
+      <table>
+        <tr><th>Aşama</th><th>Anlamı</th></tr>
+        <tr><td><span class="status s-orange">SICAK-1</span></td><td>İlk temas, ilgi var</td></tr>
+        <tr><td><span class="status s-red">SICAK-2</span></td><td>Görüşmeler ilerledi, karar aşamasında</td></tr>
+        <tr><td><span class="status s-blue">TEKLİF</span></td><td>Teklif hazırlanıyor veya gönderildi</td></tr>
+        <tr><td><span class="status s-yellow">ERTELENDİ</span></td><td>Geçici duraksama</td></tr>
+        <tr><td><span class="status s-indigo">KAZANILDI</span></td><td>Sözleşme imzalandı ✓</td></tr>
+        <tr><td><span class="status s-gray">KAÇTI</span></td><td>Rakibe gitti</td></tr>
+        <tr><td><span class="status s-gray">NO GO</span></td><td>Müşteri vazgeçti</td></tr>
+        <tr><td><span class="status s-gray">FIRSAT ÖLDÜ</span></td><td>İptal / geçersiz</td></tr>
+      </table>
+
+      <h3 class="sub">Fırsat Satırındaki Butonlar</h3>
+      <table>
+        <tr><th>Buton</th><th>Ne yapar</th></tr>
+        <tr><td><span class="btn-preview btn-green">📋 Teklif Oluştur</span></td><td>Teklif henüz oluşturulmamışsa görünür — tıklamak Teklif Programı'nı açar</td></tr>
+        <tr><td><a class="btn-preview btn-link">🔗 Teklif Programı</a></td><td>Teklif oluşturulmuşsa görünür — tıklamak ilgili teklifi açar</td></tr>
+        <tr><td><span class="btn-preview">💬</span></td><td>Müşteriye WhatsApp</td></tr>
+        <tr><td><span class="btn-preview btn-blue">Düzenle</span></td><td>Fırsat bilgilerini güncelle</td></tr>
+        <tr><td><span class="btn-preview btn-red">Sil</span></td><td>Fırsatı sil</td></tr>
+      </table>
+
+      <div class="info"><p>ℹ️ <strong>İpucu:</strong> Fırsata teklif oluşturulduğunda buton otomatik olarak <strong>🔗 Teklif Programı</strong> linkine dönüşür. Bu link, doğrudan o fırsatın teklifini açar.</p></div>
+    </div>
+
+    <!-- Teklif Talepleri -->
+    <div class="section" id="proposals">
+      <div class="section-title"><div class="num">4</div> Teklif Talepleri</div>
+      <div class="section-sub">Müşteriden gelen teklif taleplerinin takip edildiği yer — teklifin kalemleri Teklif Programı'nda hazırlanır</div>
+
+      <h3 class="sub">Teklif Talebi Statüleri</h3>
+      <table>
+        <tr><th>Statü</th><th>Ne anlama gelir</th></tr>
+        <tr><td><span class="status s-orange">Hazırlanıyor</span></td><td>Teklif üzerinde çalışılıyor</td></tr>
+        <tr><td><span class="status s-blue">Gönderildi</span></td><td>Müşteriye iletildi</td></tr>
+        <tr><td><span class="status s-purple">Revize</span></td><td>Müşteri değişiklik istedi</td></tr>
+        <tr><td><span class="status s-blue">Randevu</span></td><td>Yüz yüze görüşme planlandı</td></tr>
+        <tr><td><span class="status s-green">Onaylandı</span></td><td>Müşteri kabul etti ✓</td></tr>
+        <tr><td><span class="status s-red">Reddedildi</span></td><td>Müşteri reddetti</td></tr>
+      </table>
+
+      <h3 class="sub">Manuel Teklif Talebi Açmak</h3>
+      <ol class="steps">
+        <li><span><strong>+ Yeni Teklif</strong> butonuna tıklayın</span></li>
+        <li><span>Başlık, müşteri, hazırlayan ve son tarih girin</span></li>
+        <li><span>Statüyü takip edin — durum değiştikçe güncelleyin</span></li>
+      </ol>
+
+      <div class="info"><p>ℹ️ Fırsattan <strong>Teklif Oluştur</strong>'a basıldığında bu sekmede otomatik kayıt açılır ve <strong>🔗 Teklif Programı</strong> linki eklenir.</p></div>
+    </div>
+
+    <!-- Randevu & Ziyaret -->
+    <div class="section" id="appointments">
+      <div class="section-title"><div class="num">5</div> Randevu & Ziyaret</div>
+      <div class="section-sub">Müşteri toplantıları ve saha ziyaretleri</div>
+
+      <h3 class="sub">Randevu</h3>
+      <ol class="steps">
+        <li><span><strong>📅 Randevular</strong> sekmesi → <strong>+ Yeni Randevu</strong></span></li>
+        <li><span>Müşteri, tarih, saat ve sorumlu kişiyi seçin</span></li>
+        <li><span>Görüşme sonunda statüyü güncelleyin: <span class="status s-green">Tamamlandı</span> / <span class="status s-red">İptal</span> / <span class="status s-yellow">Ertelendi</span></span></li>
+      </ol>
+
+      <div class="info"><p>ℹ️ Yaklaşan randevular Dashboard'da ve bildirimler bölümünde otomatik görünür.</p></div>
+
+      <h3 class="sub">Ziyaret</h3>
+      <p>Saha ziyareti yapıldığında not almak için kullanın. Ziyaret tarihi, müşteri ve notları kaydedin.</p>
+    </div>
+
+    <!-- Servis & Bakım -->
+    <div class="section" id="service">
+      <div class="section-title"><div class="num">6</div> Servis & Bakım</div>
+      <div class="section-sub">Satış sonrası teknik hizmet takibi</div>
+
+      <table>
+        <tr><th>Modül</th><th>Ne için</th></tr>
+        <tr><td>🔧 Servis</td><td>Tek seferlik teknik işler — arıza giderme, kurulum, devreye alma</td></tr>
+        <tr><td>🔄 Bakım</td><td>Periyodik bakım sözleşmeleri ve ziyaretleri</td></tr>
+      </table>
+
+      <p style="margin-top:12px">Her iki modülde de müşteri, sorumlu kişi, tutar ve tamamlanma durumu takip edilir.</p>
+    </div>
+
+    <!-- Teklif Programı -->
+    <div class="section" id="tp-intro">
+      <div class="section-title"><div class="num">7</div> Teklif Programı — Genel Bakış</div>
+      <div class="section-sub">apro-platform.vercel.app</div>
+
+      <p>Teklif Programı, mühendislik tekliflerinin kalem kalem hazırlandığı sistemdir. CRM ile entegre çalışır.</p>
+
+      <h3 class="sub">Teklif Yapısı</h3>
+      <div class="flow">
+        <div>📋 Teklif (Quotation)</div>
+        <div style="padding-left:20px">└── 📝 Revizyon — fiyatlar burada</div>
+        <div style="padding-left:48px">└── Bölüm A: Malzeme</div>
+        <div style="padding-left:48px">└── Bölüm B: İşçilik</div>
+        <div style="padding-left:48px">└── ... (ihtiyaca göre)</div>
+      </div>
+
+      <table>
+        <tr><th>Özellik</th><th>Detay</th></tr>
+        <tr><td>Para birimi</td><td>EUR (varsayılan) — TRY ve USD de kullanılabilir</td></tr>
+        <tr><td>Döviz kuru</td><td>TCMB'den otomatik çekilir</td></tr>
+        <tr><td>Başlangıç statüsü</td><td>DRAFT — içerik tamamlandıktan sonra SENT yapılır</td></tr>
+        <tr><td>Revizyon</td><td>Her değişiklik için yeni revizyon açılır, eskisi arşivde kalır</td></tr>
+      </table>
+    </div>
+
+    <!-- Teklif Oluşturma -->
+    <div class="section" id="tp-create">
+      <div class="section-title"><div class="num">8</div> Teklif Oluşturma</div>
+      <div class="section-sub">İki farklı yol</div>
+
+      <h3 class="sub">Yol 1 — CRM'den (Önerilen)</h3>
+      <ol class="steps">
+        <li><span>CRM'de ilgili fırsatı bulun</span></li>
+        <li><span>Satır sonundaki <span class="btn-preview btn-green">📋 Teklif Oluştur</span> butonuna tıklayın</span></li>
+        <li><span>Teklif Programı yeni sekmede açılır — müşteri zaten eşleştirilmiş, proje adı fırsat başlığından gelmiş</span></li>
+        <li><span>Kalemleri ekleyin, fiyatları girin</span></li>
+      </ol>
+
+      <h3 class="sub">Yol 2 — Doğrudan Teklif Programı'ndan</h3>
+      <ol class="steps">
+        <li><span>Sol menüden <strong>Teklifler</strong> → <strong>+ Yeni Teklif</strong></span></li>
+        <li><span>Müşteriyi seçin veya oluşturun</span></li>
+        <li><span>Proje adı ve para birimini girin</span></li>
+        <li><span>Kalemleri doldurun</span></li>
+      </ol>
+    </div>
+
+    <!-- Entegrasyon -->
+    <div class="section" id="integration">
+      <div class="section-title"><div class="num">9</div> CRM'den Teklif Oluşturma — Tam Akış</div>
+      <div class="section-sub">İki sistem arasındaki entegrasyon nasıl çalışır</div>
+
+      <div class="flow">
+        <div>1. CRM → Fırsatlar sekmesi</div>
+        <div>2. İlgili fırsatı bul</div>
+        <div>3. <span style="color:#86efac">📋 Teklif Oluştur</span> butonuna tıkla</div>
+        <div style="color:#94a3b8; font-size:12px; margin: 4px 0;">   → Müşteri otomatik eşleştirilir (telefon/e-posta ile)</div>
+        <div style="color:#94a3b8; font-size:12px; margin-bottom:8px;">   → Proje adı fırsat başlığından gelir</div>
+        <div>4. Teklif Programı'nda kalemleri gir</div>
+        <div>5. CRM'e dön:</div>
+        <div style="color:#86efac; padding-left:20px">✓ Fırsat satırında 🔗 Teklif Programı linki görünür</div>
+        <div style="color:#86efac; padding-left:20px">✓ Teklif Talepleri'nde kayıt otomatik açılmıştır</div>
+      </div>
+
+      <h3 class="sub">Mükerrer Teklif Koruması</h3>
+      <p>Aynı fırsat için <strong>Teklif Oluştur</strong>'a tekrar basılırsa sistem uyarı verir:</p>
+      <div class="info"><p>💬 <em>"Bu fırsat için zaten bir teklif oluşturulmuş. Mevcut teklifi açmak ister misiniz?"</em><br><br><strong>Tamam</strong> = Mevcut teklifi aç &nbsp;|&nbsp; <strong>İptal</strong> = Yine de yeni oluştur</p></div>
+      <p>Genellikle <strong>Tamam</strong> seçin — aynı fırsat için çift teklif oluşturmaktan kaçının.</p>
+
+      <h3 class="sub">Müşteri Güncelleme Senkronizasyonu</h3>
+      <p>CRM'de bir müşterinin telefon veya e-posta bilgisi değiştirilip kaydedildiğinde, Teklif Programı'ndaki kayıt da otomatik güncellenir. Ayrıca bir şey yapmanıza gerek yoktur.</p>
+    </div>
+
+    <!-- İş Akışları -->
+    <div class="section" id="workflows">
+      <div class="section-title"><div class="num">10</div> Tipik İş Akışları</div>
+
+      <h3 class="sub">📌 Yeni Müşteri → Fırsat → Teklif</h3>
+      <ol class="steps">
+        <li><span>Müşteriler → <strong>+ Yeni Firma</strong> (telefon ve e-posta girin)</span></li>
+        <li><span>Fırsatlar → <strong>+ Yeni Fırsat</strong> (müşteriyi seçin, aşama: <span class="status s-orange">SICAK-1</span>)</span></li>
+        <li><span>Fırsat satırı → <span class="btn-preview btn-green">📋 Teklif Oluştur</span></span></li>
+        <li><span>Teklif Programı'nda kalemleri girin ve teklifi müşteriye gönderin</span></li>
+        <li><span>CRM → Fırsat aşamasını <span class="status s-blue">TEKLİF</span> yapın</span></li>
+        <li><span>Teklif onaylandığında → aşama: <span class="status s-indigo">KAZANILDI</span></span></li>
+      </ol>
+
+      <h3 class="sub">📌 Müşteriden Gelen Teklif Talebi Takibi</h3>
+      <ol class="steps">
+        <li><span>Müşteri telefon/e-posta ile teklif istedi</span></li>
+        <li><span>Teklif Talepleri → <strong>+ Yeni Teklif</strong> (başlık ve müşteri girin, statü: <span class="status s-orange">Hazırlanıyor</span>)</span></li>
+        <li><span>İlgili fırsattan <span class="btn-preview btn-green">📋 Teklif Oluştur</span>'a basın → Teklif Talebi otomatik güncellenir</span></li>
+        <li><span>Teklif gönderilince statüyü → <span class="status s-blue">Gönderildi</span> yapın</span></li>
+        <li><span>Müşteriden yanıt gelince → <span class="status s-green">Onaylandı</span> veya <span class="status s-red">Reddedildi</span></span></li>
+      </ol>
+
+      <h3 class="sub">📌 Revizyon Talebi</h3>
+      <ol class="steps">
+        <li><span>Teklif Talepleri → ilgili kaydı <strong>Düzenle</strong> → Statü: <span class="status s-purple">Revize</span></span></li>
+        <li><span>Satırdaki <a class="btn-preview btn-link">🔗 Teklif Programı</a> butonuyla teklifi açın</span></li>
+        <li><span>Teklif Programı'nda yeni revizyon oluşturun, değişiklikleri yapın</span></li>
+        <li><span>Teklifi tekrar gönderin → Statü: <span class="status s-blue">Gönderildi</span></span></li>
+      </ol>
+    </div>
+
+    <!-- SSS -->
+    <div class="section" id="faq">
+      <div class="section-title"><div class="num">11</div> Sık Sorulan Sorular</div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          Teklif Programı'nda müşteriyi bulamıyorum
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Müşteri, CRM'de telefon veya e-posta girilmeden kaydedilmiş olabilir. CRM'de müşteri kartını Düzenle → telefon/e-posta ekleyin → kaydedin. Bir sonraki teklifte otomatik eşleşir.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          Aynı fırsat için yanlışlıkla 2 teklif oluşturdum
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Teklif Programı'nda DRAFT durumdaki fazla teklifi silin. Doğru teklif, fırsat satırındaki <strong>🔗 Teklif Programı</strong> linki ile açılandır.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          Fırsat satırında Teklif Oluştur butonu yok
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Buton zaten 🔗 Teklif Programı linkine dönüşmüş demektir — bu fırsat için teklif oluşturulmuş. Linke tıklayarak mevcut teklifi açın.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          Teklif Talebi statüsü otomatik güncelleniyor mu?
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Hayır, statü otomatik güncellenmez. Teklif gönderildiğinde, onaylandığında veya reddedildiğinde CRM'den manuel güncelleyin.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          Teklif Programı'nda EUR yerine TRY kullanabilir miyim?
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Evet, teklif oluştururken para birimi seçilebilir. TCMB kuru üzerinden otomatik dönüşüm yapılır.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          Birden fazla revizyon olduğunda hangisi geçerli?
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Teklif Programı'nda en son aktif revizyon geçerlidir. Önceki revizyonlar arşivde saklanır ve görüntülenebilir.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="text-align:center; padding: 32px; color:#94a3b8; font-size:12px;">
+      A-PRO Mühendislik · Haziran 2026 · Teknik destek için sistem yöneticinize başvurun
+    </div>
+
+  </div>
+</div>
+
+<script>
+  function scrollTo(id) {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+  }
+
+  function toggleFaq(el) {
+    const answer = el.nextElementSibling;
+    const chevron = el.querySelector('.chevron');
+    answer.classList.toggle('open');
+    chevron.classList.toggle('open');
+  }
+
+  // Active nav on scroll
+  const sections = ['intro','dashboard','customers','opportunities','proposals','appointments','service','tp-intro','tp-create','integration','workflows','faq'];
+  window.addEventListener('scroll', () => {
+    let current = '';
+    sections.forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.getBoundingClientRect().top < 150) current = id;
+    });
+  });
+</script>
+</body>
+</html>
