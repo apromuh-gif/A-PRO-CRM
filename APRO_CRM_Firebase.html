@@ -114,8 +114,46 @@ function syncCustomerToTeklif(customer) {
   }).catch(() => {}); // Sessizce geç — CRM akışını engelleme
 }
 
-// Aşama 1+2: Teklif oluştur — mükerrer koruma + CRM'e quotationId kaydet
+// Teklif türü seçim ekranı — Promise döndürür (format kodu veya null)
+function selectTeklifFormat() {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;animation:fu .2s ease;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:18px;padding:28px 24px;width:380px;max-width:92vw;box-shadow:0 24px 60px rgba(0,0,0,.3);';
+    box.innerHTML = `
+      <div style="font-size:17px;font-weight:800;color:#0f1f35;margin-bottom:4px;">📋 Teklif Türü Seçin</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:20px;">Bu fırsat için hangi türde teklif hazırlanacak?</div>
+    `;
+    const formats = [
+      {value:'SYSTEM_SALES',  icon:'🏗️', label:'Sistem Satış',   desc:'Standart sistem satış teklifi'},
+      {value:'UNIT_PRICE',    icon:'📊', label:'Birim Fiyatlı',  desc:'Kalem bazlı birim fiyat teklifi'},
+      {value:'SYSTEM_ROLLUP', icon:'🗂️', label:'Sistem Master',  desc:'Çoklu sistem master teklif'},
+    ];
+    formats.forEach(f => {
+      const btn = document.createElement('button');
+      btn.style.cssText = 'display:flex;align-items:center;gap:14px;width:100%;padding:14px 16px;border:2px solid #e2e8f0;border-radius:12px;background:#fff;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:10px;transition:all .15s;';
+      btn.innerHTML = `<span style="font-size:26px;flex-shrink:0">${f.icon}</span><div><div style="font-size:14px;font-weight:700;color:#0f1f35">${f.label}</div><div style="font-size:12px;color:#64748b;margin-top:2px">${f.desc}</div></div>`;
+      btn.onmouseover = () => { btn.style.borderColor='#3b82f6'; btn.style.background='#eff6ff'; };
+      btn.onmouseout  = () => { btn.style.borderColor='#e2e8f0'; btn.style.background='#fff'; };
+      btn.onclick = () => { overlay.remove(); resolve(f.value); };
+      box.appendChild(btn);
+    });
+    const cancel = document.createElement('button');
+    cancel.textContent = 'İptal';
+    cancel.style.cssText = 'width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:transparent;cursor:pointer;font-family:inherit;font-size:13px;color:#64748b;margin-top:2px;';
+    cancel.onclick = () => { overlay.remove(); resolve(null); };
+    box.appendChild(cancel);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  });
+}
+
+// Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
 async function teklifOlustur(customer, opportunityTitle, opportunityId) {
+  // Format seçimi
+  const format = await selectTeklifFormat();
+  if (!format) return;
   // Aşama 2: Fırsata bağlı teklif zaten varsa uyar
   if (opportunityId) {
     const existing = state.proposals.find(p =>
