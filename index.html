@@ -206,31 +206,81 @@ function syncCustomerToTeklif(customer) {
 // Teklif türü seçim ekranı — Promise döndürür (format kodu veya null)
 function selectTeklifFormat() {
   return new Promise(resolve => {
+    let selFormat = null, selCurrency = null;
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;animation:fu .2s ease;';
     const box = document.createElement('div');
-    box.style.cssText = 'background:#fff;border-radius:18px;padding:28px 24px;width:380px;max-width:92vw;box-shadow:0 24px 60px rgba(0,0,0,.3);';
+    box.style.cssText = 'background:#fff;border-radius:18px;padding:28px 24px;width:400px;max-width:92vw;box-shadow:0 24px 60px rgba(0,0,0,.3);';
     box.innerHTML = `
       <div style="font-size:17px;font-weight:800;color:#0f1f35;margin-bottom:4px;">📋 Teklif Türü Seçin</div>
-      <div style="font-size:12px;color:#64748b;margin-bottom:20px;">Bu fırsat için hangi türde teklif hazırlanacak?</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:16px;">Bu fırsat için hangi türde teklif hazırlanacak?</div>
     `;
+    // Format butonları
+    const fmtBtns = [];
     const formats = [
       {value:'SYSTEM_SALES',  icon:'🏗️', label:'Sistem Satış',   desc:'Standart sistem satış teklifi'},
       {value:'UNIT_PRICE',    icon:'📊', label:'Birim Fiyatlı',  desc:'Kalem bazlı birim fiyat teklifi'},
       {value:'SYSTEM_ROLLUP', icon:'🗂️', label:'Sistem Master',  desc:'Çoklu sistem master teklif'},
     ];
     formats.forEach(f => {
-      const btn = document.createElement('button');
-      btn.style.cssText = 'display:flex;align-items:center;gap:14px;width:100%;padding:14px 16px;border:2px solid #e2e8f0;border-radius:12px;background:#fff;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:10px;transition:all .15s;';
-      btn.innerHTML = `<span style="font-size:26px;flex-shrink:0">${f.icon}</span><div><div style="font-size:14px;font-weight:700;color:#0f1f35">${f.label}</div><div style="font-size:12px;color:#64748b;margin-top:2px">${f.desc}</div></div>`;
-      btn.onmouseover = () => { btn.style.borderColor='#3b82f6'; btn.style.background='#eff6ff'; };
-      btn.onmouseout  = () => { btn.style.borderColor='#e2e8f0'; btn.style.background='#fff'; };
-      btn.onclick = () => { overlay.remove(); resolve(f.value); };
-      box.appendChild(btn);
+      const b = document.createElement('button');
+      b.style.cssText = 'display:flex;align-items:center;gap:14px;width:100%;padding:12px 16px;border:2px solid #e2e8f0;border-radius:12px;background:#fff;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;transition:all .15s;';
+      b.innerHTML = `<span style="font-size:24px;flex-shrink:0">${f.icon}</span><div><div style="font-size:14px;font-weight:700;color:#0f1f35">${f.label}</div><div style="font-size:12px;color:#64748b;margin-top:1px">${f.desc}</div></div>`;
+      b.onmouseover = () => { if(selFormat!==f.value){ b.style.borderColor='#93c5fd'; b.style.background='#f8faff'; }};
+      b.onmouseout  = () => { if(selFormat!==f.value){ b.style.borderColor='#e2e8f0'; b.style.background='#fff'; }};
+      b.onclick = () => {
+        selFormat = f.value;
+        fmtBtns.forEach(x => { x.style.borderColor='#e2e8f0'; x.style.background='#fff'; });
+        b.style.borderColor='#3b82f6'; b.style.background='#eff6ff';
+        syncConfirm();
+      };
+      box.appendChild(b);
+      fmtBtns.push(b);
     });
+    // Para birimi bölümü
+    const sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid #f1f5f9;margin:14px 0 12px;';
+    box.appendChild(sep);
+    const currTitle = document.createElement('div');
+    currTitle.style.cssText = 'font-size:13px;font-weight:700;color:#0f1f35;margin-bottom:10px;';
+    currTitle.textContent = '💱 Para Birimi';
+    box.appendChild(currTitle);
+    const currRow = document.createElement('div');
+    currRow.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;';
+    const currBtns = [];
+    [{value:'EUR',icon:'🇪🇺',label:'EUR',sub:'Euro'},{value:'USD',icon:'🇺🇸',label:'USD',sub:'Dolar'},{value:'TRY',icon:'🇹🇷',label:'TRY',sub:'Türk Lirası'}].forEach(c => {
+      const b = document.createElement('button');
+      b.style.cssText = 'flex:1;padding:10px 4px;border:2px solid #e2e8f0;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;color:#0f1f35;transition:all .15s;text-align:center;';
+      b.innerHTML = `<div style="font-size:20px;margin-bottom:3px">${c.icon}</div><div>${c.label}</div><div style="font-size:10px;color:#94a3b8;font-weight:400">${c.sub}</div>`;
+      b.onmouseover = () => { if(selCurrency!==c.value){ b.style.borderColor='#6ee7b7'; b.style.background='#f0fdf4'; }};
+      b.onmouseout  = () => { if(selCurrency!==c.value){ b.style.borderColor='#e2e8f0'; b.style.background='#fff'; }};
+      b.onclick = () => {
+        selCurrency = c.value;
+        currBtns.forEach(x => { x.style.borderColor='#e2e8f0'; x.style.background='#fff'; x.style.color='#0f1f35'; });
+        b.style.borderColor='#10b981'; b.style.background='#ecfdf5'; b.style.color='#065f46';
+        syncConfirm();
+      };
+      currRow.appendChild(b);
+      currBtns.push(b);
+    });
+    box.appendChild(currRow);
+    // Onayla butonu (ikisi seçilince aktif olur)
+    const confirmBtn = document.createElement('button');
+    confirmBtn.textContent = 'Teklif Oluştur →';
+    confirmBtn.disabled = true;
+    confirmBtn.style.cssText = 'width:100%;padding:11px;border:none;border-radius:10px;background:#cbd5e1;color:#fff;cursor:not-allowed;font-family:inherit;font-size:14px;font-weight:700;margin-bottom:8px;transition:all .15s;';
+    confirmBtn.onclick = () => { overlay.remove(); resolve({format: selFormat, currency: selCurrency}); };
+    box.appendChild(confirmBtn);
+    function syncConfirm() {
+      if(selFormat && selCurrency){
+        confirmBtn.disabled = false;
+        confirmBtn.style.background = '#2563eb';
+        confirmBtn.style.cursor = 'pointer';
+      }
+    }
     const cancel = document.createElement('button');
     cancel.textContent = 'İptal';
-    cancel.style.cssText = 'width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;background:transparent;cursor:pointer;font-family:inherit;font-size:13px;color:#64748b;margin-top:2px;';
+    cancel.style.cssText = 'width:100%;padding:9px;border:1px solid #e2e8f0;border-radius:8px;background:transparent;cursor:pointer;font-family:inherit;font-size:13px;color:#64748b;';
     cancel.onclick = () => { overlay.remove(); resolve(null); };
     box.appendChild(cancel);
     overlay.appendChild(box);
