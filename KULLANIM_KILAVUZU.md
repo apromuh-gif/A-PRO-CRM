@@ -81,13 +81,13 @@ Satış sürecindeki her iş için bir fırsat açılır.
 
 | Aşama | Anlamı |
 |---|---|
-| SICAK-1 | İlk temas, ilgi var |
-| SICAK-2 | Görüşmeler ilerledi |
+| SICAK-1 | İlk temas, ilgi var — 1 ay içinde sonuçlanacak |
+| SICAK-2 | Görüşmeler ilerledi — 3 ay içinde sonuçlanacak |
 | TEKLİF | Teklif hazırlanıyor veya gönderildi |
 | ERTELENDİ | Geçici duraksama |
-| KAZANILDI | Sözleşme imzalandı |
+| KAZANILDI | Sözleşme imzalandı ✓ |
 | KAÇTI | Rakibe gitti |
-| NO GO | Müşteri vazgeçti |
+| NO GO | Proje ile ilgilenmiyoruz |
 | FIRSAT ÖLDÜ | İptal / geçersiz |
 
 **Fırsat satırındaki butonlar:**
