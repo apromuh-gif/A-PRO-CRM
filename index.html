@@ -158,10 +158,11 @@ async function openQuotationWithSSO(quotationId) {
         showToast('⚠️ Bu teklif teklif programında silinmiş. CRM kaydı temizlendi, yeni teklif oluşturabilirsiniz.');
         return;
       } else if (chkBody?.data?.exists === true) {
-        // Teklif mevcut → durum + toplam + referans → Firestore (self-healing)
+        // Teklif mevcut → durum + toplam + referans + satış temsilcisi → Firestore (self-healing)
         const tpStatus    = chkBody.data.status    ?? null;
         const tpTotal     = chkBody.data.grandTotal ? parseFloat(chkBody.data.grandTotal) : null;
         const tpReference = chkBody.data.reference ?? null;
+        const tpSalesRep  = chkBody.data.salesRep  ?? null;
         const relatedProps = state.proposals.filter(p => p.quotationId === quotationId);
         for (const p of relatedProps) {
           const upd = { ...p, ...(tpStatus !== null && { quotationStatus: tpStatus }), ...stamp() };
@@ -171,9 +172,10 @@ async function openQuotationWithSSO(quotationId) {
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
         for (const o of relatedOpps) {
           const upd = { ...o,
-            ...(tpStatus    !== null && { quotationStatus: tpStatus }),
-            ...(tpTotal     !== null && tpTotal > 0 && { value: tpTotal }),
+            ...(tpStatus   !== null && { quotationStatus: tpStatus }),
+            ...(tpTotal    !== null && tpTotal > 0 && { value: tpTotal }),
             ...(tpReference !== null && { tenderRef: tpReference }),
+            ...(tpSalesRep  !== null && tpSalesRep !== '' && { assignedTo: tpSalesRep }),
             ...stamp()
           };
           await saveDoc('opportunities', o.id, upd);
