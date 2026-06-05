@@ -290,9 +290,10 @@ function selectTeklifFormat() {
 
 // Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
 async function teklifOlustur(customer, opportunityTitle, opportunityId) {
-  // Format seçimi
-  const format = await selectTeklifFormat();
-  if (!format) return;
+  // Format + para birimi seçimi
+  const selection = await selectTeklifFormat();
+  if (!selection) return;
+  const { format, currency } = selection;
   // Aşama 2: Fırsata bağlı teklif zaten varsa uyar
   if (opportunityId) {
     const existing = state.proposals.find(p =>
