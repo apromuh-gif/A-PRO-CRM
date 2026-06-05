@@ -104,21 +104,30 @@ const TEKLIF_API_KEY  = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a8
 
 // CRM kullanıcısı için teklif programında oturum açar, session token döndürür.
 async function getCrmSessionToken() {
-  try {
-    const cu = firebase.auth().currentUser;
-    if (!cu) return null;
+  // state.currentUser her zaman güvenilir; firebase.auth().currentUser
+  // zaman zaman auth restore gecikmesi nedeniyle null olabilir.
+  const _attempt = async () => {
+    const cu = state.currentUser || firebase.auth().currentUser;
+    if (!cu?.email) return null;
     const res = await fetch(TEKLIF_AUTH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
       body: JSON.stringify({
         email:  cu.email,
-        name:   cu.displayName || state.currentUser?.displayName || cu.email,
+        name:   cu.displayName || cu.email,
         crmUid: cu.uid,
       }),
-    });
-    if (!res.ok) return null;
+    }).catch(() => null);
+    if (!res?.ok) return null;
     const body = await res.json().catch(() => null);
     return body?.data?.token ?? null;
+  };
+  try {
+    const t = await _attempt();
+    if (t) return t;
+    // İlk denemede başarısız → 600ms bekle, tekrar dene
+    await new Promise(r => setTimeout(r, 600));
+    return await _attempt();
   } catch { return null; }
 }
 
