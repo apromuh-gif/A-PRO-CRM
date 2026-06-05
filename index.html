@@ -151,7 +151,7 @@ async function openQuotationWithSSO(quotationId) {
         }
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
         for (const o of relatedOpps) {
-          const upd = { ...o, quotationId: '', quotationUrl: '', quotationStatus: '', ...stamp() };
+          const upd = { ...o, quotationId: '', quotationUrl: '', quotationStatus: '', value: 0, tenderRef: '', ...stamp() };
           await saveDoc('opportunities', o.id, upd);
           setState({ opportunities: state.opportunities.map(x => x.id === o.id ? upd : x) });
         }
