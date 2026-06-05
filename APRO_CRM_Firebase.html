@@ -240,9 +240,13 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
     }
     // Otomatik oturum: CRM kullanıcısı teklif programına direkt girer
     const sessionToken = await getCrmSessionToken();
-    const openUrl = sessionToken
-      ? `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations/${quotationId}`
-      : quotationUrl;
+    if (!sessionToken) {
+      console.warn('[SSO] Token alınamadı — pencere açılmadı.');
+      showToast('⚠️ Teklif oluşturuldu ancak otomatik giriş başarısız. Teklif programına manuel giriş yapın.');
+      return;
+    }
+    // Redirect her zaman liste sayfasına → 404 riskini ortadan kaldırır
+    const openUrl = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations`;
     window.open(openUrl, '_blank');
     showToast('✅ Teklif oluşturuldu — Fırsat ve Teklif Talepleri güncellendi!');
   } catch(e) {
