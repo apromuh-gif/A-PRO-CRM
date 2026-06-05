@@ -1079,16 +1079,9 @@ function buildCustomerModal(item) {
   return modal(item?'Firmayı Düzenle':'Yeni Firma', getEl(), ()=>setState({modal:null}), '680px');
 }
 
-// Hedef girilmiş (reps veya serviceReps > 0) aktif kullanıcıları döndürür
+// hasTarget !== false olan aktif kullanıcılar (HEDEFSİZ olmayanlar)
 function usersWithTargets() {
-  const reps    = state.targets?.reps        || {};
-  const svcReps = state.targets?.serviceReps || {};
-  return state.users.filter(u =>
-    u.active !== false && (
-      (Number(reps[u.displayName])    || 0) > 0 ||
-      (Number(svcReps[u.displayName]) || 0) > 0
-    )
-  );
+  return state.users.filter(u => u.active !== false && u.hasTarget !== false);
 }
 
 function buildOppModal(item) {
