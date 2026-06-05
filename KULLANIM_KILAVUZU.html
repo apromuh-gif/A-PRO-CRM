@@ -129,26 +129,26 @@
   </div>
 
   <div class="nav-section">Genel</div>
-  <div class="nav-item active" onclick="scrollTo('intro')">🏠 Sistemlere Genel Bakış</div>
+  <div class="nav-item active" onclick="navTo('intro',this)">🏠 Sistemlere Genel Bakış</div>
 
   <div class="nav-section">A-PRO CRM</div>
-  <div class="nav-item" onclick="scrollTo('dashboard')">📊 Dashboard</div>
-  <div class="nav-item" onclick="scrollTo('customers')">👥 Müşteriler</div>
-  <div class="nav-item" onclick="scrollTo('opportunities')">🎯 Fırsatlar</div>
-  <div class="nav-item" onclick="scrollTo('proposals')">📄 Teklif Talepleri</div>
-  <div class="nav-item" onclick="scrollTo('appointments')">📅 Randevu & Ziyaret</div>
-  <div class="nav-item" onclick="scrollTo('service')">🔧 Servis & Bakım</div>
+  <div class="nav-item" onclick="navTo('dashboard',this)">📊 Dashboard</div>
+  <div class="nav-item" onclick="navTo('customers',this)">👥 Müşteriler</div>
+  <div class="nav-item" onclick="navTo('opportunities',this)">🎯 Fırsatlar</div>
+  <div class="nav-item" onclick="navTo('proposals',this)">📄 Teklif Talepleri</div>
+  <div class="nav-item" onclick="navTo('appointments',this)">📅 Randevu & Ziyaret</div>
+  <div class="nav-item" onclick="navTo('service',this)">🔧 Servis & Bakım</div>
 
   <div class="nav-section">Teklif Programı</div>
-  <div class="nav-item" onclick="scrollTo('tp-intro')">🗂 Genel Bakış</div>
-  <div class="nav-item" onclick="scrollTo('tp-create')">➕ Teklif Oluşturma</div>
-  <div class="nav-item" onclick="scrollTo('tp-protect')">🔒 Teklif Koruması</div>
+  <div class="nav-item" onclick="navTo('tp-intro',this)">🗂 Genel Bakış</div>
+  <div class="nav-item" onclick="navTo('tp-create',this)">➕ Teklif Oluşturma</div>
+  <div class="nav-item" onclick="navTo('tp-protect',this)">🔒 Teklif Koruması</div>
 
   <div class="nav-section">Entegrasyon</div>
-  <div class="nav-item" onclick="scrollTo('integration')">🔗 CRM'den Teklif Aç</div>
-  <div class="nav-item" onclick="scrollTo('user-access')">👤 Kullanıcı Erişimi</div>
-  <div class="nav-item" onclick="scrollTo('workflows')">📋 İş Akışları</div>
-  <div class="nav-item" onclick="scrollTo('faq')">❓ Sık Sorulan Sorular</div>
+  <div class="nav-item" onclick="navTo('integration',this)">🔗 CRM'den Teklif Aç</div>
+  <div class="nav-item" onclick="navTo('user-access',this)">👤 Kullanıcı Erişimi</div>
+  <div class="nav-item" onclick="navTo('workflows',this)">📋 İş Akışları</div>
+  <div class="nav-item" onclick="navTo('faq',this)">❓ Sık Sorulan Sorular</div>
 </div>
 
 <!-- Main -->
@@ -604,11 +604,14 @@
 </div>
 
 <script>
-  function scrollTo(id) {
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  function navTo(id, clickedEl) {
+    const target = document.getElementById(id);
+    if (!target) return;
+    const offset = 24;
+    const top = target.getBoundingClientRect().top + window.pageYOffset - offset;
+    window.scrollTo({ top, behavior: 'smooth' });
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    event.currentTarget.classList.add('active');
+    if (clickedEl) clickedEl.classList.add('active');
   }
 
   function toggleFaq(el) {
@@ -618,13 +621,18 @@
     chevron.classList.toggle('open');
   }
 
-  // Active nav on scroll
-  const sections = ['intro','dashboard','customers','opportunities','proposals','appointments','service','tp-intro','tp-create','integration','workflows','faq'];
+  // Scroll spy — highlight active section in sidebar
+  const NAV_SECTIONS = ['intro','dashboard','customers','opportunities','proposals','appointments','service','tp-intro','tp-create','tp-protect','integration','user-access','workflows','faq'];
   window.addEventListener('scroll', () => {
-    let current = '';
-    sections.forEach(id => {
+    let current = 'intro';
+    NAV_SECTIONS.forEach(id => {
       const el = document.getElementById(id);
-      if (el && el.getBoundingClientRect().top < 150) current = id;
+      if (el && el.getBoundingClientRect().top < 160) current = id;
+    });
+    document.querySelectorAll('.nav-item').forEach(n => {
+      const fn = n.getAttribute('onclick') || '';
+      const match = fn.match(/navTo\('([^']+)'/);
+      if (match) n.classList.toggle('active', match[1] === current);
     });
   });
 </script>
