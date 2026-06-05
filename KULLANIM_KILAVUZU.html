@@ -142,9 +142,11 @@
   <div class="nav-section">Teklif Programı</div>
   <div class="nav-item" onclick="scrollTo('tp-intro')">🗂 Genel Bakış</div>
   <div class="nav-item" onclick="scrollTo('tp-create')">➕ Teklif Oluşturma</div>
+  <div class="nav-item" onclick="scrollTo('tp-protect')">🔒 Teklif Koruması</div>
 
   <div class="nav-section">Entegrasyon</div>
   <div class="nav-item" onclick="scrollTo('integration')">🔗 CRM'den Teklif Aç</div>
+  <div class="nav-item" onclick="scrollTo('user-access')">👤 Kullanıcı Erişimi</div>
   <div class="nav-item" onclick="scrollTo('workflows')">📋 İş Akışları</div>
   <div class="nav-item" onclick="scrollTo('faq')">❓ Sık Sorulan Sorular</div>
 </div>
@@ -157,9 +159,10 @@
     <h1>A-PRO Mühendislik — Kullanım Kılavuzu</h1>
     <p>A-PRO CRM (Nexora) ve A-PRO Teklif Programı için kapsamlı kullanım rehberi</p>
     <div class="hero-badges">
-      <span class="badge">📅 Haziran 2026</span>
+      <span class="badge">📅 Haziran 2026 — v2.7</span>
       <span class="badge">🌐 apromuh-gif.github.io/A-PRO-CRM</span>
       <span class="badge">🧾 apro-platform.vercel.app</span>
+      <span class="badge">🔐 SSO Entegrasyonu</span>
     </div>
   </div>
 
@@ -174,7 +177,9 @@
         <li>Teklif talep takibi</li>
         <li>Randevu ve ziyaret kaydı</li>
         <li>Servis ve bakım takibi</li>
-        <li>Bildirim ve görev atama</li>
+        <li>Sesli + mail bildirim sistemi</li>
+        <li>AI otomatik yönetici raporu</li>
+        <li>SSO ile Teklif Programı erişimi</li>
       </ul>
     </div>
     <div class="sys-card">
@@ -182,11 +187,12 @@
       <div class="sys-url">apro-platform.vercel.app</div>
       <ul>
         <li>Detaylı mühendislik teklifi hazırlama</li>
-        <li>Kalem kalem fiyatlandırma</li>
+        <li>3 teklif formatı (Sistem / Birim Fiyatlı / Master)</li>
+        <li>Boru &amp; fittings otomatik hesaplama</li>
         <li>Revizyon ve onay süreci</li>
         <li>TCMB kuru otomatik dönüşüm</li>
         <li>PDF çıktı ve arşiv</li>
-        <li>Teklif numaralandırma</li>
+        <li>CRM SSO ile otomatik giriş</li>
       </ul>
     </div>
   </div>
@@ -334,9 +340,11 @@
     <!-- Teklif Programı -->
     <div class="section" id="tp-intro">
       <div class="section-title"><div class="num">7</div> Teklif Programı — Genel Bakış</div>
-      <div class="section-sub">apro-platform.vercel.app</div>
+      <div class="section-sub">apro-platform.vercel.app — CRM'den otomatik giriş desteklenir</div>
 
-      <p>Teklif Programı, mühendislik tekliflerinin kalem kalem hazırlandığı sistemdir. CRM ile entegre çalışır.</p>
+      <div class="info"><p>🔐 <strong>Otomatik Giriş (SSO):</strong> CRM'de "Teklif Oluştur" butonuna bastığınızda Teklif Programı yeni sekmede <strong>oturum açık şekilde</strong> açılır. Ayrıca şifre girmenize gerek yok.</p></div>
+
+      <p>Teklif Programı, mühendislik tekliflerinin kalem kalem hazırlandığı sistemdir. CRM ile tam entegre çalışır.</p>
 
       <h3 class="sub">Teklif Yapısı</h3>
       <div class="flow">
@@ -353,44 +361,76 @@
         <tr><td>Döviz kuru</td><td>TCMB'den otomatik çekilir</td></tr>
         <tr><td>Başlangıç statüsü</td><td>DRAFT — içerik tamamlandıktan sonra SENT yapılır</td></tr>
         <tr><td>Revizyon</td><td>Her değişiklik için yeni revizyon açılır, eskisi arşivde kalır</td></tr>
+        <tr><td>Giriş</td><td>CRM'den SSO ile otomatik — veya apro-platform.vercel.app'tan doğrudan</td></tr>
       </table>
     </div>
 
     <!-- Teklif Oluşturma -->
     <div class="section" id="tp-create">
       <div class="section-title"><div class="num">8</div> Teklif Oluşturma</div>
-      <div class="section-sub">İki farklı yol</div>
+      <div class="section-sub">İki farklı yol — CRM'den önerilen</div>
 
       <h3 class="sub">Yol 1 — CRM'den (Önerilen)</h3>
       <ol class="steps">
         <li><span>CRM'de ilgili fırsatı bulun</span></li>
         <li><span>Satır sonundaki <span class="btn-preview btn-green">📋 Teklif Oluştur</span> butonuna tıklayın</span></li>
-        <li><span>Teklif Programı yeni sekmede açılır — müşteri zaten eşleştirilmiş, proje adı fırsat başlığından gelmiş</span></li>
+        <li><span><strong>Teklif formatını seçin</strong> — bir kez seçilir, sonradan değiştirilemez:<br>
+          <table style="margin:8px 0">
+            <tr><th>Format</th><th>Ne zaman kullanılır</th></tr>
+            <tr><td><strong>Sistem Satış</strong></td><td>Tam yangın/mekanik sistemi — boru, fitting, ekipman kalem kalem</td></tr>
+            <tr><td><strong>Birim Fiyatlı</strong></td><td>Metraj bazlı boru fiyatlandırması, otomatik fittings hesabı</td></tr>
+            <tr><td><strong>Sistem Master</strong></td><td>Çok bölümlü büyük projeler için ana şablon</td></tr>
+          </table>
+        </span></li>
+        <li><span>Teklif Programı yeni sekmede açılır — <strong>otomatik giriş yapılmıştır</strong>, müşteri zaten eşleştirilmiş, proje adı fırsat başlığından gelmiş</span></li>
         <li><span>Kalemleri ekleyin, fiyatları girin</span></li>
       </ol>
+
+      <div class="info"><p>ℹ️ <strong>İpucu:</strong> Birim Fiyatlı formatta aynı ürünü iki kez seçerseniz sistem uyarı verir; kayıt sırasında metrajlar otomatik olarak birleştirilir.</p></div>
 
       <h3 class="sub">Yol 2 — Doğrudan Teklif Programı'ndan</h3>
       <ol class="steps">
         <li><span>Sol menüden <strong>Teklifler</strong> → <strong>+ Yeni Teklif</strong></span></li>
         <li><span>Müşteriyi seçin veya oluşturun</span></li>
-        <li><span>Proje adı ve para birimini girin</span></li>
+        <li><span>Proje adı, para birimi ve formatı girin</span></li>
         <li><span>Kalemleri doldurun</span></li>
       </ol>
     </div>
 
+    <!-- Teklif Silme Koruması -->
+    <div class="section" id="tp-protect">
+      <div class="section-title"><div class="num">9</div> Teklif Silme Koruması</div>
+      <div class="section-sub">Gönderilmiş teklifler kazara silinemez</div>
+
+      <p>Teklif belirli bir statüye geçtikten sonra silme butonu kilitlenir:</p>
+      <table>
+        <tr><th>Statü</th><th>Silinebilir mi</th></tr>
+        <tr><td><span class="status s-gray">Taslak (DRAFT)</span></td><td>✅ Evet — onay dialog'u çıkar</td></tr>
+        <tr><td><span class="status s-blue">Gönderildi</span></td><td>🔒 Hayır — korumalı</td></tr>
+        <tr><td><span class="status s-purple">Revize</span></td><td>🔒 Hayır — korumalı</td></tr>
+        <tr><td><span class="status s-blue">Randevu</span></td><td>🔒 Hayır — korumalı</td></tr>
+        <tr><td><span class="status s-green">Onaylandı</span></td><td>🔒 Hayır — korumalı</td></tr>
+        <tr><td><span class="status s-red">Reddedildi</span></td><td>🔒 Hayır — korumalı</td></tr>
+      </table>
+      <div class="warn"><p>⚠️ Korumalı bir teklifi kaldırmak için sistem yöneticinize başvurun.</p></div>
+    </div>
+
     <!-- Entegrasyon -->
     <div class="section" id="integration">
-      <div class="section-title"><div class="num">9</div> CRM'den Teklif Oluşturma — Tam Akış</div>
+      <div class="section-title"><div class="num">10</div> CRM'den Teklif Oluşturma — Tam Akış</div>
       <div class="section-sub">İki sistem arasındaki entegrasyon nasıl çalışır</div>
 
       <div class="flow">
         <div>1. CRM → Fırsatlar sekmesi</div>
         <div>2. İlgili fırsatı bul</div>
         <div>3. <span style="color:#86efac">📋 Teklif Oluştur</span> butonuna tıkla</div>
+        <div style="color:#94a3b8; font-size:12px; margin: 4px 0;">   → Teklif formatı seçim ekranı açılır</div>
+        <div>4. Formatı seç (Sistem Satış / Birim Fiyatlı / Sistem Master)</div>
+        <div>5. Teklif Programı yeni sekmede açılır <span style="color:#86efac">[otomatik giriş yapıldı]</span></div>
         <div style="color:#94a3b8; font-size:12px; margin: 4px 0;">   → Müşteri otomatik eşleştirilir (telefon/e-posta ile)</div>
         <div style="color:#94a3b8; font-size:12px; margin-bottom:8px;">   → Proje adı fırsat başlığından gelir</div>
-        <div>4. Teklif Programı'nda kalemleri gir</div>
-        <div>5. CRM'e dön:</div>
+        <div>6. Teklif Programı'nda kalemleri gir</div>
+        <div>7. CRM'e dön:</div>
         <div style="color:#86efac; padding-left:20px">✓ Fırsat satırında 🔗 Teklif Programı linki görünür</div>
         <div style="color:#86efac; padding-left:20px">✓ Teklif Talepleri'nde kayıt otomatik açılmıştır</div>
       </div>
@@ -404,16 +444,30 @@
       <p>CRM'de bir müşterinin telefon veya e-posta bilgisi değiştirilip kaydedildiğinde, Teklif Programı'ndaki kayıt da otomatik güncellenir. Ayrıca bir şey yapmanıza gerek yoktur.</p>
     </div>
 
+    <!-- Kullanıcı Erişimi -->
+    <div class="section" id="user-access">
+      <div class="section-title"><div class="num">11</div> Kullanıcı Erişim Yönetimi</div>
+      <div class="section-sub">CRM ve Teklif Programı kullanıcıları otomatik senkronize edilir</div>
+
+      <table>
+        <tr><th>Durum</th><th>CRM</th><th>Teklif Programı</th></tr>
+        <tr><td>CRM'e yeni kullanıcı eklendi</td><td>✅ Giriş yapabilir</td><td>✅ Otomatik erişim açılır</td></tr>
+        <tr><td>CRM kullanıcısı silindi</td><td>❌ Giriş yapamaz</td><td>❌ Erişim anında kaldırılır</td></tr>
+      </table>
+
+      <div class="info"><p>ℹ️ Teklif Programı için ayrı kullanıcı tanımlamanıza gerek yok. CRM'de eklediğiniz her kullanıcı SSO ile Teklif Programı'na da erişebilir. CRM'den silinince her iki sistemden de otomatik çıkarılır.</p></div>
+    </div>
+
     <!-- İş Akışları -->
     <div class="section" id="workflows">
-      <div class="section-title"><div class="num">10</div> Tipik İş Akışları</div>
+      <div class="section-title"><div class="num">12</div> Tipik İş Akışları</div>
 
       <h3 class="sub">📌 Yeni Müşteri → Fırsat → Teklif</h3>
       <ol class="steps">
         <li><span>Müşteriler → <strong>+ Yeni Firma</strong> (telefon ve e-posta girin)</span></li>
         <li><span>Fırsatlar → <strong>+ Yeni Fırsat</strong> (müşteriyi seçin, aşama: <span class="status s-orange">SICAK-1</span>)</span></li>
-        <li><span>Fırsat satırı → <span class="btn-preview btn-green">📋 Teklif Oluştur</span></span></li>
-        <li><span>Teklif Programı'nda kalemleri girin ve teklifi müşteriye gönderin</span></li>
+        <li><span>Fırsat satırı → <span class="btn-preview btn-green">📋 Teklif Oluştur</span> → <strong>Teklif formatını seçin</strong></span></li>
+        <li><span>Teklif Programı otomatik giriş ile açılır — kalemleri girin ve teklifi müşteriye gönderin</span></li>
         <li><span>CRM → Fırsat aşamasını <span class="status s-blue">TEKLİF</span> yapın</span></li>
         <li><span>Teklif onaylandığında → aşama: <span class="status s-indigo">KAZANILDI</span></span></li>
       </ol>
@@ -438,7 +492,17 @@
 
     <!-- SSS -->
     <div class="section" id="faq">
-      <div class="section-title"><div class="num">11</div> Sık Sorulan Sorular</div>
+      <div class="section-title"><div class="num">13</div> Sık Sorulan Sorular</div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          Teklif Programı'na ayrı giriş yapmam gerekiyor mu?
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Hayır. CRM'de "Teklif Oluştur" butonuna bastığınızda sistem sizi Teklif Programı'na otomatik olarak oturum açık şekilde yönlendirir. Ayrıca şifre girmenize gerek yok.</p>
+        </div>
+      </div>
 
       <div class="faq-item">
         <div class="faq-q" onclick="toggleFaq(this)">
@@ -472,6 +536,26 @@
 
       <div class="faq-item">
         <div class="faq-q" onclick="toggleFaq(this)">
+          Teklifi silmeye çalışıyorum ama buton kilitli
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Gönderildi, Revize, Randevu, Onaylandı veya Reddedildi statüsündeki teklifler kazara silinmesin diye kilitlenir. Yanlışlıkla bu statüye geçirilmişse sistem yöneticinize başvurun.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          Teklif formatını sonradan değiştirebilir miyim?
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Hayır. Format teklif oluşturulurken bir kez seçilir ve değiştirilemez. Yanlış format seçildiyse DRAFT durumunda yeni teklif oluşturup eskisini silin.</p>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
           Teklif Talebi statüsü otomatik güncelleniyor mu?
           <span class="chevron">▼</span>
         </div>
@@ -500,10 +584,20 @@
         </div>
       </div>
 
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">
+          CRM'den silinen kullanıcı Teklif Programı'na girebilir mi?
+          <span class="chevron">▼</span>
+        </div>
+        <div class="faq-a">
+          <p>Hayır. CRM'den silinen kullanıcının Teklif Programı erişimi otomatik olarak kaldırılır. Her iki sistemde de ayrıca işlem yapmanıza gerek yoktur.</p>
+        </div>
+      </div>
+
     </div>
 
     <div style="text-align:center; padding: 32px; color:#94a3b8; font-size:12px;">
-      A-PRO Mühendislik · Haziran 2026 · Teknik destek için sistem yöneticinize başvurun
+      A-PRO Mühendislik · Haziran 2026 — v2.7 · Teknik destek için sistem yöneticinize başvurun
     </div>
 
   </div>
