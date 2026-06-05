@@ -61,7 +61,6 @@ Açılış ekranı. Tek bakışta özet bilgi:
 **Müşteri kartında neler var:**
 - İletişim bilgileri
 - `💬` butonu — WhatsApp'a direkt bağlantı (telefon girilmişse)
-- `📋 Teklif Oluştur` — müşteri için yeni teklif başlatır (otomatik giriş ile)
 - `Düzenle` — bilgileri güncelleyin (güncelleme Teklif Programı'na da yansır)
 
 > ⚠️ **Önemli:** Telefon veya e-posta girili müşteriler Teklif Programı ile daha sağlıklı eşleşir. Mümkün olduğunda doldurun.
@@ -289,21 +288,7 @@ Teklif belirli bir statüye geçtikten sonra silinemez:
 
 ---
 
-### 3.2 Müşteri Kartından Teklif Oluşturma
-
-Belirli bir fırsata bağlı olmayan, genel bir teklif için:
-
-```
-1. CRM → Müşteriler sekmesi
-2. Müşteri kartındaki [📋 Teklif Oluştur] butonuna tıklayın
-3. Teklif formatını seçin
-4. Teklif Programı açılır (otomatik giriş), müşteri kaydı eşleştirilir
-5. Proje adını Teklif Programı'nda kendiniz yazın
-```
-
----
-
-### 3.3 Mevcut Teklifi Açma
+### 3.2 Mevcut Teklifi Açma
 
 Fırsata teklif zaten oluşturulmuşsa:
 - Fırsat satırında `📋 Teklif Oluştur` yerine `🔗 Teklif Programı` linki görünür
@@ -314,7 +299,7 @@ Teklif Talepleri sekmesinde:
 
 ---
 
-### 3.4 Mükerrer Teklif Koruması
+### 3.3 Mükerrer Teklif Koruması
 
 Aynı fırsat için `📋 Teklif Oluştur` butonuna tekrar basılırsa sistem uyarı verir:
 
@@ -330,13 +315,13 @@ Genellikle **Tamam** seçin — aynı fırsat için çift teklif oluşturmaktan 
 
 ---
 
-### 3.5 Müşteri Güncellemesi
+### 3.4 Müşteri Güncellemesi
 
 CRM'de bir müşterinin telefon veya e-posta bilgisi güncellenip kaydedildiğinde, Teklif Programı'ndaki ilgili müşteri kaydı da otomatik güncellenir. Ayrıca bir şey yapmanıza gerek yoktur.
 
 ---
 
-### 3.6 Kullanıcı Erişim Yönetimi (Admin)
+### 3.5 Kullanıcı Erişim Yönetimi (Admin)
 
 CRM ve Teklif Programı kullanıcıları birbirine bağlıdır:
 
