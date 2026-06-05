@@ -285,7 +285,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         preparedBy: state.currentUser?.displayName||'', amount: 0,
         status: 'Hazırlanıyor', createdAt: today(),
         validUntil: '', sentDate: '', notes: '',
-        quotationId: quotationId||'', quotationUrl: quotationUrl||'',
+        quotationId: quotationId||'', quotationUrl: quotationUrl||'', quotationStatus: 'DRAFT',
         ...stamp(),
       };
       await saveDoc('proposals', propId, propData);
