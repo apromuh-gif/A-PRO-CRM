@@ -203,12 +203,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         'Bu fırsat için zaten bir teklif oluşturulmuş:\n"' + existing.title + '"\n\nMevcut teklifi açmak ister misiniz?\n\nTamam = Mevcut teklifi aç\nİptal = Yine de yeni oluştur'
       );
       if (openExisting) {
-        const existingToken = await getCrmSessionToken();
-        const existingOpenUrl = existingToken
-          ? `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(existingToken)}&redirect=/quotations`
-          : null;
-        if (!existingOpenUrl) { showToast('⚠️ Otomatik giriş başarısız. Teklif programına manuel giriş yapın.'); return; }
-        window.open(existingOpenUrl, '_blank');
+        await openQuotationWithSSO(existing.quotationId);
         return;
       }
     }
