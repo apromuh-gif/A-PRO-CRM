@@ -140,7 +140,7 @@ async function openQuotationWithSSO(quotationId) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
     body: JSON.stringify({
-      salesReps: state.users.filter(u=>u.active!==false).map(u=>u.displayName),
+      salesReps: usersWithTargets().map(u=>u.displayName),
       preparedByNames: [...new Set([..._PREP, ...state.users.map(u=>u.displayName)])].sort((a,b)=>a.localeCompare(b,'tr')),
     }),
   }).catch(() => {});
