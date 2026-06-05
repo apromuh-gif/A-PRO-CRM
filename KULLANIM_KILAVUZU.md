@@ -212,7 +212,7 @@ Sistem her 60 saniyede yaklaşan olayları kontrol eder ve sesli + mail bildirim
 
 | Format | Ne zaman kullanılır |
 |---|---|
-| **Sistem Satış** | Tam yangın/mekanik sistemi — boru, fitting, ekipman kalem kalem |
+| **Sistem Satış** | Malzeme ve Sistem Satışı |
 | **Birim Fiyatlı** | Metraj bazlı boru fiyatlandırması, otomatik fittings hesabı |
 | **Sistem Master** | Çok bölümlü büyük projeler için ana şablon |
 
