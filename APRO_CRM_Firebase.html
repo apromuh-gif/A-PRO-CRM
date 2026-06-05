@@ -157,18 +157,25 @@ async function openQuotationWithSSO(quotationId) {
         }
         showToast('⚠️ Bu teklif teklif programında silinmiş. CRM kaydı temizlendi, yeni teklif oluşturabilirsiniz.');
         return;
-      } else if (chkBody?.data?.exists === true && chkBody?.data?.status) {
-        // Teklif mevcut → Teklif Programı durumunu CRM'e yansıt (self-healing)
-        const tpStatus = chkBody.data.status;
-        const relatedProps = state.proposals.filter(p => p.quotationId === quotationId && p.quotationStatus !== tpStatus);
+      } else if (chkBody?.data?.exists === true) {
+        // Teklif mevcut → durum + toplam + referans → Firestore (self-healing)
+        const tpStatus    = chkBody.data.status    ?? null;
+        const tpTotal     = chkBody.data.grandTotal ? parseFloat(chkBody.data.grandTotal) : null;
+        const tpReference = chkBody.data.reference ?? null;
+        const relatedProps = state.proposals.filter(p => p.quotationId === quotationId);
         for (const p of relatedProps) {
-          const upd = { ...p, quotationStatus: tpStatus, ...stamp() };
+          const upd = { ...p, ...(tpStatus !== null && { quotationStatus: tpStatus }), ...stamp() };
           await saveDoc('proposals', p.id, upd);
           setState({ proposals: state.proposals.map(x => x.id === p.id ? upd : x) });
         }
-        const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId && o.quotationStatus !== tpStatus);
+        const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
         for (const o of relatedOpps) {
-          const upd = { ...o, quotationStatus: tpStatus, ...stamp() };
+          const upd = { ...o,
+            ...(tpStatus    !== null && { quotationStatus: tpStatus }),
+            ...(tpTotal     !== null && tpTotal > 0 && { value: tpTotal }),
+            ...(tpReference !== null && { tenderRef: tpReference }),
+            ...stamp()
+          };
           await saveDoc('opportunities', o.id, upd);
           setState({ opportunities: state.opportunities.map(x => x.id === o.id ? upd : x) });
         }
