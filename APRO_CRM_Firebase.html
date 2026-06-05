@@ -131,8 +131,36 @@ async function getCrmSessionToken() {
   } catch { return null; }
 }
 
-// Mevcut teklifi SSO ile aç (taslak veya gönderilmiş fark etmez)
+// Mevcut teklifi SSO ile aç. Teklif silinmişse CRM'den otomatik temizler.
 async function openQuotationWithSSO(quotationId) {
+  // 1. Teklif hala var mı kontrol et
+  try {
+    const chk = await fetch(
+      `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?id=${encodeURIComponent(quotationId)}`,
+      { headers: { 'x-crm-key': TEKLIF_API_KEY } }
+    ).catch(() => null);
+    if (chk?.ok) {
+      const chkBody = await chk.json().catch(() => null);
+      if (chkBody?.data?.exists === false) {
+        // Teklif silinmiş → CRM'deki tüm ilgili kayıtları temizle
+        const relatedProps = state.proposals.filter(p => p.quotationId === quotationId);
+        for (const p of relatedProps) {
+          const upd = { ...p, quotationId: '', quotationUrl: '', ...stamp() };
+          await saveDoc('proposals', p.id, upd);
+          setState({ proposals: state.proposals.map(x => x.id === p.id ? upd : x) });
+        }
+        const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
+        for (const o of relatedOpps) {
+          const upd = { ...o, quotationId: '', quotationUrl: '', ...stamp() };
+          await saveDoc('opportunities', o.id, upd);
+          setState({ opportunities: state.opportunities.map(x => x.id === o.id ? upd : x) });
+        }
+        showToast('⚠️ Bu teklif teklif programında silinmiş. CRM kaydı temizlendi, yeni teklif oluşturabilirsiniz.');
+        return;
+      }
+    }
+  } catch {}
+  // 2. Teklif mevcut → SSO ile doğrudan aç
   const token = await getCrmSessionToken();
   if (!token) { showToast('⚠️ Oturum alınamadı, tekrar deneyin.'); return; }
   window.open(`${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=/quotations/${quotationId}`, '_blank');
