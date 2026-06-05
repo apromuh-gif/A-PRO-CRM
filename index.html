@@ -1164,9 +1164,9 @@ function buildServiceOppModal(item) {
 function buildPropModal(item) {
   const f = item ? JSON.parse(JSON.stringify(item)) : {title:'',customerId:'',contractorId:'',opportunityId:'',preparedBy:'',amount:'',status:'Hazırlanıyor',createdAt:today(),validUntil:'',sentDate:'',notes:''};
 
-  // Hazırlayan listesi: sabit kişiler + state.users + özel girilen
-  const PREP_NAMES = ['Erkan KARACAKALE','Merve KARADUMAN','Uğur PİLAVCI','Ertunç BALI'];
-  const allNames = [...new Set([...PREP_NAMES, ...state.users.map(u=>u.displayName)])];
+  // Hazırlayan listesi: hedef girilmiş kullanıcılar; mevcut kayıttaki isim listede yoksa yine de ekle
+  const _targetedNames = usersWithTargets().map(u=>u.displayName);
+  const allNames = [...new Set([..._targetedNames, ...(f.preparedBy ? [f.preparedBy] : [])])];
 
   // Hazırlayan - açılır + yeni kişi ekle
   const prepContainer = document.createElement('div');
