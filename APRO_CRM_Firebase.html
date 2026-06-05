@@ -131,6 +131,13 @@ async function getCrmSessionToken() {
   } catch { return null; }
 }
 
+// Mevcut teklifi SSO ile aç (taslak veya gönderilmiş fark etmez)
+async function openQuotationWithSSO(quotationId) {
+  const token = await getCrmSessionToken();
+  if (!token) { showToast('⚠️ Oturum alınamadı, tekrar deneyin.'); return; }
+  window.open(`${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=/quotations/${quotationId}`, '_blank');
+}
+
 // Aşama 3: Müşteri güncelleme senkronizasyonu (fire-and-forget)
 function syncCustomerToTeklif(customer) {
   if (!customer || !customer.id) return;
