@@ -1128,7 +1128,7 @@ function buildOppModal(item) {
 function buildServiceOppModal(item) {
   const f = item ? JSON.parse(JSON.stringify(item)) : {title:'',customerId:'',value:'',stage:'TEKLİF',assignedTo:'',tenderRef:'',createdAt:today()};
   const custOpts = [{v:'',l:'Seçin…'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))];
-  const repOptions = [{v:'',l:'-- Seçin --'},...state.users.filter(u=>u.active!==false).map(u=>({v:u.displayName,l:u.displayName}))];
+  const repOptions = [{v:'',l:'-- Seçin --'},...usersWithTargets().map(u=>({v:u.displayName,l:u.displayName}))];
 
   const fSvcNotes = h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'10px 13px',background:'#ffffff',border:'1.5px solid #b8c8de',borderRadius:'8px',color:T1,fontSize:'14px',minHeight:'70px',resize:'vertical',boxSizing:'border-box',fontFamily:"'Inter',sans-serif"}},f.notes||'');
   fSvcNotes.addEventListener('input',e=>f.notes=e.target.value);
