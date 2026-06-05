@@ -1103,7 +1103,7 @@ function buildOppModal(item) {
   const fValue=inp('0',f.value,v=>f.value=v,'number');
   const fStage=sel(STAGES,f.stage,v=>f.stage=v);
   const fJob=sel(JOB_ST,f.jobStatus,v=>f.jobStatus=v);
-  const repOptions = [{v:'',l:'-- Seçin --'},...state.users.filter(u=>u.active!==false).map(u=>({v:u.displayName,l:u.displayName}))];
+  const repOptions = [{v:'',l:'-- Seçin --'},...usersWithTargets().map(u=>({v:u.displayName,l:u.displayName}))];
   const fAssigned = sel(repOptions, f.assignedTo, v=>f.assignedTo=v);
   const fDue=inp('',f.dueDate,v=>f.dueDate=v,'date');
   const fRef=h('input',{placeholder:'REF-2024-001 veya https://sunucu/dosya.pdf',value:f.tenderRef||'',
