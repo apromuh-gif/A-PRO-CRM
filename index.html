@@ -297,6 +297,16 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
   const selection = await selectTeklifFormat();
   if (!selection) return;
   const { format, currency } = selection;
+  // Personel listelerini Teklif Programı'na sync et (fire-and-forget)
+  const PREP_NAMES_CONST = ['Erkan KARACAKALE','Merve KARADUMAN','Uğur PİLAVCI','Ertunç BALI'];
+  const salesRepsSync = state.users.filter(u=>u.active!==false).map(u=>u.displayName);
+  const preparedBySync = [...new Set([...PREP_NAMES_CONST, ...state.users.map(u=>u.displayName)])].sort((a,b)=>a.localeCompare(b,'tr'));
+  fetch(TEKLIF_STAFF_SYNC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+    body: JSON.stringify({ salesReps: salesRepsSync, preparedByNames: preparedBySync }),
+  }).catch(() => {});
+
   // Aşama 2: Fırsata bağlı teklif zaten varsa uyar
   if (opportunityId) {
     const existing = state.proposals.find(p =>
