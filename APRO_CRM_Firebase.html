@@ -295,7 +295,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
     if (opportunityId) {
       const opp = state.opportunities.find(o => o.id === opportunityId);
       if (opp) {
-        const updatedOpp = {...opp, quotationId: quotationId||'', quotationUrl: quotationUrl||'', ...stamp()};
+        const updatedOpp = {...opp, quotationId: quotationId||'', quotationUrl: quotationUrl||'', quotationStatus: 'DRAFT', ...stamp()};
         await saveDoc('opportunities', opportunityId, updatedOpp);
         setState({ opportunities: state.opportunities.map(o => o.id===opportunityId ? updatedOpp : o) });
       }
