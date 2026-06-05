@@ -259,7 +259,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
     const sessionToken = await getCrmSessionToken();
     if (!sessionToken) {
       console.warn('[SSO] Token alınamadı — pencere açılmadı.');
-      showToast('⚠️ Teklif oluşturuldu ancak otomatik giriş başarısız. Teklif programına manuel giriş yapın.');
+      showToast('⚠️ Teklif oluşturuldu. Teklif Programı açılamadı, lütfen tekrar deneyin.');
       return;
     }
     // Redirect her zaman liste sayfasına → 404 riskini ortadan kaldırır
