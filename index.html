@@ -264,8 +264,8 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
       showToast('⚠️ Teklif oluşturuldu. Teklif Programı açılamadı, lütfen tekrar deneyin.');
       return;
     }
-    // Redirect her zaman liste sayfasına → 404 riskini ortadan kaldırır
-    const openUrl = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations`;
+    // Yeni oluşturulan teklif direkt açılır (az önce DB'ye yazıldı, 404 yok)
+    const openUrl = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations/${quotationId}`;
     window.open(openUrl, '_blank');
     showToast('✅ Teklif oluşturuldu — Fırsat ve Teklif Talepleri güncellendi!');
   } catch(e) {
