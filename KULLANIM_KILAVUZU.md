@@ -89,6 +89,22 @@ Satış sürecindeki her iş için bir fırsat açılır.
 | NO GO | Proje ile ilgilenmiyoruz |
 | FIRSAT ÖLDÜ | İptal / geçersiz |
 
+**İş Aşaması:**
+
+Fırsatın proje türünü ve ihale durumunu tanımlar:
+
+| Aşama | Anlamı |
+|---|---|
+| Almış Müteahhit | İşin ana yüklenicisi belirlenmiş |
+| Almış Taşeron | İşin taşeronu belirlenmiş |
+| Müteahhit İhalesi | İşin yüklenicisi henüz belirlenecek |
+| Taşeron İhalesi | İşin taşeronu henüz belirlenecek |
+| Keşif | Teklif keşif amaçlı hazırlandı |
+| Bayii | Teklif bayiye hazırlandı |
+| OEM | Teklif OEM firmasına hazırlandı |
+
+---
+
 **Fırsat satırındaki butonlar:**
 
 | Buton | Ne zaman görünür | Ne yapar |
