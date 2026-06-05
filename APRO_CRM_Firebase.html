@@ -134,6 +134,17 @@ async function getCrmSessionToken() {
 
 // Mevcut teklifi SSO ile aç. Teklif silinmişse CRM'den otomatik temizler.
 async function openQuotationWithSSO(quotationId) {
+  // Personel listelerini her açılışta sync et (fire-and-forget)
+  const _PREP = ['Erkan KARACAKALE','Merve KARADUMAN','Uğur PİLAVCI','Ertunç BALI'];
+  fetch(TEKLIF_STAFF_SYNC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+    body: JSON.stringify({
+      salesReps: state.users.filter(u=>u.active!==false).map(u=>u.displayName),
+      preparedByNames: [...new Set([..._PREP, ...state.users.map(u=>u.displayName)])].sort((a,b)=>a.localeCompare(b,'tr')),
+    }),
+  }).catch(() => {});
+
   // 1. Teklif hala var mı kontrol et
   try {
     const chk = await fetch(
