@@ -1,7 +1,7 @@
 # A-PRO Mühendislik — CRM & Teklif Programı Kullanım Kılavuzu
 
 > **Sistemler:** A-PRO CRM (Nexora) · A-PRO Teklif Programı  
-> **Güncellenme:** Haziran 2026 — v2.7
+> **Güncellenme:** Haziran 2026 — v2.8
 
 ---
 
@@ -11,13 +11,105 @@
 |---|---|
 | Müşteri ilişkileri takibi | Detaylı mühendislik teklifi hazırlama |
 | Satış fırsatı yönetimi | Kalem kalem fiyatlandırma |
-| Teklif talep takibi | Revizyon ve onay süreci |
-| Randevu & ziyaret kaydı | PDF çıktı ve arşiv |
-| Servis & bakım takibi | Teklif numaralandırma |
-| AI otomatik yönetici raporu | Boru/fittings otomatik hesaplama |
+| Teklif takibi ve durumu | Revizyon ve onay süreci |
+| Randevu & ziyaret kaydı | PDF / Excel çıktı ve arşiv |
+| Servis & bakım takibi | Boru/fittings otomatik hesaplama |
+| AI otomatik yönetici raporu | Teklif numaralandırma |
 | **Giriş:** apromuh-gif.github.io/A-PRO-CRM | **Giriş:** apro-platform.vercel.app |
 
-**Temel kural:** Müşteri ilişkisini CRM'den yönetin, teklifin içeriğini Teklif Programı'ndan hazırlayın. İki sistem birbirine bağlıdır — CRM'den "Teklif Oluştur" butonuna basıldığında Teklif Programı'na **otomatik giriş yapılır**, ayrıca şifre girmek gerekmez.
+**Temel kural:** Müşteri ilişkisini CRM'den yönetin, teklifin içeriğini Teklif Programı'ndan hazırlayın. İki sistem tam entegredir — CRM'den "Teklif Oluştur" butonuna basıldığında Teklif Programı yeni sekmede **otomatik giriş yapılmış şekilde** açılır.
+
+---
+
+## STANDART SATIŞ AKIŞI (Adım Adım)
+
+> Bu bölüm tipik bir satış sürecini baştan sona açıklar. Detaylar için ilgili bölümlere bakın.
+
+### Adım 1 — Müşteri Ekle
+
+1. `👥 Müşteriler` sekmesi → `+ Yeni Firma`
+2. **Firma adı** (zorunlu), telefon ve e-posta girin
+3. `Kaydet`
+
+> ⚠️ Telefon veya e-posta girilmesi önerilir — Teklif Programı ile otomatik eşleşme için gereklidir.
+
+---
+
+### Adım 2 — Fırsat Ekle
+
+1. `🎯 Fırsatlar` sekmesi → `+ Yeni Fırsat`
+2. **Başlık** (proje/iş adı), **müşteri**, **tahmini değer (€)** ve **aşama** seçin
+3. Sorumlu kişiyi atayın
+4. `Kaydet`
+
+---
+
+### Adım 3 — Teklif Oluştur
+
+1. Fırsatlar listesinde ilgili satırı bulun
+2. Sağ taraftaki `📋 Teklif Oluştur` butonuna tıklayın
+3. **Teklif formatını seçin** (sonradan değiştirilemez):
+
+| Format | Ne zaman kullanılır |
+|---|---|
+| **Sistem Satış** | Standart malzeme ve sistem satış teklifi |
+| **Birim Fiyatlı** | Metraj bazlı boru fiyatlandırması, otomatik fittings hesabı |
+| **Sistem Master** | Çok bölümlü büyük projeler için ana şablon |
+
+4. Teklif Programı yeni sekmede açılır — müşteri otomatik eşleştirilmiş, proje adı fırsat başlığından gelmiş, boş bir DRAFT teklif hazır
+
+> 💡 CRM'e dönün: Fırsat satırındaki buton artık `✏️ Taslağı Aç` olarak güncellendi (amber/sarı renk).
+
+---
+
+### Adım 4 — Teklifi Hazırla (Teklif Programı'nda)
+
+Teklif ekranındaki bölümler renk kodludur — her bölümün ne işe yaradığı renge göre kolayca ayırt edilir:
+
+| Renk | Bölüm | Ne yapılır |
+|---|---|---|
+| 🔵 Açık Mavi | **Malzeme / Kalemler** | Ürün kalemleri eklenir, miktarlar ve fiyatlar girilir |
+| 🟢 Koyu Yeşil | **Modüller** | Standart modül paketleri eklenir |
+| 🟣 İndigo | **Proje Bilgileri** | Teklif referansı, müşteri ilgilisi, satış temsilcisi ve hazırlayan girilir |
+| 🟠 Amber | **Ticari Açıklamalar** | Ödeme, teslim süresi ve garanti koşulları |
+
+**Proje Bilgileri bölümünü mutlaka doldurun:**
+
+1. **Teklif Referansı** → Teklif için dahili referans kodu (ör: `REF-2024-001`). Kaydedildiğinde CRM'deki fırsatın REF. alanına otomatik yansır.
+2. **Müşteri İlgilisi** → Muhatap kişinin adı (ör: `Sn. Ali Yılmaz`). Teklif çıktısında görünür.
+3. **Satış Temsilcisi** ve **Hazırlayan** → Sorumlu isimleri
+4. `Kaydet` butonuna basın
+
+---
+
+### Adım 5 — CRM Otomatik Güncellenir
+
+`✏️ Taslağı Aç` veya `🔗 Teklif Programı` butonuna her basıldığında CRM, Teklif Programı'ndan en güncel bilgileri çeker ve şunları otomatik günceller:
+
+| Teklif Programı'ndaki Alan | CRM'de Nereye Yansır |
+|---|---|
+| Teklif Toplam Tutarı (`grandTotal`) | Fırsatın **Değer (€)** alanı |
+| Teklif Referansı (`reference`) | Fırsatın **REF.** alanı |
+| Teklif Durumu (`DRAFT` / `SENT` vb.) | Fırsat satırındaki **buton rengi ve etiketi** |
+
+> Ayrıca bir işlem yapmanıza gerek yoktur — buton tıklandığında senkronizasyon otomatik gerçekleşir.
+
+---
+
+### Adım 6 — Teklifi Gönderin
+
+1. Teklif Programı'nda teklifi PDF/Excel olarak indirin veya müşteriye e-posta ile gönderin
+2. Teklif durumu DRAFT → SENT olarak güncellenir
+3. CRM'e dönün: Fırsat satırındaki buton artık `🔗 Teklif Programı` (mavi) olur
+
+---
+
+### Adım 7 — Sonucu Güncelleyin
+
+Müşteriden yanıt geldiğinde:
+- **Onaylandı:** CRM'de fırsat aşamasını `KAZANILDI` olarak güncelleyin
+- **Reddedildi:** Aşamayı `KAÇTI` veya `NO GO` yapın
+- **Revizyon istediyse:** Teklif Programı'nda yeni revizyon oluşturun, CRM'de statüyü `Revize` yapın
 
 ---
 
@@ -29,7 +121,7 @@
 2. Kullanıcı adı ve şifrenizle giriş yapın
 3. Ana ekranda üst sekme çubuğu görünür
 
-> 💡 **Teklif Programı'na ayrı giriş gerekmez.** CRM'deki "Teklif Oluştur" butonuna bastığınızda sistem sizi Teklif Programı'na otomatik olarak oturum açık şekilde yönlendirir.
+> 💡 **Teklif Programı'na ayrı giriş gerekmez.** CRM'deki teklif butonlarına bastığınızda sistem sizi Teklif Programı'na otomatik olarak oturum açık şekilde yönlendirir.
 
 ---
 
@@ -60,7 +152,6 @@ Açılış ekranı. Tek bakışta özet bilgi:
 
 **Müşteri kartında neler var:**
 - İletişim bilgileri
-- `💬` butonu — WhatsApp'a direkt bağlantı (telefon girilmişse)
 - `Düzenle` — bilgileri güncelleyin (güncelleme Teklif Programı'na da yansır)
 
 > ⚠️ **Önemli:** Telefon veya e-posta girili müşteriler Teklif Programı ile daha sağlıklı eşleşir. Mümkün olduğunda doldurun.
@@ -91,8 +182,6 @@ Satış sürecindeki her iş için bir fırsat açılır.
 
 **İş Aşaması:**
 
-Fırsatın proje türünü ve ihale durumunu tanımlar:
-
 | Aşama | Anlamı |
 |---|---|
 | Almış Müteahhit | İşin ana yüklenicisi belirlenmiş |
@@ -105,15 +194,25 @@ Fırsatın proje türünü ve ihale durumunu tanımlar:
 
 ---
 
-**Fırsat satırındaki butonlar:**
+**Fırsat satırındaki teklif butonu — 3 farklı durum:**
 
-| Buton | Ne zaman görünür | Ne yapar |
-|---|---|---|
-| `📋 Teklif Oluştur` | Teklif henüz oluşturulmamışsa | Teklif Programı'nı açar (otomatik giriş + format seçimi) |
-| `🔗 Teklif Programı` | Teklif oluşturulmuşsa | Mevcut teklifi doğrudan açar |
-| `💬` | Her zaman | Müşteriye WhatsApp |
-| `Düzenle` | Her zaman | Fırsat bilgilerini güncelle |
-| `Sil` | Her zaman | Fırsatı sil |
+| Buton | Renk | Ne anlama gelir | Tıklanınca |
+|---|---|---|---|
+| `📋 Teklif Oluştur` | Yeşil | Bu fırsat için henüz teklif yok | Format seçimi → Teklif Programı açılır |
+| `✏️ Taslağı Aç` | Amber/Sarı | Teklif hazırlanmış ama henüz gönderilmemiş | Mevcut taslak doğrudan açılır |
+| `🔗 Teklif Programı` | Mavi | Teklif gönderilmiş | Gönderilmiş teklif görüntülenir |
+
+> 💡 Butonlara her tıklandığında CRM, teklif tutarını ve referansını Teklif Programı'ndan otomatik çekip fırsat kaydına yazar.
+
+---
+
+**Silinmiş teklif tespiti:**
+
+Teklif Programı'nda silinmiş bir teklifin butonu varsa, tıklandığında sistem otomatik olarak:
+1. Teklifin silindiğini tespit eder
+2. CRM'deki referansı (quotationId, quotationUrl) temizler
+3. Buton `📋 Teklif Oluştur`'a döner
+4. Ekranda bildirim gösterir
 
 ---
 
@@ -132,12 +231,7 @@ CRM'deki teklifler, müşteriden gelen **teklif taleplerinin takibidir** — tek
 | Onaylandı | Müşteri kabul etti |
 | Reddedildi | Müşteri reddetti |
 
-> ℹ️ Teklif Programı üzerinden teklif oluşturulduğunda bu sekmede otomatik kayıt açılır ve `🔗 Teklif Programı` butonu eklenir.
-
-**Yeni teklif talebi manuel eklemek:**
-1. `+ Yeni Teklif` butonuna tıklayın
-2. Başlık, müşteri, hazırlayan ve son tarih girin
-3. Statüyü takip edin, değiştikçe güncelleyin
+> ℹ️ Teklif Programı üzerinden teklif oluşturulduğunda bu sekmede otomatik kayıt açılır.
 
 ---
 
@@ -175,8 +269,6 @@ Her iki modülde de müşteri, sorumlu kişi, tutar ve tamamlanma durumu takip e
 
 Sistem her 60 saniyede yaklaşan olayları kontrol eder ve sesli + mail bildirim gönderir.
 
-**Sesli Bildirimler:**
-
 | Tetikleyici | Zaman | Kime |
 |---|---|---|
 | Yarın randevu var | 16:30 | Sorumlu + Admin |
@@ -191,8 +283,6 @@ Sistem her 60 saniyede yaklaşan olayları kontrol eder ve sesli + mail bildirim
 
 ### 1.10 Araçlar Menüsü
 
-Üst çubukta **Araçlar ▾** menüsü:
-
 | Araç | Ne yapar |
 |---|---|
 | **Aylık Rapor** (AI) | Groq AI ile son 30 günün yönetici raporu |
@@ -202,104 +292,159 @@ Sistem her 60 saniyede yaklaşan olayları kontrol eder ve sesli + mail bildirim
 | **Yedekleme** | Tüm veriyi JSON olarak indir veya geri yükle |
 | **Yazdır** | Mevcut ekranı yazdır |
 
-> 💡 AI raporlar tamamen otomatiktir. Firebase'deki tüm veri Groq'a gönderilir ve Türkçe yönetici raporu oluşturulur. Groq API anahtarı `Ayarlar`dan girilir.
-
 ---
 
 ## BÖLÜM 2 — A-PRO Teklif Programı
 
 ### 2.1 Giriş
 
-**Önerilen yol:** CRM'den "Teklif Oluştur" butonuna basın — Teklif Programı yeni sekmede **otomatik giriş yapılmış şekilde** açılır.
+**Önerilen yol:** CRM'den teklif butonuna basın — Teklif Programı yeni sekmede **otomatik giriş yapılmış şekilde** açılır.
 
 **Doğrudan erişim:** `apro-platform.vercel.app` adresine gidin ve kullanıcı hesabınızla giriş yapın.
 
-> 🔐 **Kullanıcı erişimi:** CRM'de kayıtlı her kullanıcı Teklif Programı'na da erişebilir. CRM'den silinen bir kullanıcının Teklif Programı erişimi de otomatik olarak kaldırılır.
+> 🔐 CRM'de kayıtlı her kullanıcı Teklif Programı'na da erişebilir. CRM'den silinen bir kullanıcının Teklif Programı erişimi de otomatik kaldırılır.
 
 ---
 
-### 2.2 Teklif Oluşturma
+### 2.2 Teklif Ekranı — Renk Kodlu Bölümler
 
-**CRM üzerinden (önerilen yol):**
-1. CRM'de fırsatı bulun
-2. `📋 Teklif Oluştur` butonuna tıklayın
-3. **Teklif formatı seçin** (bir kez seçilir, sonradan değiştirilemez):
+Teklif hazırlama ekranındaki her bölüm farklı renkle işaretlenmiştir. Bu sayede hangi bölümde çalıştığınızı hızlıca görebilirsiniz:
 
-| Format | Ne zaman kullanılır |
-|---|---|
-| **Sistem Satış** | Malzeme ve Sistem Satışı |
-| **Birim Fiyatlı** | Metraj bazlı boru fiyatlandırması, otomatik fittings hesabı |
-| **Sistem Master** | Çok bölümlü büyük projeler için ana şablon |
-
-4. Teklif Programı açılır — müşteri zaten kayıtlı, proje adı fırsat başlığından gelir
-5. Kalemleri ekleyin, fiyatları girin
-
-**Doğrudan Teklif Programı'ndan:**
-1. Sol menüden `Teklifler` → `+ Yeni Teklif`
-2. Müşteriyi seçin veya oluşturun
-3. Proje adı, para birimi ve formatı seçin
+| Bölüm Başlığı Rengi | Bölüm Adı | İçerik |
+|---|---|---|
+| 🔵 Açık Mavi | **Malzeme / Kalemler** | A Bölümü, B Bölümü vb. — ürün kalemleri ve fiyatlar |
+| 🟢 Koyu Yeşil | **Modüller** | Hazır modül paketleri |
+| 🟣 İndigo | **Proje Bilgileri** | Referans, müşteri ilgilisi, satış temsilcisi, hazırlayan |
+| 🟠 Amber | **Ticari Açıklamalar** | Ödeme, teslim süresi, garanti koşulları |
 
 ---
 
-### 2.3 Teklif Yapısı
+### 2.3 Proje Bilgileri Bölümü (İndigo Başlık)
+
+Bu bölüm hem teklif çıktısını hem de CRM'i etkiler — mutlaka doldurun:
+
+**Teklif Referansı**
+- Dahili referans numarası veya kodu (ör: `REF-2024-001`, `tt-08-26-mat`)
+- **Kaydedildiğinde CRM'deki fırsatın REF. sütununa otomatik yansır**
+- Arama ve takip kolaylığı için kullanın
+
+**Müşteri İlgilisi**
+- Müşteri tarafındaki muhatap kişinin adı
+- Teklif çıktısında (PDF/Excel) "İlgili" olarak görünür
+
+**Satış Temsilcisi & Hazırlayan**
+- Sorumlu isimleri girin
+- Teklif kapak sayfasında ve çıktıda yer alır
+
+> ⚠️ Bilgileri girdikten sonra `Kaydet` butonuna basmayı unutmayın.
+
+---
+
+### 2.4 Kalem Ekleme
+
+**Malzeme bölümlerine (mavi başlık) kalem eklemek:**
+1. `+ Kalem Ekle` butonuna tıklayın
+2. Ürün seçin veya manuel girin (kod, açıklama, birim, miktar)
+3. Fiyat otomatik hesaplanır; gerekirse override girin
+4. Değişiklikler otomatik kaydedilir
+
+**Yeni bölüm eklemek:**
+1. Teklif altındaki `+ Yeni Bölüm Ekle`ye tıklayın
+2. Bölüm kodu (A, B, C...) ve başlık girin
+
+---
+
+### 2.5 Teklif Yapısı
 
 ```
 Teklif (Quotation)
   └── Revizyon (Revision)  ← fiyatlar burada
-        └── Bölüm A: Malzeme
+        └── Bölüm A: Malzeme (mavi)
         └── Bölüm B: İşçilik
-        └── ... (ihtiyaca göre)
+        └── Modüller (yeşil)
+        └── Proje Bilgileri (indigo)
+        └── Ticari Açıklamalar (amber)
 ```
 
-- Her teklif DRAFT olarak açılır
+- Her teklif `DRAFT` (Taslak) olarak açılır
 - Revizyon üzerinde çalışın, değişiklikler otomatik kaydedilir
-- Onaylandığında statüsü APPROVED olarak değiştirilir
+- Gönderildiğinde statü `SENT` olarak güncellenir
 
 ---
 
-### 2.4 Para Birimi & Fiyatlandırma
+### 2.6 Para Birimi & Fiyatlandırma
 
 - Teklif para birimi: EUR (varsayılan) — TRY ve USD de seçilebilir
 - TCMB döviz kurları otomatik çekilir
-- Liste çarpanı, KDV oranı ve işçilik markup sistem ayarlarından gelir, revizyon bazında değiştirilebilir
+- Liste çarpanı, KDV oranı ve işçilik markup sistem ayarlarından gelir
 
 ---
 
-### 2.5 Teklif Silme Koruması
-
-Teklif belirli bir statüye geçtikten sonra silinemez:
+### 2.7 Teklif Silme Koruması
 
 | Statü | Silinebilir mi |
 |---|---|
-| Taslak (DRAFT) | ✅ Evet — onay dialog'u çıkar |
-| Gönderildi | 🔒 Hayır — korumalı |
-| Revize | 🔒 Hayır — korumalı |
-| Randevu | 🔒 Hayır — korumalı |
-| Onaylandı | 🔒 Hayır — korumalı |
-| Reddedildi | 🔒 Hayır — korumalı |
-
-> Korumalı teklifi arşivlemek veya iptal etmek için sistem yöneticinize başvurun.
+| Taslak (DRAFT) | ✅ Evet |
+| Gönderildi | 🔒 Hayır |
+| Revize | 🔒 Hayır |
+| Randevu | 🔒 Hayır |
+| Onaylandı | 🔒 Hayır |
+| Reddedildi | 🔒 Hayır |
 
 ---
 
-## BÖLÜM 3 — Entegrasyon: CRM'den Teklif Oluşturma
+## BÖLÜM 3 — CRM & Teklif Programı Entegrasyonu
 
-### 3.1 Fırsattan Teklif Oluşturma (Standart Akış)
+### 3.1 Standart İş Akışı (Tam Süreç)
 
 ```
-1. CRM → Fırsatlar sekmesi
-2. İlgili fırsatı bulun
-3. Satır sonundaki [📋 Teklif Oluştur] butonuna tıklayın
-   → Teklif formatı seçim ekranı açılır
-4. Formatı seçin (Sistem Satış / Birim Fiyatlı / Sistem Master)
-5. Teklif Programı yeni sekmede açılır (otomatik giriş)
-   - Müşteri otomatik eşleştirilir (telefon/e-posta ile)
-   - Proje adı fırsat başlığından gelir
-   - DRAFT teklif hazır
-6. Teklif kalemleri ve fiyatlar girilir
-7. CRM'e dönün:
-   - Fırsat satırında [🔗 Teklif Programı] linki görünür
-   - Teklif Talepleri sekmesinde kayıt otomatik açılmıştır
+ADIM 1 — Müşteri Ekle (CRM)
+  └── 👥 Müşteriler → + Yeni Firma
+      ├── Firma adı (zorunlu)
+      ├── Telefon (önerilir — otomatik eşleşme için)
+      └── E-posta (önerilir)
+
+ADIM 2 — Fırsat Ekle (CRM)
+  └── 🎯 Fırsatlar → + Yeni Fırsat
+      ├── Başlık (proje/iş adı)
+      ├── Müşteri seçin
+      ├── Tahmini değer (€) girin
+      └── Aşama: SICAK-1 veya SICAK-2
+
+ADIM 3 — Teklif Oluştur (CRM → Teklif Programı)
+  └── Fırsat satırı → [📋 Teklif Oluştur]
+      ├── Teklif formatını seçin
+      └── Teklif Programı otomatik açılır (SSO giriş)
+
+ADIM 4 — Teklifi Hazırla (Teklif Programı)
+  ├── 🔵 Malzeme bölümleri: kalemleri ekle, miktarları gir
+  ├── 🟢 Modüller: modül paketlerini ekle (gerekirse)
+  ├── 🟣 Proje Bilgileri:
+  │     ├── Teklif Referansı gir → CRM REF. alanına yansır
+  │     ├── Müşteri İlgilisi gir → Teklif çıktısında görünür
+  │     ├── Satış Temsilcisi ve Hazırlayan gir
+  │     └── [Kaydet] butonuna bas
+  └── 🟠 Ticari Açıklamalar: ödeme ve teslim koşullarını düzenle
+
+ADIM 5 — CRM'e Dön
+  └── Fırsat satırında buton → [✏️ Taslağı Aç] (amber)
+      = Teklif hazırlandı ama henüz gönderilmedi
+
+ADIM 6 — Teklifi Gönder
+  └── PDF/Excel indirin → müşteriye iletin
+      ├── Teklif durumu DRAFT → SENT olur
+      └── CRM'de buton → [🔗 Teklif Programı] (mavi) olur
+
+ADIM 7 — Otomatik Senkronizasyon
+  └── Butona her tıklandığında CRM güncellenir:
+      ├── Teklif toplamı → Fırsat Değeri (€)
+      ├── Teklif Referansı → Fırsat REF. alanı
+      └── Teklif durumu → Buton rengi / etiketi
+
+ADIM 8 — Sonucu Kaydet (CRM)
+  ├── Onaylandı → Fırsat aşaması: KAZANILDI
+  ├── Reddedildi → Aşama: KAÇTI veya NO GO
+  └── Revizyon → Teklif Programı'nda yeni revizyon oluştur
 ```
 
 ---
@@ -307,17 +452,17 @@ Teklif belirli bir statüye geçtikten sonra silinemez:
 ### 3.2 Mevcut Teklifi Açma
 
 Fırsata teklif zaten oluşturulmuşsa:
-- Fırsat satırında `📋 Teklif Oluştur` yerine `🔗 Teklif Programı` linki görünür
-- Tıklayarak doğrudan ilgili teklifi açın (otomatik giriş ile)
 
-Teklif Talepleri sekmesinde:
-- Her satırdaki `🔗 Teklif Programı` butonu ilgili teklifi açar
+- **`✏️ Taslağı Aç`** (amber): Teklif taslak aşamasında, hâlâ düzenlenebilir
+- **`🔗 Teklif Programı`** (mavi): Teklif gönderilmiş
+
+Her iki durumda da tıklandığında otomatik giriş yapılır ve ilgili teklif açılır.
 
 ---
 
 ### 3.3 Mükerrer Teklif Koruması
 
-Aynı fırsat için `📋 Teklif Oluştur` butonuna tekrar basılırsa sistem uyarı verir:
+Aynı fırsat için `📋 Teklif Oluştur` butonuna tekrar basılırsa sistem uyarır:
 
 ```
 "Bu fırsat için zaten bir teklif oluşturulmuş: [başlık]
@@ -331,22 +476,33 @@ Genellikle **Tamam** seçin — aynı fırsat için çift teklif oluşturmaktan 
 
 ---
 
-### 3.4 Müşteri Güncellemesi
+### 3.4 Silinmiş Teklif Otomatik Temizliği
 
-CRM'de bir müşterinin telefon veya e-posta bilgisi güncellenip kaydedildiğinde, Teklif Programı'ndaki ilgili müşteri kaydı da otomatik güncellenir. Ayrıca bir şey yapmanıza gerek yoktur.
+Teklif Programı'nda silinen bir teklif için CRM'deki butona tıklanırsa:
+
+1. Sistem teklifi kontrol eder → silinmiş olduğunu tespit eder
+2. CRM'deki referansları otomatik temizler
+3. Buton `📋 Teklif Oluştur`'a döner
+4. Ekranda uyarı bildirimi görünür
+
+Herhangi bir manuel işlem yapmanıza gerek yoktur.
 
 ---
 
-### 3.5 Kullanıcı Erişim Yönetimi (Admin)
+### 3.5 Müşteri Güncellemesi
 
-CRM ve Teklif Programı kullanıcıları birbirine bağlıdır:
+CRM'de müşterinin telefon veya e-posta bilgisi güncellenip kaydedildiğinde, Teklif Programı'ndaki müşteri kaydı da otomatik güncellenir.
+
+---
+
+### 3.6 Kullanıcı Erişim Yönetimi (Admin)
 
 | Durum | CRM | Teklif Programı |
 |---|---|---|
 | CRM'e yeni kullanıcı eklendi | ✅ Giriş yapabilir | ✅ Otomatik erişim açılır |
 | CRM kullanıcısı silindi | ❌ Giriş yapamaz | ❌ Erişim otomatik kaldırılır |
 
-> Teklif Programı kullanıcısının şifre girmesine gerek yoktur — tüm erişim CRM üzerinden SSO ile sağlanır.
+> Teklif Programı için ayrı şifre yönetimi gerekmez — tüm erişim CRM üzerinden SSO ile sağlanır.
 
 ---
 
@@ -355,28 +511,17 @@ CRM ve Teklif Programı kullanıcıları birbirine bağlıdır:
 ### Yeni müşteri → fırsat → teklif
 
 ```
-1. Müşteriler → + Yeni Firma (telefon ve e-posta girin)
-2. Fırsatlar → + Yeni Fırsat (müşteriyi seçin, aşama: SICAK-1)
-3. Fırsat satırı → 📋 Teklif Oluştur → Format seç
-4. Teklif Programı'nda kalemleri girin (otomatik giriş)
-5. Teklifi müşteriye gönderin
-6. CRM → Fırsatı güncelle: aşama → TEKLİF
-7. Teklif onaylandığında: aşama → KAZANILDI
-```
-
----
-
-### Gelen teklif talebi takibi
-
-```
-1. Müşteri teklif istedi (telefon/e-posta)
-2. Teklif Talepleri → + Yeni Teklif
-   - Başlık: "ACME — HVAC Teklifi"
-   - Statü: Hazırlanıyor
-3. Teklif hazırlandığında fırsattan Teklif Oluştur'a bas → Format seç
-4. Teklif Talebi kaydı otomatik güncellenir (🔗 link eklenir)
-5. Statüyü → Gönderildi olarak güncelleyin + gönderim tarihini girin
-6. Müşteriden yanıt gelince → Onaylandı veya Reddedildi
+1. Müşteriler → + Yeni Firma (telefon/e-posta girin)
+2. Fırsatlar → + Yeni Fırsat (müşteri, değer, aşama)
+3. Fırsat satırı → [📋 Teklif Oluştur] → Format seç
+4. Teklif Programı'nda:
+   - Malzeme kalemlerini girin (mavi bölüm)
+   - Proje Bilgileri'ni doldurun (indigo bölüm) → Kaydet
+5. CRM'de buton → [✏️ Taslağı Aç]
+6. Teklifi müşteriye gönderin
+7. CRM'de buton → [🔗 Teklif Programı]
+8. Fırsat değeri ve REF. otomatik güncellenir
+9. Onaylanınca → Fırsat aşaması: KAZANILDI
 ```
 
 ---
@@ -384,10 +529,24 @@ CRM ve Teklif Programı kullanıcıları birbirine bağlıdır:
 ### Revizyon talebi
 
 ```
-1. Teklif Talepleri → ilgili kaydı Düzenle → Statü: Revize
-2. Teklif Programı'nda 🔗 bağlantısıyla teklifi açın (otomatik giriş)
-3. Yeni revizyon oluşturun, değişiklikleri yapın
-4. Teklifi tekrar gönderin → Statü: Gönderildi
+1. Teklif Programı'nda teklifi açın ([✏️ Taslağı Aç] veya [🔗 Teklif Programı])
+2. Yeni revizyon oluşturun, değişiklikleri yapın
+3. Teklifi tekrar gönderin
+4. CRM → Teklif Talebi statüsünü "Revize" → "Gönderildi" olarak güncelleyin
+```
+
+---
+
+### Gelen teklif talebi takibi
+
+```
+1. Müşteri teklif istedi
+2. Fırsatlar → + Yeni Fırsat (aşama: TEKLİF)
+3. Fırsat satırı → [📋 Teklif Oluştur]
+4. Teklif hazırlandı → Proje Bilgileri'ni doldurun, Kaydet
+5. Teklifi müşteriye gönderin
+6. Teklif Talebi statüsünü → "Gönderildi" yapın
+7. Müşteriden yanıt: → "Onaylandı" veya "Reddedildi"
 ```
 
 ---
@@ -395,34 +554,34 @@ CRM ve Teklif Programı kullanıcıları birbirine bağlıdır:
 ## BÖLÜM 5 — Sık Sorulan Sorular
 
 **S: Teklif Programı'na ayrı giriş yapmam gerekiyor mu?**  
-C: Hayır. CRM'de "Teklif Oluştur" butonuna bastığınızda sistem sizi Teklif Programı'na otomatik olarak oturum açık şekilde yönlendirir. Ayrıca şifre girmenize gerek yok.
+C: Hayır. CRM'deki teklif butonlarına bastığınızda sistem sizi Teklif Programı'na otomatik olarak oturum açık şekilde yönlendirir.
+
+**S: CRM'deki fırsat değeri ve REF. alanı nasıl güncelleniyor?**  
+C: Fırsat satırındaki butona (✏️ Taslağı Aç veya 🔗 Teklif Programı) her tıkladığınızda sistem Teklif Programı'ndan güncel tutarı ve referansı çekip CRM'e yazar. Proje Bilgileri bölümünde Teklif Referansı girilip Kaydet'e basılması gerekir.
 
 **S: Teklif Programı'nda müşteriyi bulamıyorum.**  
-C: Müşteri, CRM'de telefon veya e-posta girilmeden kaydedilmiş olabilir. CRM'de müşteri kartını düzenleyip telefon/e-posta ekleyin, kaydedin. Sonraki teklif oluşturmada otomatik eşleşir.
+C: Müşteri, CRM'de telefon veya e-posta girilmeden kaydedilmiş olabilir. CRM'de müşteri kartını düzenleyip telefon/e-posta ekleyin. Sonraki teklif oluşturmada otomatik eşleşir.
 
 **S: Aynı fırsat için yanlışlıkla 2 teklif oluşturdum.**  
-C: Teklif Programı'nda DRAFT durumundaki fazla teklifi silin. Doğru teklif olan `🔗 Teklif Programı` linkiyle açılan tekliftir (fırsat satırında görünür).
+C: Teklif Programı'nda DRAFT durumundaki fazla teklifi silin. Doğru teklif, fırsat satırındaki buton aracılığıyla açılan tekliftir.
 
-**S: Fırsat satırında `🔗 Teklif Programı` butonu yok, `📋 Teklif Oluştur` var.**  
-C: Bu fırsata henüz teklif oluşturulmamış demektir. Butona tıklayarak oluşturun.
+**S: ✏️ Taslağı Aç ile 🔗 Teklif Programı arasındaki fark ne?**  
+C: İkisi de aynı teklifi açar. Renk ve etiket, teklifin Teklif Programı'ndaki durumunu yansıtır: Amber (Taslağı Aç) = henüz gönderilmemiş, Mavi (Teklif Programı) = gönderilmiş.
 
-**S: Teklif Talebi statüsü otomatik güncelleniyor mu?**  
-C: Hayır, şu an statü otomatik güncellenmez. Teklif gönderildiğinde, onaylandığında veya reddedildiğinde CRM'den manuel güncelleyin.
-
-**S: Teklif Programı'nda EUR yerine TRY kullanabilir miyim?**  
-C: Evet, teklif oluştururken para birimi seçilebilir. TCMB kuru üzerinden otomatik dönüşüm yapılır.
-
-**S: Birden fazla revizyon olduğunda hangi fiyat geçerli?**  
-C: Teklif Programı'nda en son aktif revizyon geçerlidir. Önceki revizyonlar arşivde saklanır.
-
-**S: Teklifi silmeye çalışıyorum ama "korumalı" diyor.**  
-C: Gönderildi, Revize, Randevu, Onaylandı veya Reddedildi statüsündeki teklifler silinemez. Yanlışlıkla bu statüye geçirilmişse sistem yöneticinize başvurun.
+**S: Teklif Programı'nda teklifi sildim, CRM'de hâlâ buton görünüyor.**  
+C: Butona tıklayın — sistem silinen teklifi tespit eder, CRM'deki referansı temizler ve buton `📋 Teklif Oluştur`'a döner. Otomatik gerçekleşir.
 
 **S: Teklif formatını sonradan değiştirebilir miyim?**  
-C: Hayır. Format teklif oluşturulurken bir kez seçilir ve değiştirilemez. Yanlış format seçildiyse DRAFT teklifte yeni bir teklif oluşturup eskisini silin.
+C: Hayır. Format teklif oluşturulurken bir kez seçilir. Yanlış format seçildiyse DRAFT teklifte yeni bir teklif oluşturup eskisini silin.
+
+**S: Teklifi silmeye çalışıyorum ama "korumalı" diyor.**  
+C: Gönderildi, Revize, Randevu, Onaylandı veya Reddedildi statüsündeki teklifler silinemez. Sistem yöneticinize başvurun.
 
 **S: CRM kullanıcısı silindikten sonra Teklif Programı'na girebilir mi?**  
 C: Hayır. CRM'den silinen kullanıcının Teklif Programı erişimi otomatik olarak kaldırılır.
+
+**S: Teklif Programı'nda EUR yerine TRY kullanabilir miyim?**  
+C: Evet, teklif oluştururken para birimi seçilebilir. TCMB kuru üzerinden otomatik dönüşüm yapılır.
 
 ---
 
