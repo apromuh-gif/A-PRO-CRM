@@ -145,18 +145,33 @@ async function openQuotationWithSSO(quotationId) {
         // Teklif silinmiş → CRM'deki tüm ilgili kayıtları temizle
         const relatedProps = state.proposals.filter(p => p.quotationId === quotationId);
         for (const p of relatedProps) {
-          const upd = { ...p, quotationId: '', quotationUrl: '', ...stamp() };
+          const upd = { ...p, quotationId: '', quotationUrl: '', quotationStatus: '', ...stamp() };
           await saveDoc('proposals', p.id, upd);
           setState({ proposals: state.proposals.map(x => x.id === p.id ? upd : x) });
         }
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
         for (const o of relatedOpps) {
-          const upd = { ...o, quotationId: '', quotationUrl: '', ...stamp() };
+          const upd = { ...o, quotationId: '', quotationUrl: '', quotationStatus: '', ...stamp() };
           await saveDoc('opportunities', o.id, upd);
           setState({ opportunities: state.opportunities.map(x => x.id === o.id ? upd : x) });
         }
         showToast('⚠️ Bu teklif teklif programında silinmiş. CRM kaydı temizlendi, yeni teklif oluşturabilirsiniz.');
         return;
+      } else if (chkBody?.data?.exists === true && chkBody?.data?.status) {
+        // Teklif mevcut → Teklif Programı durumunu CRM'e yansıt (self-healing)
+        const tpStatus = chkBody.data.status;
+        const relatedProps = state.proposals.filter(p => p.quotationId === quotationId && p.quotationStatus !== tpStatus);
+        for (const p of relatedProps) {
+          const upd = { ...p, quotationStatus: tpStatus, ...stamp() };
+          await saveDoc('proposals', p.id, upd);
+          setState({ proposals: state.proposals.map(x => x.id === p.id ? upd : x) });
+        }
+        const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId && o.quotationStatus !== tpStatus);
+        for (const o of relatedOpps) {
+          const upd = { ...o, quotationStatus: tpStatus, ...stamp() };
+          await saveDoc('opportunities', o.id, upd);
+          setState({ opportunities: state.opportunities.map(x => x.id === o.id ? upd : x) });
+        }
       }
     }
   } catch {}
