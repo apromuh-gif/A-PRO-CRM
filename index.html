@@ -1079,6 +1079,18 @@ function buildCustomerModal(item) {
   return modal(item?'Firmayı Düzenle':'Yeni Firma', getEl(), ()=>setState({modal:null}), '680px');
 }
 
+// Hedef girilmiş (reps veya serviceReps > 0) aktif kullanıcıları döndürür
+function usersWithTargets() {
+  const reps    = state.targets?.reps        || {};
+  const svcReps = state.targets?.serviceReps || {};
+  return state.users.filter(u =>
+    u.active !== false && (
+      (Number(reps[u.displayName])    || 0) > 0 ||
+      (Number(svcReps[u.displayName]) || 0) > 0
+    )
+  );
+}
+
 function buildOppModal(item) {
   const f = item ? JSON.parse(JSON.stringify(item)) : {title:'',customerId:'',contractorId:'',adminId:'',value:'',stage:'KAZANILDI',jobStatus:JOB_ST[0],sector:SEC_O[0],assignedTo:'',dueDate:'',tenderRef:'',probability:50,notes:'',createdAt:today()};
   const custOpts = [{v:'',l:'Seçin…'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))];
