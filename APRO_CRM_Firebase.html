@@ -877,9 +877,8 @@ async function saveSupplier(form, isEdit) {
 async function delItem(col, id) {
   if(col==='proposals') {
     const p = state.proposals.find(x=>x.id===id);
-    const korunan = ['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];
-    if(p && korunan.includes(p.status)) {
-      showToast('⛔ "'+p.status+'" durumundaki teklif silinemez.');
+    if(p && p.quotationId) {
+      showToast('⛔ Teklif Programı\'na bağlı teklif talepleri CRM\'den silinemez.');
       return;
     }
     if(!confirm('Bu teklif taslağını silmek istediğinizden emin misiniz?')) return;
