@@ -3762,6 +3762,7 @@ function renderSuppliers() {
   }).sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
 
   const filterRow = h('div',{style:{display:'flex',gap:'10px',marginBottom:'16px',flexWrap:'wrap',background:G2,padding:'12px 14px',borderRadius:'12px',border:`1px solid ${G3}`}},
+    makeSearchInput(f.supQ||'',function(v){setState({filters:{...f,supQ:v}});}),
     (()=>{
       const s=h('select',{style:{flex:'1',minWidth:'160px',padding:'8px 12px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'13px',color:T1,outline:'none',cursor:'pointer'}});
       const sorted=[...(state.suppliers||[])].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
