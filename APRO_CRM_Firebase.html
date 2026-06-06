@@ -4739,6 +4739,7 @@ function renderVisits() {
   });
 
   const filtered = visits.filter(v=>{
+    if(vf.q){const _q=vf.q.toLowerCase();const _cn=(custById(v.customerId)?.firmName||'').toLowerCase();if(!_cn.includes(_q)&&!(v.projectInfo||'').toLowerCase().includes(_q)&&!(v.notes||'').toLowerCase().includes(_q))return false;}
     if(vf.cust    && v.customerId !== vf.cust) return false;
     if(vf.rep     && v.assignedTo !== vf.rep)  return false;
     if(vf.project && !(v.projectInfo||'').toLowerCase().includes(vf.project.toLowerCase())) return false;
