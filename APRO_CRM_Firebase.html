@@ -4373,6 +4373,7 @@ function renderServiceOpps() {
   const f = state.svcOppFilters;
 
   let filtered = O.filter(o=>{
+    if(f.q){const _q=f.q.toLowerCase();const _cn=(custById(o.customerId)?.firmName||'').toLowerCase();if(!(o.title||'').toLowerCase().includes(_q)&&!_cn.includes(_q))return false;}
     if(f.title && o.title!==f.title) return false;
     if(f.assigned && o.assignedTo!==f.assigned) return false;
     if(f.stage && o.stage !== f.stage) return false;
