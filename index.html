@@ -3938,16 +3938,16 @@ function buildSupplierModal(item) {
 // Arama input + Bul butonu helper
 function makeSearchInput(val, onChange) {
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex;gap:6px;min-width:220px;flex:2';
+  wrap.style.cssText = 'display:flex;gap:6px;min-width:220px;flex:0 0 auto;margin-left:auto;order:999';
   const inp = document.createElement('input');
   inp.type = 'text';
   inp.placeholder = 'Anahtar kelime ara…';
   inp.value = val || '';
-  inp.style.cssText = 'flex:1;padding:8px 11px;background:#fff;border:1px solid '+G4+';border-radius:8px;font-size:13px;color:'+T1+';outline:none;font-family:inherit';
+  inp.style.cssText = 'flex:1;padding:8px 11px;background:#fff;border:1px solid '+G4+';border-radius:8px;font-size:13px;color:'+T1+';outline:none;font-family:inherit;min-width:150px';
   const b = document.createElement('button');
   b.textContent = 'Bul';
   b.style.cssText = 'padding:8px 15px;background:#f97316;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap';
-  inp.addEventListener('input', function(e){ onChange(e.target.value); });
+  inp.addEventListener('keydown', function(e){ if(e.key==='Enter') onChange(inp.value); });
   b.addEventListener('click', function(){ onChange(inp.value); });
   wrap.appendChild(inp);
   wrap.appendChild(b);
