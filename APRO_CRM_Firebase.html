@@ -4753,6 +4753,7 @@ function renderVisits() {
   const filterBox = h('div',{style:{background:'#edf5fc',border:'1px solid #b0c8e0',borderRadius:'12px',padding:'12px 14px',marginBottom:'14px'}},
     h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#1e3a5f',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'10px'}},'🔍 Filtreler'),
     h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}},
+      makeSearchInput(vf.q||'',function(v){state.visitFilters.q=v;render();}),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'180px'}});
         [{v:'',l:'Tüm Firmalar'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(vf.cust===opt.v)o.selected=true;s.appendChild(o);});
