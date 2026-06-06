@@ -3958,6 +3958,7 @@ function makeSearchInput(val, onChange) {
 function renderCustomers() {
   const f = state.filters;
   const filtered = state.customers.filter(c=>{
+    if(f.custQ){const _q=f.custQ.toLowerCase();if(!c.firmName?.toLowerCase().includes(_q)&&!(c.contacts||[]).some(ct=>ct.name?.toLowerCase().includes(_q)))return false;}
     if(f.custName && !c.firmName?.toLowerCase().includes(f.custName.toLowerCase())) return false;
     if(f.custSector && c.sector !== f.custSector) return false;
     return true;
