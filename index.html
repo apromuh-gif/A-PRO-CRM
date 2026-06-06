@@ -4142,8 +4142,8 @@ function renderOpportunities() {
   const f = state.filters;
   const custById=id=>state.customers.find(c=>c.id===id);
   const fo = state.opportunities.filter(o=>{
-    if(f.oppQ){const _q=f.oppQ.toLowerCase();const _cn=(custById(o.customerId)?.firmName||'').toLowerCase();if(!o.title?.toLowerCase().includes(_q)&&!_cn.includes(_q))return false;}
-    if(f.title&&!o.title?.toLowerCase().includes(f.title.toLowerCase()))return false;
+    if(f.oppQ){const _q=f.oppQ.toLowerCase();const _cn=(custById(o.customerId)?.firmName||'').toLowerCase();if(!(o.title||'').toLowerCase().includes(_q)&&!_cn.includes(_q))return false;}
+    if(f.title&&!(o.title||'').toLowerCase().includes(f.title.toLowerCase()))return false;
     if(f.customer&&o.customerId!==f.customer)return false;
     if(f.stage&&o.stage!==f.stage)return false;
     if(f.sector&&o.sector!==f.sector)return false;
