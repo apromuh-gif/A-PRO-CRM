@@ -4147,7 +4147,7 @@ function renderOpportunities() {
     if(f.customer&&o.customerId!==f.customer)return false;
     if(f.stage&&o.stage!==f.stage)return false;
     if(f.sector&&o.sector!==f.sector)return false;
-    if(f.assigned&&!o.assignedTo?.toLowerCase().includes(f.assigned.toLowerCase()))return false;
+    if(f.assigned&&!(o.assignedTo||'').toLowerCase().includes(f.assigned.toLowerCase()))return false;
     if(f.admin&&o.adminId!==f.admin)return false;
     return true;
   });
