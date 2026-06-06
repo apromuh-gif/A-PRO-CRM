@@ -3983,7 +3983,7 @@ function renderCustomers() {
       s.onchange=e=>setState({filters:{...f,custSector:e.target.value}});
       return s;
     })(),
-    f.custName||f.custSector?btn('✕ Temizle',()=>setState({filters:{...f,custName:'',custSector:''}}),'#fef2f2','#dc2626','8px 12px',{fontSize:'12px',borderRadius:'8px',border:'1px solid #fecaca'}):h('span')
+    (f.custName||f.custSector||f.custQ)?btn('✕ Temizle',()=>setState({filters:{...f,custName:'',custSector:'',custQ:''}}),'#fef2f2','#dc2626','8px 12px',{fontSize:'12px',borderRadius:'8px',border:'1px solid #fecaca'}):h('span')
   );
 
   const list = h('div',{style:{display:'flex',flexDirection:'column',gap:'11px'}});
