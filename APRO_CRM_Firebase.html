@@ -3933,6 +3933,25 @@ function buildSupplierModal(item) {
   return modal(item?'Tedarikçiyi Düzenle':'Yeni Tedarikçi', getEl(), ()=>setState({modal:null}), '680px');
 }
 
+// Arama input + Bul butonu helper
+function makeSearchInput(val, onChange) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;gap:6px;min-width:220px;flex:2';
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = 'Anahtar kelime ara…';
+  inp.value = val || '';
+  inp.style.cssText = 'flex:1;padding:8px 11px;background:#fff;border:1px solid '+G4+';border-radius:8px;font-size:13px;color:'+T1+';outline:none;font-family:inherit';
+  const b = document.createElement('button');
+  b.textContent = 'Bul';
+  b.style.cssText = 'padding:8px 15px;background:#f97316;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap';
+  inp.addEventListener('input', function(e){ onChange(e.target.value); });
+  b.addEventListener('click', function(){ onChange(inp.value); });
+  wrap.appendChild(inp);
+  wrap.appendChild(b);
+  return wrap;
+}
+
 // ═══════════════════════════════════════════════════════
 // MÜŞTERİLER
 // ═══════════════════════════════════════════════════════
