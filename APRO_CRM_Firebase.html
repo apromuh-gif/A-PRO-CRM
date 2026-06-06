@@ -4266,8 +4266,8 @@ function renderProposals() {
       const diff=Math.floor((today0-_toDate(p.sentDate))/(1000*60*60*24));
       if(diff>5)return false;
     }
-    if(pf.q){const _q=pf.q.toLowerCase();const _cn=(custById(p.customerId)?.firmName||'').toLowerCase();if(!p.title?.toLowerCase().includes(_q)&&!_cn.includes(_q)&&!(p.preparedBy||'').toLowerCase().includes(_q))return false;}
-    if(pf.opp&&!p.title?.toLowerCase().includes(pf.opp.toLowerCase()))return false;
+    if(pf.q){const _q=pf.q.toLowerCase();const _cn=(custById(p.customerId)?.firmName||'').toLowerCase();if(!(p.title||'').toLowerCase().includes(_q)&&!_cn.includes(_q)&&!(p.preparedBy||'').toLowerCase().includes(_q))return false;}
+    if(pf.opp&&!(p.title||'').toLowerCase().includes(pf.opp.toLowerCase()))return false;
     if(pf.cust&&p.customerId!==pf.cust)return false;
     if(pf.prep&&p.preparedBy!==pf.prep)return false;
     return true;
