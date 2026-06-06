@@ -3755,6 +3755,7 @@ function renderSuppliers() {
 function renderSuppliers() {
   const f = state.filters;
   const filtered = (state.suppliers||[]).filter(s=>{
+    if(f.supQ){const _q=f.supQ.toLowerCase();if(!s.firmName?.toLowerCase().includes(_q)&&!(s.contacts||[]).some(ct=>ct.name?.toLowerCase().includes(_q)))return false;}
     if(f.supName && !s.firmName?.toLowerCase().includes(f.supName.toLowerCase())) return false;
     if(f.supType && s.supplierType !== f.supType) return false;
     return true;
