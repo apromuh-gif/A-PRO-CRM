@@ -3966,6 +3966,7 @@ function renderCustomers() {
 
   // Filtre satırı
   const filterRow = h('div',{style:{display:'flex',gap:'10px',marginBottom:'16px',flexWrap:'wrap',background:G2,padding:'12px 14px',borderRadius:'12px',border:`1px solid ${G3}`}},
+    makeSearchInput(f.custQ||'',function(v){setState({filters:{...f,custQ:v}});}),
     (()=>{
       const s=h('select',{style:{flex:'1',minWidth:'160px',padding:'8px 12px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'13px',color:T1,outline:'none',cursor:'pointer'}});
       const sorted=[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
