@@ -4469,6 +4469,7 @@ function renderServices() {
   if(!state.svcFilters) state.svcFilters={job:'',prep:'',cust:''};
   const sf=state.svcFilters;
   const svcFiltered=state.services.filter(s=>{
+    if(sf.q){const _q=sf.q.toLowerCase();const _cn=(custById(s.customerId)?.firmName||'').toLowerCase();if(!(s.jobName||'').toLowerCase().includes(_q)&&!_cn.includes(_q)&&!(s.preparedBy||'').toLowerCase().includes(_q))return false;}
     if(sf.job&&s.jobName!==sf.job)return false;
     if(sf.prep&&s.preparedBy!==sf.prep)return false;
     if(sf.cust&&s.customerId!==sf.cust)return false;
