@@ -4592,6 +4592,7 @@ function renderAppointments() {
   });
 
   const filtered = appts.filter(a=>{
+    if(af.q){const _q=af.q.toLowerCase();const _cn=(custById(a.customerId)?.firmName||'').toLowerCase();if(!_cn.includes(_q)&&!(a.notes||'').toLowerCase().includes(_q)&&!(a.assignedTo||'').toLowerCase().includes(_q))return false;}
     if(af.cust   && a.customerId !== af.cust)   return false;
     if(af.rep    && a.assignedTo !== af.rep)    return false;
     if(af.status && a.status     !== af.status) return false;
