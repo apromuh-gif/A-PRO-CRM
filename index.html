@@ -4609,6 +4609,7 @@ function renderAppointments() {
   const filterBox=h('div',{style:{background:'#f5f3ff',border:'1px solid #c4b5fd',borderRadius:'12px',padding:'12px 14px',marginBottom:'14px'}},
     h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#5b21b6',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'10px'}},'🔍 Filtreler'),
     h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}},
+      makeSearchInput(af.q||'',function(v){state.apptFilters.q=v;render();}),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid #c4b5fd`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:window.innerWidth<=768?'100%':'180px'}});
         [{v:'',l:'Tüm Firmalar'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(af.cust===opt.v)o.selected=true;s.appendChild(o);});
