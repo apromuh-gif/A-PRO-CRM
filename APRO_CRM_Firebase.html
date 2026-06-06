@@ -4845,6 +4845,7 @@ function renderMaintenances() {
   if(!state.maintFilters) state.maintFilters={job:'',cust:''};
   const mf=state.maintFilters;
   const maintFiltered=state.maintenances.filter(m=>{
+    if(mf.q){const _q=mf.q.toLowerCase();const _cn=(custById(m.customerId)?.firmName||'').toLowerCase();if(!(m.jobName||'').toLowerCase().includes(_q)&&!_cn.includes(_q))return false;}
     if(mf.job&&m.jobName!==mf.job)return false;
     if(mf.cust&&m.customerId!==mf.cust)return false;
     return true;
