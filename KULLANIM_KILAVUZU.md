@@ -1,13 +1,13 @@
 # A-PRO Mühendislik — CRM & Teklif Programı Kullanım Kılavuzu
 
-> **Sistemler:** A-PRO CRM (Nexora) · A-PRO Teklif Programı  
+> **Sistemler:** A-PRO CRM (NextAura) · A-PRO Teklif Programı  
 > **Güncellenme:** Haziran 2026 — v2.8
 
 ---
 
 ## Hangi Sistem Ne İçin?
 
-| A-PRO CRM (Nexora) | A-PRO Teklif Programı |
+| A-PRO CRM (NextAura) | A-PRO Teklif Programı |
 |---|---|
 | Müşteri ilişkileri takibi | Detaylı mühendislik teklifi hazırlama |
 | Satış fırsatı yönetimi | Kalem kalem fiyatlandırma |
@@ -113,7 +113,7 @@ Müşteriden yanıt geldiğinde:
 
 ---
 
-## BÖLÜM 1 — A-PRO CRM (Nexora)
+## BÖLÜM 1 — A-PRO CRM (NextAura)
 
 ### 1.1 Giriş
 

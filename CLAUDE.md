@@ -5,7 +5,7 @@
 - **Canlı site:** https://apromuh-gif.github.io/A-PRO-CRM
 - **GitHub:** apromuh-gif/A-PRO-CRM → `index.html` olarak yüklenir
 - **Firebase:** a-pro-crm projesi
-- **Nexora:** Ticari marka adı
+- **NextAura:** Ticari marka adı
 
 ## Teklif Programı Entegrasyonu
 Bu CRM, A-PRO Teklif Programı (Next.js/PostgreSQL) ile entegre edilmektedir.
@@ -99,9 +99,8 @@ A-PRO CRM/
 ├── APRO_CRM_Firebase.html   ← Ana CRM dosyası (bunu düzenle)
 ├── CLAUDE.md                ← Bu dosya
 ├── progress.md              ← Proje dokümantasyonu
-├── Nexora_Website.html      ← Nexora web sitesi
-├── Nexora_Fiyat_Listesi_v2.html  ← Nexora fiyat listesi
-└── Nexora_Logo_Alternatifler.html ← Logo seçenekleri
+├── KULLANIM_KILAVUZU.html   ← Kullanım kılavuzu (HTML)
+└── KULLANIM_KILAVUZU.md     ← Kullanım kılavuzu (Markdown)
 ```
 
 ## Sık Yapılan Hatalar
