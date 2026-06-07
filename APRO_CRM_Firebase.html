@@ -310,10 +310,10 @@ function selectTeklifFormat() {
     confirmBtn.textContent = 'Teklif Oluştur →';
     confirmBtn.disabled = true;
     confirmBtn.style.cssText = 'width:100%;padding:11px;border:none;border-radius:10px;background:#cbd5e1;color:#fff;cursor:not-allowed;font-family:inherit;font-size:14px;font-weight:700;margin-bottom:8px;transition:all .15s;';
-    confirmBtn.onclick = () => { overlay.remove(); resolve({format: selFormat, currency: selCurrency}); };
+    confirmBtn.onclick = () => { overlay.remove(); resolve({format: selFormat, currency: selCurrency, language: selLanguage}); };
     box.appendChild(confirmBtn);
     function syncConfirm() {
-      if(selFormat && selCurrency){
+      if(selFormat && selCurrency && selLanguage){
         confirmBtn.disabled = false;
         confirmBtn.style.background = '#2563eb';
         confirmBtn.style.cursor = 'pointer';
