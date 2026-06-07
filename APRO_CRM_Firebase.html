@@ -220,7 +220,7 @@ function syncCustomerToTeklif(customer) {
 // Teklif türü seçim ekranı — Promise döndürür (format kodu veya null)
 function selectTeklifFormat() {
   return new Promise(resolve => {
-    let selFormat = null, selCurrency = null;
+    let selFormat = null, selCurrency = null, selLanguage = null;
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;animation:fu .2s ease;';
     const box = document.createElement('div');
