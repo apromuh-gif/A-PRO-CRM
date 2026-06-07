@@ -278,7 +278,34 @@ function selectTeklifFormat() {
       currBtns.push(b);
     });
     box.appendChild(currRow);
-    // Onayla butonu (ikisi seçilince aktif olur)
+    // Teklif dili bölümü
+    const langSep = document.createElement('div');
+    langSep.style.cssText = 'border-top:1px solid #f1f5f9;margin:14px 0 12px;';
+    box.appendChild(langSep);
+    const langTitle = document.createElement('div');
+    langTitle.style.cssText = 'font-size:13px;font-weight:700;color:#0f1f35;margin-bottom:10px;';
+    langTitle.textContent = '🌐 Teklif Dili';
+    box.appendChild(langTitle);
+    const langRow = document.createElement('div');
+    langRow.style.cssText = 'display:flex;gap:8px;margin-bottom:16px;';
+    const langBtns = [];
+    [{value:'tr',icon:'🇹🇷',label:'Türkçe'},{value:'en',icon:'🇬🇧',label:'English'}].forEach(lg => {
+      const b = document.createElement('button');
+      b.style.cssText = 'flex:1;padding:10px 4px;border:2px solid #e2e8f0;border-radius:10px;background:#fff;cursor:pointer;font-family:inherit;font-size:13px;font-weight:700;color:#0f1f35;transition:all .15s;text-align:center;';
+      b.innerHTML = `<div style="font-size:22px;margin-bottom:3px">${lg.icon}</div><div>${lg.label}</div>`;
+      b.onmouseover = () => { if(selLanguage!==lg.value){ b.style.borderColor='#c4b5fd'; b.style.background='#faf5ff'; }};
+      b.onmouseout  = () => { if(selLanguage!==lg.value){ b.style.borderColor='#e2e8f0'; b.style.background='#fff'; }};
+      b.onclick = () => {
+        selLanguage = lg.value;
+        langBtns.forEach(x => { x.style.borderColor='#e2e8f0'; x.style.background='#fff'; x.style.color='#0f1f35'; });
+        b.style.borderColor='#7c3aed'; b.style.background='#ede9fe'; b.style.color='#4c1d95';
+        syncConfirm();
+      };
+      langRow.appendChild(b);
+      langBtns.push(b);
+    });
+    box.appendChild(langRow);
+    // Onayla butonu (üçü seçilince aktif olur)
     const confirmBtn = document.createElement('button');
     confirmBtn.textContent = 'Teklif Oluştur →';
     confirmBtn.disabled = true;
