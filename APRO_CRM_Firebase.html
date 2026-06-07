@@ -334,7 +334,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
   // Format + para birimi seçimi
   const selection = await selectTeklifFormat();
   if (!selection) return;
-  const { format, currency } = selection;
+  const { format, currency, language } = selection;
   // Personel listelerini Teklif Programı'na sync et (fire-and-forget)
   const salesRepsSync  = usersWithTargets().map(u=>u.displayName);
   const preparedBySync = usersWithTargets().map(u=>u.displayName).sort((a,b)=>a.localeCompare(b,'tr'));
