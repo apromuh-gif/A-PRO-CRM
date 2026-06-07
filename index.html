@@ -372,6 +372,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         crmOpportunityTitle: opportunityTitle || '',
         format: format,
         currency: currency,
+        language: language,
       }),
     });
     const body = await res.json().catch(() => null);
