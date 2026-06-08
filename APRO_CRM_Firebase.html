@@ -4280,6 +4280,8 @@ function renderProposals() {
   });
   const autoHidden=hiddenPropsArr.length;
   const propFiltered=state.proposals.filter(p=>{
+    // Fırsatlardan otomatik oluşturulan proposal'lar burada görünmez (manuel kayıtlar için)
+    if(p.source==='opportunity')return false;
     // Gönderildi + sentDate'den 5 gün geçtiyse Teklifler listesinden gizle (veri silinmez)
     if(p.status==='Gönderildi'&&p.sentDate){
       const diff=Math.floor((today0-_toDate(p.sentDate))/(1000*60*60*24));
