@@ -391,6 +391,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         status: 'Hazırlanıyor', createdAt: today(),
         validUntil: '', sentDate: '', notes: '',
         quotationId: quotationId||'', quotationUrl: quotationUrl||'', quotationStatus: 'DRAFT',
+        source: 'opportunity',
         ...stamp(),
       };
       await saveDoc('proposals', propId, propData);
