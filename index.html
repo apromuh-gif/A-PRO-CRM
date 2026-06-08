@@ -170,17 +170,12 @@ async function openQuotationWithSSO(quotationId) {
         showToast('⚠️ Bu teklif teklif programında silinmiş. CRM kaydı temizlendi, yeni teklif oluşturabilirsiniz.');
         return;
       } else if (chkBody?.data?.exists === true) {
-        // Teklif mevcut → durum + toplam + referans + satış temsilcisi → Firestore (self-healing)
+        // Teklif mevcut → durum + toplam + referans + satış temsilcisi → Fırsatlar güncellenir
+        // (Teklif Talepleri bu akıştan etkilenmez — bağlantısız bölüm)
         const tpStatus    = chkBody.data.status    ?? null;
         const tpTotal     = chkBody.data.grandTotal ? parseFloat(chkBody.data.grandTotal) : null;
         const tpReference = chkBody.data.reference ?? null;
         const tpSalesRep  = chkBody.data.salesRep  ?? null;
-        const relatedProps = state.proposals.filter(p => p.quotationId === quotationId);
-        for (const p of relatedProps) {
-          const upd = { ...p, ...(tpStatus !== null && { quotationStatus: tpStatus }), ...stamp() };
-          await saveDoc('proposals', p.id, upd);
-          setState({ proposals: state.proposals.map(x => x.id === p.id ? upd : x) });
-        }
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
         for (const o of relatedOpps) {
           const upd = { ...o,
