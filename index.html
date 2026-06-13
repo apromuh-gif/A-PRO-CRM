@@ -155,18 +155,25 @@ async function openQuotationWithSSO(quotationId) {
       const chkBody = await chk.json().catch(() => null);
       if (chkBody?.data?.exists === false) {
         // Teklif silinmiş → CRM'deki tüm ilgili kayıtları temizle
+        const _scrollSave = [...document.querySelectorAll('.apro-no-sb')].map(el => el.scrollLeft);
         const relatedProps = state.proposals.filter(p => p.quotationId === quotationId);
+        let updatedProposals = [...state.proposals];
         for (const p of relatedProps) {
           const upd = { ...p, quotationId: '', quotationUrl: '', quotationStatus: '', ...stamp() };
           await saveDoc('proposals', p.id, upd);
-          setState({ proposals: state.proposals.map(x => x.id === p.id ? upd : x) });
+          updatedProposals = updatedProposals.map(x => x.id === p.id ? upd : x);
         }
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
+        let updatedOpps = [...state.opportunities];
         for (const o of relatedOpps) {
           const upd = { ...o, quotationId: '', quotationUrl: '', quotationStatus: '', value: 0, tenderRef: '', assignedTo: '', ...stamp() };
           await saveDoc('opportunities', o.id, upd);
-          setState({ opportunities: state.opportunities.map(x => x.id === o.id ? upd : x) });
+          updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
         }
+        setState({ proposals: updatedProposals, opportunities: updatedOpps });
+        requestAnimationFrame(() => {
+          [...document.querySelectorAll('.apro-no-sb')].forEach((el, i) => { if (_scrollSave[i]) el.scrollLeft = _scrollSave[i]; });
+        });
         showToast('⚠️ Bu teklif teklif programında silinmiş. CRM kaydı temizlendi, yeni teklif oluşturabilirsiniz.');
         return;
       } else if (chkBody?.data?.exists === true) {
@@ -177,6 +184,8 @@ async function openQuotationWithSSO(quotationId) {
         const tpReference = chkBody.data.reference ?? null;
         const tpSalesRep  = chkBody.data.salesRep  ?? null;
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
+        const _scrollSave = [...document.querySelectorAll('.apro-no-sb')].map(el => el.scrollLeft);
+        let updatedOpps = [...state.opportunities];
         for (const o of relatedOpps) {
           const upd = { ...o,
             ...(tpStatus   !== null && { quotationStatus: tpStatus }),
@@ -186,7 +195,13 @@ async function openQuotationWithSSO(quotationId) {
             ...stamp()
           };
           await saveDoc('opportunities', o.id, upd);
-          setState({ opportunities: state.opportunities.map(x => x.id === o.id ? upd : x) });
+          updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
+        }
+        if (relatedOpps.length > 0) {
+          setState({ opportunities: updatedOpps });
+          requestAnimationFrame(() => {
+            [...document.querySelectorAll('.apro-no-sb')].forEach((el, i) => { if (_scrollSave[i]) el.scrollLeft = _scrollSave[i]; });
+          });
         }
       }
     }
