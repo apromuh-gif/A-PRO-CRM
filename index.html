@@ -181,7 +181,9 @@ async function openQuotationWithSSO(quotationId) {
         // (Teklif Talepleri bu akıştan etkilenmez — bağlantısız bölüm)
         const tpStatus    = chkBody.data.status    ?? null;
         const tpTotal     = chkBody.data.grandTotal ? parseFloat(chkBody.data.grandTotal) : null;
-        const tpReference = chkBody.data.reference ?? null;
+        // REF.: hazırlandı/gönderildi'de atanan teklif numarası (örn. A-Pro-T-26-0036).
+        // Numara yoksa (taslak) manuel referansa düşer.
+        const tpReference = chkBody.data.number ?? chkBody.data.reference ?? null;
         const tpSalesRep  = chkBody.data.salesRep  ?? null;
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
         const _scrollSave = [...document.querySelectorAll('.apro-no-sb')].map(el => el.scrollLeft);
