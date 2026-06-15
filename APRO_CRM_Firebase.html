@@ -5645,6 +5645,10 @@ function startNotificationTimer() {
   if(window._mailInterval) clearInterval(window._mailInterval);
   window._mailInterval = setInterval(checkAllMails, 300000);
   setTimeout(checkAllMails, 8000);
+  // Teklif programı referans senkronu (atanan teklif no → fırsat REF.)
+  if(window._qrefInterval) clearInterval(window._qrefInterval);
+  window._qrefInterval = setInterval(syncQuotationRefs, 300000);
+  setTimeout(syncQuotationRefs, 10000);
 }
 
 
