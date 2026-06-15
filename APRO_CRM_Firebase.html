@@ -5716,6 +5716,49 @@ function mailBody(icon, title, details) {
     + '</div>';
 }
 
+// Teklif programındaki bağlı tekliflerin durum/numara/tutarını arka planda çekip
+// fırsatların REF. (tenderRef), durum, değer ve satış temsilcisi alanlarını günceller.
+// Atanan teklif numarası (number, örn. A-Pro-T-26-0036) REF.'e otomatik yazılır.
+// Yalnız DEĞİŞEN kayıtlar Firebase'e yazılır (gereksiz yazma yok).
+async function syncQuotationRefs() {
+  try {
+    if (typeof TEKLIF_APP_URL === 'undefined' || typeof TEKLIF_API_KEY === 'undefined' || !TEKLIF_API_KEY) return;
+    const opps = (state.opportunities || []).filter(o => o.quotationId);
+    if (opps.length === 0) return;
+    let updatedOpps = [...state.opportunities];
+    let changed = false;
+    for (const o of opps) {
+      const res = await fetch(
+        `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?id=${encodeURIComponent(o.quotationId)}`,
+        { headers: { 'x-crm-key': TEKLIF_API_KEY } }
+      ).catch(() => null);
+      if (!res || !res.ok) continue;
+      const body = await res.json().catch(() => null);
+      const d = body && body.data;
+      if (!d || d.exists !== true) continue; // silinmeyi arka planda ele almıyoruz (açılış akışı yapar)
+      const ref   = d.number ?? d.reference ?? null;
+      const total = d.grandTotal ? parseFloat(d.grandTotal) : null;
+      const patch = {};
+      if (d.status != null && d.status !== o.quotationStatus) patch.quotationStatus = d.status;
+      if (ref != null && ref !== o.tenderRef) patch.tenderRef = ref;
+      if (total != null && total > 0 && total !== o.value) patch.value = total;
+      if (d.salesRep && d.salesRep !== o.assignedTo) patch.assignedTo = d.salesRep;
+      if (Object.keys(patch).length === 0) continue;
+      const upd = { ...o, ...patch, ...stamp() };
+      await saveDoc('opportunities', o.id, upd);
+      updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
+      changed = true;
+    }
+    if (changed) {
+      const _scrollSave = [...document.querySelectorAll('.apro-no-sb')].map(el => el.scrollLeft);
+      setState({ opportunities: updatedOpps });
+      requestAnimationFrame(() => {
+        [...document.querySelectorAll('.apro-no-sb')].forEach((el, i) => { if (_scrollSave[i]) el.scrollLeft = _scrollSave[i]; });
+      });
+    }
+  } catch {}
+}
+
 function checkAllMails() {
   const now   = _nowMin();
   const today = _todayISO();
