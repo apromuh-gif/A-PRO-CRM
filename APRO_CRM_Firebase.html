@@ -386,9 +386,10 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         email: customer.email || '',
         crmCustomerId: customer.id || '',
         crmOpportunityTitle: opportunityTitle || '',
-        format: format,
+        format: apiFormat,
         currency: currency,
         language: language,
+        isService: isService,
       }),
     });
     const body = await res.json().catch(() => null);
