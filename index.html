@@ -1152,7 +1152,7 @@ function buildOppModal(item) {
     row(field('İdare',fAdmin,true),field('Sektör',fSector,true)),
     row(field('İşin Durumu',fJob,true),field('Satış Temsilcisi',fAssigned,true)),
     field('Ön Gör. Sipariş Tarihi',fDue),
-    field('Teklif Referansı / Link',fRef),
+    field('Teklif Referansı (tekliften otomatik)',fRef),
     h('div',{style:{display:'flex',gap:'10px',marginTop:'4px'}},
       btn('Kaydet',()=>{if(f.title&&f.customerId)saveOpp({...f,value:Number(f.value)||0},!!item);},'linear-gradient(135deg,#ea580c,#d97706)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#f1f5f9','#4a6080','11px 20px',{fontSize:'14px',border:'1px solid #b0c8e0',borderRadius:'9px'})
