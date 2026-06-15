@@ -1133,9 +1133,11 @@ function buildOppModal(item) {
   const repOptions = [{v:'',l:'-- Seçin --'},...usersWithTargets().map(u=>({v:u.displayName,l:u.displayName}))];
   const fAssigned = sel(repOptions, f.assignedTo, v=>f.assignedTo=v);
   const fDue=inp('',f.dueDate,v=>f.dueDate=v,'date');
-  const fRef=h('input',{placeholder:'REF-2024-001 veya https://sunucu/dosya.pdf',value:f.tenderRef||'',
-    style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",outline:'none'}});
-  fRef.addEventListener('input',e=>f.tenderRef=e.target.value);
+  // REF. salt-okunur: değer Teklif Programı'ndan (teklif hazırlandı/gönderildi → numara)
+  // otomatik gelir. Manuel giriş kapalı — aksi halde sync üzerine yazardı.
+  const fRef=h('input',{placeholder:'Teklif hazırlandığında otomatik gelecek',value:f.tenderRef||'',
+    readOnly:true,title:'REF. teklif programından otomatik gelir; elle düzenlenemez.',
+    style:{width:'100%',padding:'9px 12px',background:'#eef2f7',border:`1px solid ${G4}`,borderRadius:'8px',color:'#64748b',fontSize:'13px',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",outline:'none',cursor:'not-allowed'}});
   const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
 
