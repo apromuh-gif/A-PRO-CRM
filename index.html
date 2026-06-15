@@ -3987,6 +3987,9 @@ function makeSearchInput(val, onChange) {
   b.style.cssText = 'padding:8px 15px;background:#f97316;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap';
   inp.addEventListener('keydown', function(e){ if(e.key==='Enter') onChange(inp.value); });
   b.addEventListener('click', function(){ onChange(inp.value); });
+  // Kutu boşaltılınca (metin silinince) filtre otomatik sıfırlanır — aksi halde
+  // Bul/Enter beklediği için eski filtre görünmeye devam ediyordu.
+  inp.addEventListener('input', function(){ if(inp.value === '') onChange(''); });
   wrap.appendChild(inp);
   wrap.appendChild(b);
   return wrap;
