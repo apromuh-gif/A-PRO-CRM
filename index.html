@@ -348,6 +348,9 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
   const selection = await selectTeklifFormat();
   if (!selection) return;
   const { format, currency, language } = selection;
+  // Teknik Servis: UNIT_PRICE düzeni + isService bayrağı (numara A-Pro-BT serisi).
+  const isService = format === 'SERVICE';
+  const apiFormat = isService ? 'UNIT_PRICE' : format;
   // Personel listelerini Teklif Programı'na sync et (fire-and-forget)
   const salesRepsSync  = usersWithTargets().map(u=>u.displayName);
   const preparedBySync = usersWithTargets().map(u=>u.displayName).sort((a,b)=>a.localeCompare(b,'tr'));
