@@ -5736,6 +5736,7 @@ async function syncQuotationRefs() {
     const opps = (state.opportunities || []).filter(o => o.quotationId);
     if (opps.length === 0) return;
     let updatedOpps = [...state.opportunities];
+    let updatedProps = [...state.proposals];
     let changed = false;
     for (const o of opps) {
       const res = await fetch(
