@@ -5799,6 +5799,7 @@ async function syncQuotationRefs() {
       requestAnimationFrame(() => {
         [...document.querySelectorAll('.apro-no-sb')].forEach((el, i) => { if (_scrollSave[i]) el.scrollLeft = _scrollSave[i]; });
       });
+      if (deletedCount > 0) showToast('⚠️ Teklif programında silinen ' + deletedCount + ' teklif tespit edildi, CRM kayıtları temizlendi.');
     }
   } catch {}
 }
