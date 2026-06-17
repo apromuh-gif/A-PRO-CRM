@@ -1865,6 +1865,39 @@ box.style.cssText="background:#fff;border-radius:16px;padding:"+(isMobLogin?"28p
 }
 function hideSpinner(){var s=document.getElementById("ai-spinner");if(s&&document.body.contains(s))document.body.removeChild(s);}
 
+// ── Gemini (Google Search grounding ile) rapor çağrısı ──
+// Dönüş: {text, sources} ya da hata durumunda null (toast gösterir)
+async function callGeminiReport(systemText, userText, temperature){
+  var apiKey=state.geminiKey||"";
+  if(!apiKey){showToast("❌ Gemini API Key eksik — 🎯 Hedefler panelinden girin","#dc2626");return null;}
+  var url="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(apiKey);
+  var resp=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+    systemInstruction:{parts:[{text:systemText}]},
+    contents:[{role:"user",parts:[{text:userText}]}],
+    tools:[{google_search:{}}],
+    generationConfig:{temperature:temperature,maxOutputTokens:8192,thinkingConfig:{thinkingBudget:0}}
+  })});
+  var data=await resp.json();
+  if(data.error){showToast("❌ Gemini API: "+(data.error.message||"hata"),"#dc2626");return null;}
+  var cand=(data.candidates||[])[0]||{};
+  var parts=(cand.content&&cand.content.parts)||[];
+  var text=parts.map(function(p){return p.text||"";}).join("").trim();
+  // ```html ... ``` sarmalını temizle
+  text=text.replace(/^```html\s*/i,"").replace(/^```\s*/,"").replace(/```\s*$/,"").trim();
+  // Google Search kaynaklarını topla
+  var sources="";
+  var gm=cand.groundingMetadata;
+  if(gm&&gm.groundingChunks&&gm.groundingChunks.length){
+    var seen={},items=[];
+    gm.groundingChunks.forEach(function(c){
+      var w=c.web;if(w&&w.uri&&!seen[w.uri]){seen[w.uri]=1;
+        items.push("<li style='margin-bottom:6px;font-size:12px;line-height:1.5'><a href='"+w.uri+"' target='_blank' rel='noopener' style='color:#2563eb;text-decoration:none'>"+(w.title||w.uri)+"</a></li>");}
+    });
+    if(items.length)sources="<section style='margin-top:28px;padding-top:16px;border-top:1px solid #e2e8f0'><h2 style='color:#1e3a5f;font-size:14px;margin-bottom:10px'>📚 Araştırma Kaynakları (Google)</h2><ul style='padding-left:20px;margin:0'>"+items.join("")+"</ul></section>";
+  }
+  return {text:text,sources:sources};
+}
+
 // ── AYLIK RAPOR (sadece PDF, kaydedilmez) ──────────────
 async function generateMonthlyReport() {
   var d=prepareReportData();
