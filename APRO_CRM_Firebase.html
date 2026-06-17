@@ -2295,8 +2295,8 @@ function buildTargetsModal() {
 
   const container = h('div',{});
 
-  let apiKeyVal = state.groqKey || '';
-  const apiInp = h('input',{type:'password',placeholder:'gsk_...',value:apiKeyVal,
+  let apiKeyVal = state.geminiKey || '';
+  const apiInp = h('input',{type:'password',placeholder:'AIza...',value:apiKeyVal,
     style:{flex:'1',padding:'10px 13px',background:'#f0f5fc',border:'1.5px solid #90bcd8',borderRadius:'9px',color:'#0f1f35',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none'}});
   apiInp.addEventListener('input',e=>{apiKeyVal=e.target.value.trim();});
   const toggleBtn=h('button',{
