@@ -2304,7 +2304,7 @@ function buildTargetsModal() {
     style:{padding:'10px 13px',background:'#e8f0fb',border:'1px solid #90bcd8',borderRadius:'9px',color:'#1e2d4a',cursor:'pointer',fontSize:'12px',whiteSpace:'nowrap'}
   },'👁 Göster');
   const saveKeyBtn=h('button',{
-    onClick:async()=>{if(apiKeyVal.startsWith('AIza')){await saveApiKey(apiKeyVal);}else{showToast('❌ Geçersiz Gemini key (AIza ile başlamalı)','#dc2626');}},
+    onClick:async()=>{if(apiKeyVal.length>=20){await saveApiKey(apiKeyVal);}else{showToast('❌ Geçersiz Gemini key (çok kısa görünüyor)','#dc2626');}},
     style:{padding:'10px 16px',background:'linear-gradient(135deg,#2563eb,#1d4ed8)',border:'none',borderRadius:'9px',color:'#fff',cursor:'pointer',fontSize:'13px',fontWeight:'700',whiteSpace:'nowrap'}
   },'💾 Kaydet');
 
