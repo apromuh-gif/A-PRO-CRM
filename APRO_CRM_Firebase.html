@@ -522,15 +522,15 @@ async function loadTargets() {
 async function loadApiKey() {
   try {
     const snap = await db.collection('settings').doc('config').get();
-    if(snap.exists && snap.data().groqKey) return snap.data().groqKey;
+    if(snap.exists && snap.data().geminiKey) return snap.data().geminiKey;
     return '';
   } catch(e) { return ''; }
 }
 async function saveApiKey(key) {
   try {
-    await db.collection('settings').doc('config').set({groqKey:key},{merge:true});
-    state.groqKey = key;
-    showToast('✅ Groq API Key kaydedildi!','#16a34a');
+    await db.collection('settings').doc('config').set({geminiKey:key},{merge:true});
+    state.geminiKey = key;
+    showToast('✅ Gemini API Key kaydedildi!','#16a34a');
   } catch(e) { showToast('❌ Kaydedilemedi!','#dc2626'); }
 }
 
