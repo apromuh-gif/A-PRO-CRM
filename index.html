@@ -5260,7 +5260,7 @@ function render() {
   const users = await loadUsers();
   state.users = users;
   state.targets = await loadTargets();
-  state.groqKey = await loadApiKey();
+  state.geminiKey = await loadApiKey();
   state.loading = false;
   render();
   setTimeout(checkMonthlyReport, 3000);
