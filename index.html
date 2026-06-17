@@ -2027,16 +2027,14 @@ async function generateQuarterlyReport() {
     "12. YÖNETİCİYE ÖZEL STRATEJİK KARARLAR — Bu çeyrekten sonra ertelenmemesi gereken 3 kritik karar\n\n"+
     "FORMAT: <section style='margin-bottom:36px'>, <h2 style='color:#1e3a5f;border-bottom:2px solid #7c3aed;padding-bottom:8px;margin-bottom:16px;font-size:16px'>, <h3 style='color:#5b21b6;margin-bottom:10px;font-size:14px'>, <p style='line-height:1.8;color:#2d3748;margin-bottom:12px;font-size:14px'>, <ul style='padding-left:20px;margin-bottom:12px'><li style='margin-bottom:8px;line-height:1.7;font-size:14px'>. Sadece inline style.";
 
-  var apiKey2=state.groqKey||"";
-  if(!apiKey2){showToast("❌ Groq API Key eksik — 🎯 Hedefler panelinden girin","#dc2626");return;}
+  if(!(state.geminiKey||"")){showToast("❌ Gemini API Key eksik — 🎯 Hedefler panelinden girin","#dc2626");return;}
   var spinner=showSpinner("3 aylık rapor hazırlanıyor...");
   try{
-    var resp=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey2},body:JSON.stringify({model:"llama-3.3-70b-versatile",max_tokens:8000,temperature:0.2,messages:[{role:"system",content:"Sen Türkiye mühendislik ve yangın güvenlik sektörü uzmanı, McKinsey kalitesinde stratejik danışmansın. CRM verilerini sektörel bağlamla birleştirerek derin, stratejik, aksiyona dönük analizler yapıyorsun. Rakip konumlandırma, pazar dinamikleri ve büyüme stratejisi perspektifiyle yaklaş. HTML formatında, kapsamlı raporlar hazırla."},{role:"user",content:p1+p2+p3+p4}]})});
-    var data=await resp.json();
-    if(data.error){hideSpinner();showToast("❌ Groq API: "+data.error.message,"#dc2626");return;}
-    var aiContent=((data.choices||[])[0]||{}).message&&data.choices[0].message.content?data.choices[0].message.content.trim():"";
-    if(!aiContent){aiContent="<p>Rapor oluşturulamadı.</p>";}
+    var sysQuarterly="Sen Türkiye mühendislik ve yangın güvenlik sektörü uzmanı, McKinsey/BCG kalitesinde stratejik danışman ve pazarlama uzmanısın. Google arama aracını kullanarak Türkiye yangın güvenlik ve mühendislik pazarına dair GÜNCEL veriler araştır: pazar büyüklüğü ve büyüme oranı, mevzuat/yönetmelik değişiklikleri, rakip firma hamleleri, kamu/özel ihale ve yatırım trendleri, sektörel teknoloji eğilimleri. Bu araştırmayı CRM verisiyle birleştirip rakip konumlandırma, pazar dinamikleri ve büyüme stratejisi perspektifiyle derin analiz üret. Yanıtını SADECE geçerli HTML olarak yaz (markdown veya ```html bloğu kullanma).";
+    var rq=await callGeminiReport(sysQuarterly,p1+p2+p3+p4,0.2);
     hideSpinner();
+    if(!rq)return;
+    var aiContent=rq.text?rq.text+rq.sources:"<p>Rapor oluşturulamadı.</p>";
 
     // Firebase'e kaydet
     try{
