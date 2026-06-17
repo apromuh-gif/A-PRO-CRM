@@ -1951,17 +1951,15 @@ async function generateMonthlyReport() {
     "10. YÖNETİCİYE ÖZEL UYARILAR — Bu ay ertelenmemesi gereken kararlar\n\n"+
     "FORMAT: Her bölüm için <section style='margin-bottom:32px'>, başlık <h2 style='color:#1e3a5f;border-bottom:2px solid #2563eb;padding-bottom:8px;margin-bottom:16px;font-size:16px'>, metin <p style='line-height:1.8;color:#2d3748;margin-bottom:12px;font-size:14px'>, liste <ul style='padding-left:20px;margin-bottom:12px'><li style='margin-bottom:8px;line-height:1.7;font-size:14px;color:#2d3748'>. "+
     "Sadece inline style. Rapor çok kapsamlı ve uzun olmalı — bir danışmanlık firmasının hazırladığı kalitede.";
-  var apiKey=state.groqKey||"";
-  if(!apiKey){showToast("❌ Groq API Key eksik — 🎯 Hedefler panelinden girin","#dc2626");return;}
+  if(!(state.geminiKey||"")){showToast("❌ Gemini API Key eksik — 🎯 Hedefler panelinden girin","#dc2626");return;}
   var spinner=showSpinner("Aylık rapor hazırlanıyor...");
   try{
-    var resp=await fetch("https://api.groq.com/openai/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+apiKey},body:JSON.stringify({model:"llama-3.3-70b-versatile",max_tokens:8000,temperature:0.3,messages:[{role:"system",content:"Sen Türkiye inşaat, yangın güvenlik ve mühendislik sektörü uzmanı bir stratejik danışmansın. Verilen CRM verilerini ve sektörel bağlamı kullanarak derin, analitik, aksiyona dönük raporlar hazırlıyorsun. Yüzeysel özet yapma — her bulgu için somut yorum ve öneri sun. HTML formatında yaz."},{role:"user",content:p1+p2+p3+p4}]})});
-    var data=await resp.json();
-    if(data.error){hideSpinner();showToast("❌ Groq API: "+data.error.message,"#dc2626");return;}
-    var aiText=((data.choices||[])[0]||{}).message&&data.choices[0].message.content?data.choices[0].message.content.trim():"";
-    if(!aiText){hideSpinner();showToast("❌ Groq boş yanıt döndürdü, tekrar deneyin","#dc2626");return;}
+    var sysMonthly="Sen Türkiye inşaat, yangın güvenlik ve mühendislik sektöründe 20 yıllık deneyime sahip, McKinsey düzeyinde bir stratejik danışman ve pazarlama uzmanısın. Google arama aracını kullanarak Türkiye yangın güvenlik pazarına dair GÜNCEL veriler araştır: pazar büyüklüğü ve büyüme oranı, son mevzuat/yönetmelik değişiklikleri (BYKHY), rakip firmaların hamleleri, açılan/beklenen kamu ihaleleri, sektör trendleri. Bu güncel araştırmayı verilen CRM verisiyle birleştirerek yöneticiyi yönlendiren analiz üret. Yüzeysel özet yapma — her bulgu için NEDEN önemli ve NE YAPILMALI açıkla. Yanıtını SADECE geçerli HTML olarak yaz (markdown veya ```html bloğu kullanma).";
+    var r=await callGeminiReport(sysMonthly,p1+p2+p3+p4,0.3);
     hideSpinner();
-    buildReportWindow("Aylık Yönetici Raporu",monthName+" — Yapay Zeka Analizi",d,aiText,null,false);
+    if(!r)return;
+    if(!r.text){showToast("❌ Gemini boş yanıt döndürdü, tekrar deneyin","#dc2626");return;}
+    buildReportWindow("Aylık Yönetici Raporu",monthName+" — Yapay Zeka Analizi",d,r.text+r.sources,null,false);
     showToast("✅ Aylık rapor hazır!","#16a34a");
   }catch(err){hideSpinner();showToast("❌ Bağlantı hatası: "+err.message,"#dc2626");}
 }
