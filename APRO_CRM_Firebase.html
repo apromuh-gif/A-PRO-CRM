@@ -2337,14 +2337,14 @@ function buildTargetsModal() {
       h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'}},
         h('span',{style:{fontSize:'22px'}},'🤖'),
         h('div',{},
-          h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#1e2d4a'}},'Groq AI — Rapor API Key'),
-          h('div',{style:{fontSize:'12px',color:'#4a6080',marginTop:'2px'}},"Ücretsiz Groq AI · console.groq.com'dan alın · Firebase'e kaydedilir")
+          h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#1e2d4a'}},'Gemini AI — Rapor API Key'),
+          h('div',{style:{fontSize:'12px',color:'#4a6080',marginTop:'2px'}},"Ücretsiz Gemini AI · aistudio.google.com/apikey'den alın · Google arama destekli · Firebase'e kaydedilir")
         )
       ),
       h('div',{style:{display:'flex',gap:'8px',alignItems:'center',marginBottom:'10px'}},apiInp,toggleBtn,saveKeyBtn),
-      state.groqKey
-        ?h('div',{style:{fontSize:'12px',color:'#16a34a',fontWeight:'700'}},'✅ Groq Key kayıtlı — Raporlar aktif')
-        :h('div',{style:{fontSize:'12px',color:'#d97706',fontWeight:'700'}},'⚠️ Groq Key girilmemiş — Raporlar çalışmaz')
+      state.geminiKey
+        ?h('div',{style:{fontSize:'12px',color:'#16a34a',fontWeight:'700'}},'✅ Gemini Key kayıtlı — Raporlar aktif')
+        :h('div',{style:{fontSize:'12px',color:'#d97706',fontWeight:'700'}},'⚠️ Gemini Key girilmemiş — Raporlar çalışmaz')
     ));
 
     // ── Şirket Satış Hedefi ──
