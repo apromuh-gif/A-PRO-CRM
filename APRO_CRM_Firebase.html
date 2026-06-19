@@ -132,6 +132,20 @@ async function getCrmSessionToken() {
   } catch { return null; }
 }
 
+// Teklif referansına revizyon eki: revizyon ≥2 ise "...-R2" eklenir (zaten ekliyse tekrarlamaz).
+function tpRefWithRev(d) {
+  const base = (d && (d.number ?? d.reference)) ?? null;
+  if (!base) return base;
+  const rev = Number(d && d.revisionNumber);
+  if (Number.isFinite(rev) && rev >= 2 && !/-R\d+$/.test(base)) return base + '-R' + rev;
+  return base;
+}
+// Fırsat değeri daima EUR: API grandTotalEur (EUR'ya çevrilmiş) döndürür; yoksa ham toplama düşer.
+function tpValueEur(d) {
+  const v = d && (d.grandTotalEur ?? d.grandTotal);
+  return v ? parseFloat(v) : null;
+}
+
 // Mevcut teklifi SSO ile aç. Teklif silinmişse CRM'den otomatik temizler.
 async function openQuotationWithSSO(quotationId) {
   // Personel listelerini her açılışta sync et (fire-and-forget) — yalnızca mevcut CRM kullanıcıları
@@ -179,10 +193,11 @@ async function openQuotationWithSSO(quotationId) {
         // Teklif mevcut → durum + toplam + referans + satış temsilcisi → Fırsatlar güncellenir
         // (Teklif Talepleri bu akıştan etkilenmez — bağlantısız bölüm)
         const tpStatus    = chkBody.data.status    ?? null;
-        const tpTotal     = chkBody.data.grandTotal ? parseFloat(chkBody.data.grandTotal) : null;
+        // Değer daima EUR (teklif $/₺ olsa bile API EUR'ya çevirip gönderir).
+        const tpTotal     = tpValueEur(chkBody.data);
         // REF.: hazırlandı/gönderildi'de atanan teklif numarası (örn. A-Pro-T-26-0036).
-        // Numara yoksa (taslak) manuel referansa düşer.
-        const tpReference = chkBody.data.number ?? chkBody.data.reference ?? null;
+        // Revizyon ≥2 ise "-R2" eklenir. Numara yoksa (taslak) manuel referansa düşer.
+        const tpReference = tpRefWithRev(chkBody.data);
         const tpSalesRep  = chkBody.data.salesRep  ?? null;
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
         const _scrollSave = [...document.querySelectorAll('.apro-no-sb')].map(el => el.scrollLeft);
@@ -5797,8 +5812,8 @@ async function syncQuotationRefs() {
         continue;
       }
 
-      const ref   = d.number ?? d.reference ?? null;
-      const total = d.grandTotal ? parseFloat(d.grandTotal) : null;
+      const ref   = tpRefWithRev(d);     // revizyon ≥2 → "...-R2"
+      const total = tpValueEur(d);       // daima EUR
       // Fırsatlar: durum (hazırlandı/gönderildi) + REF + değer + temsilci
       for (const o of updatedOpps.filter(x => x.quotationId === qid)) {
         const patch = {};
