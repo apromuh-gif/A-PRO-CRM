@@ -497,16 +497,15 @@ async function loadUsers() {
   try {
     const snap = await db.collection('users').get();
     if(snap.empty) {
-      // İlk kurulum - kullanıcıları oluştur
+      // İlk kurulum - rol dokümanlarını oluştur (şifre Firestore'a YAZILMAZ; Firebase Auth tutar)
       for(const u of DEFAULT_USERS) {
-        await db.collection('users').doc(u.email).set({...u, active:true, createdAt: today()});
+        const {password, ...rest} = u;
+        await db.collection('users').doc(u.email).set({...rest, active:true, createdAt: today()});
       }
-      return DEFAULT_USERS.map(u=>({...u,active:true}));
+      return DEFAULT_USERS.map(u=>{ const {password, ...r}=u; return {...r,active:true}; });
     }
-    const us = snap.docs.map(d=>({...d.data(), email:d.id}));
-    console.log('Firebase users:', us.map(u=>({email:u.email, pw:u.password, active:u.active})));
-    return us;
-  } catch(e) { return DEFAULT_USERS.map(u=>({...u,active:true})); }
+    return snap.docs.map(d=>({...d.data(), email:d.id}));
+  } catch(e) { return DEFAULT_USERS.map(u=>{ const {password, ...r}=u; return {...r,active:true}; }); }
 }
 
 async function loadCollection(name) {
@@ -703,38 +702,61 @@ function renderLogin() {
   async function doLogin() {
     if(loginState.locked) return;
     loginState.err = '';
+    const email = loginState.email.trim().toLowerCase();
+    const pw = loginState.pw;
+    if(!email || !pw) { loginState.err='E-posta ve şifre gerekli.'; renderLoginForm(); return; }
     loginState.checking = true;
     renderLoginForm();
-    // Her girişte Firebase sunucusundan anlık kullanıcı listesi çek.
-    // Silinmiş / pasife alınmış hesaplar için önbelleğe ASLA fallback yapma.
-    let freshUsers = null;
     try {
-      const snap = await db.collection('users').get({source:'server'});
-      freshUsers = snap.docs.map(d=>({...d.data(), email:d.id}));
-      state.users = freshUsers;
-    } catch(e) {
-      // Sunucuya ulaşılamıyorsa güvenli tarafta kal — giriş yaptırma
-      loginState.checking = false;
-      loginState.err = 'Sunucuya bağlanılamadı. İnternet bağlantınızı kontrol edin.';
-      renderLoginForm();
-      return;
-    }
-    loginState.checking = false;
-    const user = freshUsers.find(u=>
-      u.email.toLowerCase()===loginState.email.trim().toLowerCase() &&
-      u.password===loginState.pw &&
-      u.active!==false
-    );
-    if(user) {
+      // 1) Firebase Auth ile kimlik doğrula (düz metin şifre karşılaştırması YOK)
+      try {
+        await auth.signInWithEmailAndPassword(email, pw);
+      } catch(authErr) {
+        // İlk kurulum: varsayılan admin Auth'ta henüz yoksa oluştur
+        const isDefaultAdmin = DEFAULT_USERS.some(u=>u.email.toLowerCase()===email && u.password===pw);
+        const code = authErr.code||'';
+        if(isDefaultAdmin && (code==='auth/user-not-found'||code==='auth/invalid-credential'||code==='auth/invalid-login-credentials')) {
+          await auth.createUserWithEmailAndPassword(email, pw);
+        } else { throw authErr; }
+      }
+      // 2) Rol dokümanını oku (artık kimlik doğrulanmış — kilitli kurallar izin verir)
+      let user;
+      const udoc = await db.collection('users').doc(email).get({source:'server'});
+      if(udoc.exists) {
+        user = {...udoc.data(), email};
+      } else {
+        // Rol dokümanı yoksa: yalnız varsayılan admin için oluştur, aksi halde reddet
+        const da = DEFAULT_USERS.find(u=>u.email.toLowerCase()===email);
+        if(da) {
+          const {password, ...rest} = da;
+          await db.collection('users').doc(email).set({...rest, active:true, createdAt:today()});
+          user = {...rest, email, active:true};
+        } else {
+          await auth.signOut();
+          loginState.checking=false; loginState.err='Hesap tanımlı değil. Yöneticiye başvurun.'; renderLoginForm(); return;
+        }
+      }
+      if(user.active===false) {
+        await auth.signOut();
+        loginState.checking=false; loginState.err='Bu hesap pasif. Yöneticiye başvurun.'; renderLoginForm(); return;
+      }
+      loginState.checking=false;
+      state.users = state.users || [];
       setState({currentUser:user, view:'app', loading:true});
       await loadAllData();
       setState({loading:false});
-    } else {
+    } catch(err) {
+      loginState.checking=false;
       loginState.attempts++;
-      const emailExists = freshUsers.find(u=>u.email.toLowerCase()===loginState.email.trim().toLowerCase());
-      const inactive = emailExists && emailExists.active===false;
-      loginState.err = inactive ? 'Bu hesap pasif. Yöneticiye başvurun.' : emailExists ? 'Şifre hatalı.' : 'E-posta tanınmıyor.';
-      loginState.pw = '';
+      const code = err.code||'';
+      loginState.err =
+        (code==='auth/wrong-password'||code==='auth/invalid-credential'||code==='auth/invalid-login-credentials') ? 'E-posta veya şifre hatalı.' :
+        code==='auth/user-not-found' ? 'E-posta tanınmıyor.' :
+        code==='auth/too-many-requests' ? 'Çok fazla deneme. Bir süre sonra tekrar deneyin.' :
+        code==='auth/user-disabled' ? 'Bu hesap devre dışı bırakılmış.' :
+        code==='auth/network-request-failed' ? 'Sunucuya bağlanılamadı. İnternet bağlantınızı kontrol edin.' :
+        'Giriş başarısız. Bilgileri kontrol edin.';
+      loginState.pw='';
       if(loginState.attempts>=5) loginState.locked=true;
       renderLoginForm();
     }
@@ -2488,8 +2510,8 @@ function buildAdminModal() {
 
   async function persistUsers(list) {
     try {
-      // Kalan kullanıcıları kaydet
-      for(const u of list) await db.collection('users').doc(u.email).set(u);
+      // Kalan kullanıcıları kaydet (şifre Firestore'a YAZILMAZ — Firebase Auth tutar)
+      for(const u of list) { const {password, ...rest} = u; await db.collection('users').doc(u.email).set(rest); }
       // Silinenleri Firebase'den kaldır
       const deleted = users.filter(ou=>!list.find(nu=>nu.email===ou.email));
       for(const u of deleted) {
@@ -2587,17 +2609,37 @@ function buildAdminModal() {
         card.appendChild(editPanel);
         setTimeout(()=>eName.focus(),50);
       }
-      // Şifre değiştirme paneli
+      // Şifre değiştirme paneli — Firebase Auth ile
       if(editingId===u.email) {
-        const pwInp2 = inp('Yeni şifre',editPw,v=>editPw=v);
-        pwInp2.addEventListener('keydown',async e=>{if(e.key==='Enter'){const list=users.map(x=>x.email===u.email?{...x,password:editPw}:x);await persistUsers(list);editingId=null;editPw='';flash('✅ Şifre güncellendi.');}});
-        const pwRow = h('div',{style:{marginTop:'10px',display:'flex',gap:'8px',alignItems:'center'}},
-          pwInp2,
-          btn('✓ Kaydet',async()=>{if(!editPw){flash('⚠ Boş olamaz.',false);return;}const list=users.map(x=>x.email===u.email?{...x,password:editPw}:x);await persistUsers(list);editingId=null;editPw='';flash('✅ Şifre güncellendi.');},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'12px',whiteSpace:'nowrap'}),
-          btn('İptal',()=>{editingId=null;rerender();},'#21262d','#8b949e','8px 12px',{fontSize:'12px'})
-        );
+        const isSelf = state.currentUser && state.currentUser.email===u.email;
+        const savePw = async()=>{
+          if(isSelf){
+            if(!editPw||editPw.length<6){flash('⚠ Şifre en az 6 karakter olmalı.',false);return;}
+            try{ await auth.currentUser.updatePassword(editPw); editingId=null; editPw=''; flash('✅ Şifreniz güncellendi.'); }
+            catch(err){ flash('⚠ Şifre güncellenemedi: '+(err.code==='auth/requires-recent-login'?'Lütfen çıkıp tekrar giriş yapın.':err.message),false); }
+          } else {
+            try{ await auth.sendPasswordResetEmail(u.email); editingId=null; editPw=''; flash('✅ '+u.email+' adresine şifre sıfırlama bağlantısı gönderildi.'); }
+            catch(err){ flash('⚠ Sıfırlama e-postası gönderilemedi: '+err.message,false); }
+          }
+        };
+        const pwRow = h('div',{style:{marginTop:'10px'}});
+        if(isSelf){
+          const pwInp2 = inp('Yeni şifre (en az 6 karakter)',editPw,v=>editPw=v);
+          pwInp2.addEventListener('keydown',e=>{if(e.key==='Enter')savePw();});
+          pwRow.appendChild(h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},
+            pwInp2,
+            btn('✓ Kaydet',savePw,'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'12px',whiteSpace:'nowrap'}),
+            btn('İptal',()=>{editingId=null;rerender();},'#21262d','#8b949e','8px 12px',{fontSize:'12px'})
+          ));
+          setTimeout(()=>pwInp2.focus(),50);
+        } else {
+          pwRow.appendChild(h('div',{style:{fontSize:'12px',color:'#4a6080',marginBottom:'8px'}},'Bu kullanıcıya şifre sıfırlama e-postası gönderilecek. Yeni şifresini kendisi belirler.'));
+          pwRow.appendChild(h('div',{style:{display:'flex',gap:'8px'}},
+            btn('📧 Sıfırlama bağlantısı gönder',savePw,'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'12px',whiteSpace:'nowrap'}),
+            btn('İptal',()=>{editingId=null;rerender();},'#21262d','#8b949e','8px 12px',{fontSize:'12px'})
+          ));
+        }
         card.appendChild(pwRow);
-        setTimeout(()=>pwInp2.focus(),50);
       }
       listDiv.appendChild(card);
     });
@@ -2626,8 +2668,19 @@ function buildAdminModal() {
         h('div',{style:{display:'flex',gap:'8px'}},
           btn('✓ Ekle',async()=>{
             if(!newU.email||!newU.password||!newU.displayName){flash('⚠ Tüm alanları doldurun.',false);return;}
+            if(newU.password.length<6){flash('⚠ Şifre en az 6 karakter olmalı.',false);return;}
             if(users.find(u=>u.email.toLowerCase()===newU.email.toLowerCase())){flash('⚠ E-posta zaten kayıtlı.',false);return;}
-            await persistUsers([...users,{...newU,active:true,hasTarget:newU.hasTarget!==false,createdAt:today()}]);
+            // Firebase Auth hesabını ikincil app üzerinden oluştur — admin oturumu bozulmaz.
+            try{
+              const secApp = firebase.apps.find(a=>a.name==='secondary') || firebase.initializeApp(firebaseConfig,'secondary');
+              await secApp.auth().createUserWithEmailAndPassword(newU.email,newU.password);
+              await secApp.auth().signOut();
+            }catch(err){
+              if(err.code==='auth/email-already-in-use'){ /* Auth'ta zaten var — rol dokümanını yine de yaz */ }
+              else { flash('⚠ Hesap oluşturulamadı: '+(err.code==='auth/weak-password'?'Şifre zayıf.':err.message),false); return; }
+            }
+            const {password, ...rest} = newU;
+            await persistUsers([...users,{...rest,active:true,hasTarget:newU.hasTarget!==false,createdAt:today()}]);
             newU={email:'',password:'',displayName:'',isAdmin:false,hasTarget:true}; adding=false; flash('✅ Kullanıcı eklendi.');
           },'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{flex:'1'}),
           btn('İptal',()=>{adding=false;rerender();},'#21262d','#8b949e')
