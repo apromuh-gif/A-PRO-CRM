@@ -84,7 +84,7 @@ const MS = {"Hizmet Verildi":"#16a34a","Hizmet Henüz Verilmedi":"#d97706"};
 // Kullanıcılar (Firebase Auth + Firestore'da saklanır)
 // İlk kurulum için admin kullanıcısı - Firebase'e kaydedildikten sonra buradan silinebilir
 const DEFAULT_USERS = [
-  {email:"apromuh@gmail.com", password:"212080", displayName:"Erkan KARACAKALE", isAdmin:true, hasTarget:true},
+  {email:"apromuh@gmail.com", displayName:"Erkan KARACAKALE", isAdmin:true, hasTarget:true},
 ];
 
 const eur = v => new Intl.NumberFormat("tr-TR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(v||0);
@@ -713,7 +713,8 @@ function renderLogin() {
         await auth.signInWithEmailAndPassword(email, pw);
       } catch(authErr) {
         // İlk kurulum: varsayılan admin Auth'ta henüz yoksa oluştur
-        const isDefaultAdmin = DEFAULT_USERS.some(u=>u.email.toLowerCase()===email && u.password===pw);
+        // Plaintext parola yok: yalnız tanımlı admin e-postası, ilk kurulumda yazdığı parolayla Auth hesabını oluşturur.
+        const isDefaultAdmin = DEFAULT_USERS.some(u=>u.email.toLowerCase()===email);
         const code = authErr.code||'';
         if(isDefaultAdmin && (code==='auth/user-not-found'||code==='auth/invalid-credential'||code==='auth/invalid-login-credentials')) {
           await auth.createUserWithEmailAndPassword(email, pw);
