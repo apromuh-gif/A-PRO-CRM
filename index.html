@@ -37,6 +37,19 @@ select option{background:#ffffff}
 @media(max-width:480px){
   .tab-scroll button{padding:8px 10px!important;font-size:11px!important}
 }
+/* Yazdir (global Yazdir butonu) */
+#apro-print-fab{position:fixed;right:20px;bottom:20px;z-index:99999;display:flex;flex-direction:column;align-items:flex-end;gap:8px;font-family:'Inter',sans-serif}
+#apro-print-fab .apro-print-menu{display:none;flex-direction:column;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);overflow:hidden}
+#apro-print-fab.open .apro-print-menu{display:flex}
+#apro-print-fab .apro-print-menu button{padding:10px 16px;border:none;background:#fff;color:#1a202c;font-size:13px;font-weight:600;cursor:pointer;text-align:left;white-space:nowrap}
+#apro-print-fab .apro-print-menu button:hover{background:#f1f5f9}
+#apro-print-fab .apro-print-toggle{width:48px;height:48px;border-radius:50%;border:none;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;font-size:20px;cursor:pointer;box-shadow:0 4px 14px rgba(37,99,235,.4)}
+#apro-print-selection{display:none}
+@media print{
+  #apro-print-fab,.apro-no-print,.apro-no-print *{display:none!important}
+  body.apro-printing-selection > *:not(#apro-print-selection){display:none!important}
+  body.apro-printing-selection #apro-print-selection{display:block!important;position:static!important}
+}
 </style>
 </head>
 <body>
@@ -5999,6 +6012,49 @@ async function saveSupplier(form, isEdit) {
   setState({suppliers:list, modal:null, saving:false});
   showToast('✅ Tedarikçi kaydedildi!');
 }
+</script>
+<script>
+// Global Yazdir butonu — her ekranda sag-altta sabit.
+// Iki secenek: tum sayfa, veya fareyle secilen bolum (sayfa-bagimsiz).
+(function(){
+  if(window.__aproPrintInit) return; window.__aproPrintInit=true;
+  function ensureContainer(){
+    var c=document.getElementById('apro-print-selection');
+    if(!c){c=document.createElement('div');c.id='apro-print-selection';document.body.appendChild(c);}
+    return c;
+  }
+  function printWhole(){
+    document.body.classList.remove('apro-printing-selection');
+    window.print();
+  }
+  function printSelection(){
+    var sel=window.getSelection();
+    if(!sel||sel.isCollapsed||sel.rangeCount===0){
+      alert('Önce yazdırmak istediğiniz bölümü fareyle seçin, sonra tekrar “Seçili bölüm”e basın.');
+      return;
+    }
+    var c=ensureContainer(); c.innerHTML='';
+    for(var i=0;i<sel.rangeCount;i++){ c.appendChild(sel.getRangeAt(i).cloneContents()); }
+    document.body.classList.add('apro-printing-selection');
+    function cleanup(){ document.body.classList.remove('apro-printing-selection'); c.innerHTML=''; window.removeEventListener('afterprint',cleanup); }
+    window.addEventListener('afterprint',cleanup);
+    window.print();
+  }
+  function build(){
+    if(document.getElementById('apro-print-fab')) return;
+    var fab=document.createElement('div'); fab.id='apro-print-fab';
+    var menu=document.createElement('div'); menu.className='apro-print-menu';
+    var b1=document.createElement('button'); b1.textContent='🖨️ Tüm sayfa'; b1.onclick=function(){fab.classList.remove('open');printWhole();};
+    var b2=document.createElement('button'); b2.textContent='✂️ Seçili bölüm'; b2.onclick=function(){fab.classList.remove('open');printSelection();};
+    menu.appendChild(b1); menu.appendChild(b2);
+    var tog=document.createElement('button'); tog.className='apro-print-toggle'; tog.title='Yazdır'; tog.setAttribute('aria-label','Yazdır'); tog.textContent='🖨️';
+    tog.onclick=function(e){e.stopPropagation();fab.classList.toggle('open');};
+    fab.appendChild(menu); fab.appendChild(tog);
+    document.body.appendChild(fab);
+    document.addEventListener('click',function(){fab.classList.remove('open');});
+  }
+  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',build);}else{build();}
+})();
 </script>
 </body>
 </html>
