@@ -85,6 +85,8 @@ const auth = firebase.auth();
 const SEC_C = ["ENERJİ","ENDÜSTRİYEL","KAMU","YURTDIŞI","ASKERİ-SAVUNMA","TEKNOLOJİ","EĞİTİM","SAĞLIK","MEKANİK TAŞERON","İNŞAAT","ELEKTRİK TAŞERON","PROJE & MÜŞAVİR","YANGIN PROJE & MÜŞAVİR","SON KULLANICI","ÇOK SEKTÖRLÜ ŞİRKET"];
 const SEC_O = ["KAMU","ÖZEL SEKTÖR","ASKERİ-SAVUNMA SANAYİ","PETRO-KİMYA","ENDÜSTRİYEL-FABRİKA-DEPO","YURTDIŞI","ENERJİ","ULAŞIM","KÜLTÜR-MÜZE-ANIT"];
 const STAGES = ["KAZANILDI","TEKLİF","SICAK-1","SICAK-2","KAÇTI","NO GO","FIRSAT ÖLDÜ","ERTELENDİ"];
+// Filtrelerde "boş/atanmamış" kayıtları seçmek için kullanılan özel değer (gerçek veride bulunmaz).
+const FILTER_EMPTY = '__BOS__';
 const JOB_ST = ["SON KULLANICI","ALMIŞ MÜTEAHHİT","ALMIŞ TAŞERON","MÜTEAHHİT İHALESİ","TAŞERON İHALESİ","KEŞİF","BAYİ","OEM"];
 const PROP_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Reddedildi"];
 const SERV_ST = ["Gönderildi","Revize","Onaylandı","Randevu"];
@@ -3892,10 +3894,11 @@ function renderSuppliers() {
 // ═══════════════════════════════════════════════════════
 function renderSuppliers() {
   const f = state.filters;
+  const EMPTY=FILTER_EMPTY;
   const filtered = (state.suppliers||[]).filter(s=>{
     if(f.supQ){const _q=f.supQ.toLowerCase();if(!(s.firmName||'').toLowerCase().includes(_q)&&!(s.contacts||[]).some(ct=>(ct.name||'').toLowerCase().includes(_q)))return false;}
-    if(f.supName && !(s.firmName||'').toLowerCase().includes(f.supName.toLowerCase())) return false;
-    if(f.supType && s.supplierType !== f.supType) return false;
+    if(f.supName){if(f.supName===EMPTY){if((s.firmName||'').trim())return false;}else if(!(s.firmName||'').toLowerCase().includes(f.supName.toLowerCase()))return false;}
+    if(f.supType){if(f.supType===EMPTY){if((s.supplierType||'').trim())return false;}else if(s.supplierType!==f.supType)return false;}
     return true;
   }).sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
 
@@ -3904,7 +3907,7 @@ function renderSuppliers() {
     (()=>{
       const s=h('select',{style:{flex:'1',minWidth:'160px',padding:'8px 12px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'13px',color:T1,outline:'none',cursor:'pointer'}});
       const sorted=[...(state.suppliers||[])].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
-      [{v:'',l:'🔍 Tüm Firmalar'},...sorted.map(su=>({v:su.firmName,l:su.firmName}))].forEach(opt=>{
+      [{v:'',l:'🔍 Tüm Firmalar'},{v:EMPTY,l:'(Boş)'},...sorted.map(su=>({v:su.firmName,l:su.firmName}))].forEach(opt=>{
         const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;
         if(f.supName===opt.v)o.selected=true;s.appendChild(o);
       });
@@ -3913,7 +3916,7 @@ function renderSuppliers() {
     })(),
     (()=>{
       const s=h('select',{style:{padding:'8px 12px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'13px',color:T1,outline:'none',minWidth:'200px'}});
-      ['',...SUPPLIER_TYPES].forEach(opt=>{const o=document.createElement('option');o.value=opt;o.textContent=opt||'Tüm Türler';if(f.supType===opt)o.selected=true;s.appendChild(o);});
+      [{v:'',l:'Tüm Türler'},{v:EMPTY,l:'(Boş)'},...SUPPLIER_TYPES.map(x=>({v:x,l:x}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.supType===opt.v)o.selected=true;s.appendChild(o);});
       s.onchange=e=>setState({filters:{...f,supType:e.target.value}});
       return s;
     })(),
@@ -4100,10 +4103,11 @@ function makeSearchInput(val, onChange) {
 // ═══════════════════════════════════════════════════════
 function renderCustomers() {
   const f = state.filters;
+  const EMPTY=FILTER_EMPTY;
   const filtered = state.customers.filter(c=>{
     if(f.custQ){const _q=f.custQ.toLowerCase();if(!(c.firmName||'').toLowerCase().includes(_q)&&!(c.contacts||[]).some(ct=>(ct.name||'').toLowerCase().includes(_q)))return false;}
-    if(f.custName && !(c.firmName||'').toLowerCase().includes(f.custName.toLowerCase())) return false;
-    if(f.custSector && c.sector !== f.custSector) return false;
+    if(f.custName){if(f.custName===EMPTY){if((c.firmName||'').trim())return false;}else if(!(c.firmName||'').toLowerCase().includes(f.custName.toLowerCase()))return false;}
+    if(f.custSector){if(f.custSector===EMPTY){if((c.sector||'').trim())return false;}else if(c.sector!==f.custSector)return false;}
     return true;
   }).sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
 
@@ -4113,7 +4117,7 @@ function renderCustomers() {
     (()=>{
       const s=h('select',{style:{flex:'1',minWidth:'160px',padding:'8px 12px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'13px',color:T1,outline:'none',cursor:'pointer'}});
       const sorted=[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
-      [{v:'',l:'🔍 Tüm Firmalar'},...sorted.map(cu=>({v:cu.firmName,l:cu.firmName}))].forEach(opt=>{
+      [{v:'',l:'🔍 Tüm Firmalar'},{v:EMPTY,l:'(Boş)'},...sorted.map(cu=>({v:cu.firmName,l:cu.firmName}))].forEach(opt=>{
         const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;
         if(f.custName===opt.v)o.selected=true;s.appendChild(o);
       });
@@ -4122,7 +4126,7 @@ function renderCustomers() {
     })(),
     (()=>{
       const s=h('select',{style:{padding:'8px 12px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'13px',color:T1,outline:'none',minWidth:'150px'}});
-      ['',...SEC_C].forEach(opt=>{const o=document.createElement('option');o.value=opt;o.textContent=opt||'Tüm Sektörler';if(f.custSector===opt)o.selected=true;s.appendChild(o);});
+      [{v:'',l:'Tüm Sektörler'},{v:EMPTY,l:'(Boş)'},...SEC_C.map(x=>({v:x,l:x}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.custSector===opt.v)o.selected=true;s.appendChild(o);});
       s.onchange=e=>setState({filters:{...f,custSector:e.target.value}});
       return s;
     })(),
@@ -4281,14 +4285,15 @@ function makeScrollTable(thead, tbody, colWidths, isEmpty, emptyMsg) {
 // ═══════════════════════════════════════════════════════
 function renderOpportunities() {
   const f = state.filters;
+  const EMPTY=FILTER_EMPTY;
   const custById=id=>state.customers.find(c=>c.id===id);
   const fo = state.opportunities.filter(o=>{
     if(f.oppQ){const _q=f.oppQ.toLowerCase();const _cn=(custById(o.customerId)?.firmName||'').toLowerCase();if(!(o.title||'').toLowerCase().includes(_q)&&!_cn.includes(_q))return false;}
-    if(f.title&&!(o.title||'').toLowerCase().includes(f.title.toLowerCase()))return false;
-    if(f.customer&&o.customerId!==f.customer)return false;
-    if(f.stage&&o.stage!==f.stage)return false;
-    if(f.sector&&o.sector!==f.sector)return false;
-    if(f.assigned&&!(o.assignedTo||'').toLowerCase().includes(f.assigned.toLowerCase()))return false;
+    if(f.title){if(f.title===EMPTY){if((o.title||'').trim())return false;}else if(!(o.title||'').toLowerCase().includes(f.title.toLowerCase()))return false;}
+    if(f.customer){if(f.customer===EMPTY){if(o.customerId)return false;}else if(o.customerId!==f.customer)return false;}
+    if(f.stage){if(f.stage===EMPTY){if(o.stage)return false;}else if(o.stage!==f.stage)return false;}
+    if(f.sector){if(f.sector===EMPTY){if((o.sector||'').trim())return false;}else if(o.sector!==f.sector)return false;}
+    if(f.assigned){if(f.assigned===EMPTY){if((o.assignedTo||'').trim())return false;}else if(!(o.assignedTo||'').toLowerCase().includes(f.assigned.toLowerCase()))return false;}
     if(f.admin&&o.adminId!==f.admin)return false;
     return true;
   });
@@ -4300,20 +4305,20 @@ function renderOpportunities() {
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'155px'}});
         const titles=[...new Set(state.opportunities.map(o=>o.title).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Başlıklar'},...titles.map(t=>({v:t,l:t}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.title===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Başlıklar'},{v:EMPTY,l:'(Boş)'},...titles.map(t=>({v:t,l:t}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.title===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.filters.title=e.target.value;render();};
         return h('div',{},lbl('Başlık'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'160px'}});
         const reps=state.users.filter(u=>u.active!==false).map(u=>u.displayName).sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Temsilciler'},...reps.map(r=>({v:r,l:r}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.assigned===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Temsilciler'},{v:EMPTY,l:'(Atanmamış)'},...reps.map(r=>({v:r,l:r}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.assigned===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.filters.assigned=e.target.value;render();};
         return h('div',{},lbl('Satış Temsilcisi'),s);
       })()),
-      h('div',{},lbl('Müşteri'),sel([{v:'',l:'Tümü'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))],f.customer,v=>{state.filters.customer=v;render();},{width:'155px',fontSize:'12px'})),
-      h('div',{},lbl('Aşama'),sel([{v:'',l:'Tümü'},...STAGES.map(s=>({v:s,l:s}))],f.stage,v=>{state.filters.stage=v;render();},{width:'130px',fontSize:'12px'})),
-      h('div',{},lbl('Sektör'),sel([{v:'',l:'Tümü'},...SEC_O.map(s=>({v:s,l:s}))],f.sector,v=>{state.filters.sector=v;render();},{width:'170px',fontSize:'12px'})),
+      h('div',{},lbl('Müşteri'),sel([{v:'',l:'Tümü'},{v:EMPTY,l:'(Boş)'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))],f.customer,v=>{state.filters.customer=v;render();},{width:'155px',fontSize:'12px'})),
+      h('div',{},lbl('Aşama'),sel([{v:'',l:'Tümü'},{v:EMPTY,l:'(Boş)'},...STAGES.map(s=>({v:s,l:s}))],f.stage,v=>{state.filters.stage=v;render();},{width:'130px',fontSize:'12px'})),
+      h('div',{},lbl('Sektör'),sel([{v:'',l:'Tümü'},{v:EMPTY,l:'(Boş)'},...SEC_O.map(s=>({v:s,l:s}))],f.sector,v=>{state.filters.sector=v;render();},{width:'170px',fontSize:'12px'})),
       (f.title||f.customer||f.stage||f.sector||f.assigned)?btn('✕ Temizle',()=>{state.filters={title:'',customer:'',stage:'',sector:'',assigned:'',admin:''};render();},'#21262d','#8b949e','7px 12px',{fontSize:'12px',alignSelf:'flex-end'}):h('span')
     )
   );
@@ -4394,6 +4399,7 @@ function renderProposals() {
   const custById=id=>state.customers.find(c=>c.id===id);
   if(!state.propFilters) state.propFilters={opp:'',cust:'',prep:''};
   const pf=state.propFilters;
+  const EMPTY=FILTER_EMPTY;
   const today0=new Date();today0.setHours(0,0,0,0);
   const hiddenPropsArr=state.proposals.filter(p=>{
     if(p.status!=='Gönderildi'||!p.sentDate)return false;
@@ -4410,9 +4416,9 @@ function renderProposals() {
       if(diff>5)return false;
     }
     if(pf.q){const _q=pf.q.toLowerCase();const _cn=(custById(p.customerId)?.firmName||'').toLowerCase();if(!(p.title||'').toLowerCase().includes(_q)&&!_cn.includes(_q)&&!(p.preparedBy||'').toLowerCase().includes(_q))return false;}
-    if(pf.opp&&!(p.title||'').toLowerCase().includes(pf.opp.toLowerCase()))return false;
-    if(pf.cust&&p.customerId!==pf.cust)return false;
-    if(pf.prep&&p.preparedBy!==pf.prep)return false;
+    if(pf.opp){if(pf.opp===EMPTY){if((p.title||'').trim())return false;}else if(!(p.title||'').toLowerCase().includes(pf.opp.toLowerCase()))return false;}
+    if(pf.cust){if(pf.cust===EMPTY){if(p.customerId)return false;}else if(p.customerId!==pf.cust)return false;}
+    if(pf.prep){if(pf.prep===EMPTY){if((p.preparedBy||'').trim())return false;}else if(p.preparedBy!==pf.prep)return false;}
     return true;
   });
   const propFilterBox=h('div',{style:{background:'#edf5fc',border:'1px solid #b0c8e0',borderRadius:'12px',padding:'12px 14px',marginBottom:'14px'}},
@@ -4422,7 +4428,7 @@ function renderProposals() {
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'170px'}});
         const titles=[...new Set(state.opportunities.map(o=>o.title).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Fırsatlar'},...titles.map(t=>({v:t,l:t}))].forEach(opt=>{
+        [{v:'',l:'Tüm Fırsatlar'},{v:EMPTY,l:'(Boş)'},...titles.map(t=>({v:t,l:t}))].forEach(opt=>{
           const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;
           if(pf.opp===opt.v)o.selected=true;s.appendChild(o);
         });
@@ -4431,14 +4437,14 @@ function renderProposals() {
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'160px'}});
-        [{v:'',l:'Tüm Müşteriler'},...state.customers.sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(pf.cust===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Müşteriler'},{v:EMPTY,l:'(Boş)'},...state.customers.sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(pf.cust===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.propFilters.cust=e.target.value;render();};
         return h('div',{},lbl('Müşteri'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'160px'}});
         const preps=[...new Set(state.proposals.map(p=>p.preparedBy).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Hazırlayanlar'},...preps.map(p=>({v:p,l:p}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(pf.prep===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Hazırlayanlar'},{v:EMPTY,l:'(Boş)'},...preps.map(p=>({v:p,l:p}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(pf.prep===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.propFilters.prep=e.target.value;render();};
         return h('div',{},lbl('Hazırlayan'),s);
       })()),
@@ -4514,12 +4520,13 @@ function renderServiceOpps() {
   if(!state.svcOppFilters) state.svcOppFilters = {title:'',assigned:'',stage:'',cust:''};
   const f = state.svcOppFilters;
 
+  const EMPTY=FILTER_EMPTY;
   let filtered = O.filter(o=>{
     if(f.q){const _q=f.q.toLowerCase();const _cn=(custById(o.customerId)?.firmName||'').toLowerCase();if(!(o.title||'').toLowerCase().includes(_q)&&!_cn.includes(_q))return false;}
-    if(f.title && o.title!==f.title) return false;
-    if(f.assigned && o.assignedTo!==f.assigned) return false;
-    if(f.stage && o.stage !== f.stage) return false;
-    if(f.cust && o.customerId !== f.cust) return false;
+    if(f.title){if(f.title===EMPTY){if((o.title||'').trim())return false;}else if(o.title!==f.title)return false;}
+    if(f.assigned){if(f.assigned===EMPTY){if((o.assignedTo||'').trim())return false;}else if(o.assignedTo!==f.assigned)return false;}
+    if(f.stage){if(f.stage===EMPTY){if(o.stage)return false;}else if(o.stage!==f.stage)return false;}
+    if(f.cust){if(f.cust===EMPTY){if(o.customerId)return false;}else if(o.customerId!==f.cust)return false;}
     return true;
   });
 
@@ -4530,24 +4537,24 @@ function renderServiceOpps() {
       h('div',{style:{flex:'1',minWidth:'140px'}},(()=>{
         const s=h('select',{style:{width:'100%',padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none'}});
         const titles=[...new Set((state.serviceOpps||[]).map(o=>o.title).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Başlıklar'},...titles.map(t=>({v:t,l:t}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.title===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Başlıklar'},{v:EMPTY,l:'(Boş)'},...titles.map(t=>({v:t,l:t}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.title===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.svcOppFilters.title=e.target.value;render();};
         return h('div',{},lbl('BAŞLIK'),s);
       })()),
       h('div',{style:{flex:'1',minWidth:'130px'}},(()=>{
         const s=h('select',{style:{width:'100%',padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none'}});
         const reps=state.users.filter(u=>u.active!==false).map(u=>u.displayName).sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Temsilciler'},...reps.map(r=>({v:r,l:r}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.assigned===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Temsilciler'},{v:EMPTY,l:'(Atanmamış)'},...reps.map(r=>({v:r,l:r}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.assigned===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.svcOppFilters.assigned=e.target.value;render();};
         return h('div',{},lbl('SATIŞ TEMSİLCİSİ'),s);
       })()),
       h('div',{style:{flex:'1',minWidth:'150px'}},(()=>{
         const s=h('select',{style:{width:'100%',padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none'}});
-        [{v:'',l:'Tüm Müşteriler'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.cust===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Müşteriler'},{v:EMPTY,l:'(Boş)'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(f.cust===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.svcOppFilters.cust=e.target.value;render();};
         return h('div',{},lbl('MÜŞTERİ'),s);
       })()),
-      h('div',{style:{flex:'1',minWidth:'130px'}},lbl('AŞAMA'),sel([{v:'',l:'Tümü'},...STAGES.map(s=>({v:s,l:s}))],f.stage,v=>{state.svcOppFilters.stage=v;render();}))
+      h('div',{style:{flex:'1',minWidth:'130px'}},lbl('AŞAMA'),sel([{v:'',l:'Tümü'},{v:EMPTY,l:'(Boş)'},...STAGES.map(s=>({v:s,l:s}))],f.stage,v=>{state.svcOppFilters.stage=v;render();}))
     )
   );
 
@@ -4612,11 +4619,12 @@ function renderServices() {
   const custById=id=>state.customers.find(c=>c.id===id);
   if(!state.svcFilters) state.svcFilters={job:'',prep:'',cust:''};
   const sf=state.svcFilters;
+  const EMPTY=FILTER_EMPTY;
   const svcFiltered=state.services.filter(s=>{
     if(sf.q){const _q=sf.q.toLowerCase();const _cn=(custById(s.customerId)?.firmName||'').toLowerCase();if(!(s.jobName||'').toLowerCase().includes(_q)&&!_cn.includes(_q)&&!(s.preparedBy||'').toLowerCase().includes(_q))return false;}
-    if(sf.job&&s.jobName!==sf.job)return false;
-    if(sf.prep&&s.preparedBy!==sf.prep)return false;
-    if(sf.cust&&s.customerId!==sf.cust)return false;
+    if(sf.job){if(sf.job===EMPTY){if((s.jobName||'').trim())return false;}else if(s.jobName!==sf.job)return false;}
+    if(sf.prep){if(sf.prep===EMPTY){if((s.preparedBy||'').trim())return false;}else if(s.preparedBy!==sf.prep)return false;}
+    if(sf.cust){if(sf.cust===EMPTY){if(s.customerId)return false;}else if(s.customerId!==sf.cust)return false;}
     return true;
   });
   const svcFilterBox=h('div',{style:{background:'#edf5fc',border:'1px solid #b0c8e0',borderRadius:'12px',padding:'12px 14px',marginBottom:'14px'}},
@@ -4626,20 +4634,20 @@ function renderServices() {
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'170px'}});
         const jobs=[...new Set(state.services.map(x=>x.jobName).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm İşler'},...jobs.map(j=>({v:j,l:j}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(sf.job===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm İşler'},{v:EMPTY,l:'(Boş)'},...jobs.map(j=>({v:j,l:j}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(sf.job===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.svcFilters.job=e.target.value;render();};
         return h('div',{},lbl('İşin Adı'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'160px'}});
         const preps=[...new Set(state.services.map(x=>x.preparedBy).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Hazırlayanlar'},...preps.map(p=>({v:p,l:p}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(sf.prep===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Hazırlayanlar'},{v:EMPTY,l:'(Boş)'},...preps.map(p=>({v:p,l:p}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(sf.prep===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.svcFilters.prep=e.target.value;render();};
         return h('div',{},lbl('Hazırlayan'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'170px'}});
-        [{v:'',l:'Tüm Müşteriler'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(sf.cust===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Müşteriler'},{v:EMPTY,l:'(Boş)'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(sf.cust===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.svcFilters.cust=e.target.value;render();};
         return h('div',{},lbl('Müşteri'),s);
       })()),
@@ -4730,6 +4738,7 @@ function renderAppointments() {
   const today2 = new Date(); today2.setHours(0,0,0,0);
   if(!state.apptFilters) state.apptFilters={cust:'',rep:'',status:''};
   const af = state.apptFilters;
+  const EMPTY=FILTER_EMPTY;
 
   const appts = [...(state.appointments||[])].sort((a,b)=>{
     const da=(_toISO(a.apptDate)||'')+(a.apptTime||'');
@@ -4739,9 +4748,9 @@ function renderAppointments() {
 
   const filtered = appts.filter(a=>{
     if(af.q){const _q=af.q.toLowerCase();const _cn=(custById(a.customerId)?.firmName||'').toLowerCase();if(!_cn.includes(_q)&&!(a.notes||'').toLowerCase().includes(_q)&&!(a.assignedTo||'').toLowerCase().includes(_q))return false;}
-    if(af.cust   && a.customerId !== af.cust)   return false;
-    if(af.rep    && a.assignedTo !== af.rep)    return false;
-    if(af.status && a.status     !== af.status) return false;
+    if(af.cust){if(af.cust===EMPTY){if(a.customerId)return false;}else if(a.customerId!==af.cust)return false;}
+    if(af.rep){if(af.rep===EMPTY){if((a.assignedTo||'').trim())return false;}else if(a.assignedTo!==af.rep)return false;}
+    if(af.status){if(af.status===EMPTY){if(a.status)return false;}else if(a.status!==af.status)return false;}
     return true;
   });
 
@@ -4758,20 +4767,20 @@ function renderAppointments() {
       makeSearchInput(af.q||'',function(v){state.apptFilters.q=v;render();}),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid #c4b5fd`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:window.innerWidth<=768?'100%':'180px'}});
-        [{v:'',l:'Tüm Firmalar'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(af.cust===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Firmalar'},{v:EMPTY,l:'(Boş)'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(af.cust===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.apptFilters.cust=e.target.value;render();};
         return h('div',{},lbl('Firma'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid #c4b5fd`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:window.innerWidth<=768?'100%':'170px'}});
         const reps=state.users.filter(u=>u.active!==false).map(u=>u.displayName).sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Temsilciler'},...reps.map(r=>({v:r,l:r}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(af.rep===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Temsilciler'},{v:EMPTY,l:'(Atanmamış)'},...reps.map(r=>({v:r,l:r}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(af.rep===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.apptFilters.rep=e.target.value;render();};
         return h('div',{},lbl('Satış Temsilcisi'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid #c4b5fd`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:window.innerWidth<=768?'100%':'140px'}});
-        [{v:'',l:'Tüm Durumlar'},{v:'Planlandı',l:'Planlandı'},{v:'Tamamlandı',l:'Tamamlandı'},{v:'İptal',l:'İptal'},{v:'Ertelendi',l:'Ertelendi'}].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(af.status===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Durumlar'},{v:EMPTY,l:'(Boş)'},{v:'Planlandı',l:'Planlandı'},{v:'Tamamlandı',l:'Tamamlandı'},{v:'İptal',l:'İptal'},{v:'Ertelendi',l:'Ertelendi'}].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(af.status===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.apptFilters.status=e.target.value;render();};
         return h('div',{},lbl('Durum'),s);
       })()),
@@ -4878,6 +4887,7 @@ function renderVisits() {
   const today2 = new Date(); today2.setHours(0,0,0,0);
   if(!state.visitFilters) state.visitFilters={cust:'',rep:'',project:'',dateFrom:'',dateTo:''};
   const vf = state.visitFilters;
+  const EMPTY=FILTER_EMPTY;
 
   const visits = [...(state.visits||[])].sort((a,b)=>{ 
     if(!a.visitDate) return 1; if(!b.visitDate) return -1;
@@ -4886,9 +4896,9 @@ function renderVisits() {
 
   const filtered = visits.filter(v=>{
     if(vf.q){const _q=vf.q.toLowerCase();const _cn=(custById(v.customerId)?.firmName||'').toLowerCase();if(!_cn.includes(_q)&&!(v.projectInfo||'').toLowerCase().includes(_q)&&!(v.notes||'').toLowerCase().includes(_q))return false;}
-    if(vf.cust    && v.customerId !== vf.cust) return false;
-    if(vf.rep     && v.assignedTo !== vf.rep)  return false;
-    if(vf.project && !(v.projectInfo||'').toLowerCase().includes(vf.project.toLowerCase())) return false;
+    if(vf.cust){if(vf.cust===EMPTY){if(v.customerId)return false;}else if(v.customerId!==vf.cust)return false;}
+    if(vf.rep){if(vf.rep===EMPTY){if((v.assignedTo||'').trim())return false;}else if(v.assignedTo!==vf.rep)return false;}
+    if(vf.project){if(vf.project===EMPTY){if((v.projectInfo||'').trim())return false;}else if(!(v.projectInfo||'').toLowerCase().includes(vf.project.toLowerCase()))return false;}
     if(vf.dateFrom && _toISO(v.visitDate) < vf.dateFrom) return false;
     if(vf.dateTo   && _toISO(v.visitDate) > vf.dateTo)   return false;
     return true;
@@ -4902,21 +4912,21 @@ function renderVisits() {
       makeSearchInput(vf.q||'',function(v){state.visitFilters.q=v;render();}),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'180px'}});
-        [{v:'',l:'Tüm Firmalar'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(vf.cust===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Firmalar'},{v:EMPTY,l:'(Boş)'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(vf.cust===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.visitFilters.cust=e.target.value;render();};
         return h('div',{},lbl('Firma'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'160px'}});
         const reps=state.users.filter(u=>u.active!==false).map(u=>u.displayName).sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Temsilciler'},...reps.map(r=>({v:r,l:r}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(vf.rep===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Temsilciler'},{v:EMPTY,l:'(Atanmamış)'},...reps.map(r=>({v:r,l:r}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(vf.rep===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.visitFilters.rep=e.target.value;render();};
         return h('div',{},lbl('Satış Temsilcisi'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'160px'}});
         const projs=[...new Set((state.visits||[]).map(v=>v.projectInfo).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm Projeler'},...projs.map(p=>({v:p,l:p}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(vf.project===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Projeler'},{v:EMPTY,l:'(Boş)'},...projs.map(p=>({v:p,l:p}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(vf.project===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.visitFilters.project=e.target.value;render();};
         return h('div',{},lbl('Proje'),s);
       })()),
@@ -4986,10 +4996,11 @@ function renderMaintenances() {
   const custById=id=>state.customers.find(c=>c.id===id);
   if(!state.maintFilters) state.maintFilters={job:'',cust:''};
   const mf=state.maintFilters;
+  const EMPTY=FILTER_EMPTY;
   const maintFiltered=state.maintenances.filter(m=>{
     if(mf.q){const _q=mf.q.toLowerCase();const _cn=(custById(m.customerId)?.firmName||'').toLowerCase();if(!(m.jobName||'').toLowerCase().includes(_q)&&!_cn.includes(_q))return false;}
-    if(mf.job&&m.jobName!==mf.job)return false;
-    if(mf.cust&&m.customerId!==mf.cust)return false;
+    if(mf.job){if(mf.job===EMPTY){if((m.jobName||'').trim())return false;}else if(m.jobName!==mf.job)return false;}
+    if(mf.cust){if(mf.cust===EMPTY){if(m.customerId)return false;}else if(m.customerId!==mf.cust)return false;}
     return true;
   });
   const maintFilterBox=h('div',{style:{background:'#edf5fc',border:'1px solid #b0c8e0',borderRadius:'12px',padding:'12px 14px',marginBottom:'14px'}},
@@ -4999,13 +5010,13 @@ function renderMaintenances() {
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'170px'}});
         const jobs=[...new Set(state.maintenances.map(m=>m.jobName).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
-        [{v:'',l:'Tüm İşler'},...jobs.map(j=>({v:j,l:j}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(mf.job===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm İşler'},{v:EMPTY,l:'(Boş)'},...jobs.map(j=>({v:j,l:j}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(mf.job===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.maintFilters.job=e.target.value;render();};
         return h('div',{},lbl('İşin Adı'),s);
       })()),
       h('div',{},(()=>{
         const s=h('select',{style:{padding:'8px 10px',background:'#fff',border:`1px solid ${G4}`,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none',width:'170px'}});
-        [{v:'',l:'Tüm Müşteriler'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(mf.cust===opt.v)o.selected=true;s.appendChild(o);});
+        [{v:'',l:'Tüm Müşteriler'},{v:EMPTY,l:'(Boş)'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(cu=>({v:cu.id,l:cu.firmName}))].forEach(opt=>{const o=document.createElement('option');o.value=opt.v;o.textContent=opt.l;if(mf.cust===opt.v)o.selected=true;s.appendChild(o);});
         s.onchange=e=>{state.maintFilters.cust=e.target.value;render();};
         return h('div',{},lbl('Müşteri'),s);
       })()),
