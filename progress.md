@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 7 Haziran 2026 (v2.9 + Web Sitesi & Yedekleme)
+> Son güncelleme: 4 Temmuz 2026 (Hatırlatma mailleri sunucu cron'una taşındı)
 
 ---
 
@@ -174,20 +174,23 @@
 | Bakım | 7 gün kaldı | 09:00 | Sorumlu |
 | Bakım | Tarihi geçti | Her gün 09:00 | Sorumlu + Admin |
 
-### Mail Bildirimleri (EmailJS)
-- **Service:** `service_xm7vpad`
-- **Template:** `template_tfhbxqv`
-- **Public Key:** `aFlqv_CSdq9QliGtN`
-- Her 5 dakikada `checkAllMails()`
-- Template: `{{{body}}}` HTML render, `{{to_email}}` alıcı
+### Mail Bildirimleri (Sunucu-taraflı — 4 Temmuz 2026)
+- **Mimari:** Hatırlatma mailleri artık **sunucu cron'undan** gönderiliyor. İstemci-taraflı `checkAllMails()` **devre dışı** (tarayıcı kapalıyken mail gelmeme sorunu + çift mail riski çözüldü).
+- **Host:** `nextaura-admin` (Vercel) → `GET /api/cron/crm-reminders` (`CRON_SECRET` korumalı, `?dry=1` test modu).
+- **Akış:** Vercel cron **her gün 07:00 TR** (`0 4 * * *`) → Firebase Admin ile `a-pro-crm` Firestore okunur → kurallar çalışır → EmailJS REST ile gönderilir.
+- **Şablon korunuyor:** `service_xm7vpad` / `template_tfhbxqv` (aynı gönderen kimliği, domain doğrulaması yok). Sunucudan gönderim için EmailJS "non-browser API" açık + `EMAILJS_PRIVATE_KEY`.
+- **Kalıcı dedup:** Firestore `mailReminders/{key}` (in-memory `_mailSentKeys` yerine).
+- **Kaynak:** `nextaura-admin/src/app/api/cron/crm-reminders/route.ts`, `src/lib/crm-reminders.ts`, `emailjs.ts`, `firebase-admin.ts`.
 
-| Tetikleyici | Zaman | Kime |
+| Tetikleyici | Koşul | Kime |
 |---|---|---|
-| Yarın randevu | 16:30 | Temsilci |
-| Yarın ziyaret | 16:30 | Temsilci |
-| Sipariş tarihi 1 gün | 08:00 | Temsilci |
-| Servis randevusu 2 gün | 16:30 | Sorumlu |
-| Bakım tarihi 7 gün | 09:00 | Sorumlu |
+| Yarın randevu | apptDate = yarın | Temsilci |
+| Yarın ziyaret | visitDate = yarın | Temsilci |
+| Sipariş tarihi 1 gün | dueDate diff = 1 | Temsilci |
+| Servis randevusu 2 gün | appointmentDate diff = 2 | Sorumlu |
+| Bakım tarihi 7 gün | appointmentDate diff = 7 | Sorumlu |
+
+> Not: İstemcideki dar dakika pencereleri (08:00-08:04 vb.) kaldırıldı; cron günde bir kez çalışıp kalıcı dedup ile tekrarı önler. Ekran-içi bildirim ve ses (`checkAllNotifications`) istemcide devam ediyor.
 
 ---
 
