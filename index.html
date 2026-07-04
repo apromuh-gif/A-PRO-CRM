@@ -5756,11 +5756,11 @@ function startNotificationTimer() {
   }
   checkAllNotifications();
   window._notifInterval = setInterval(checkAllNotifications, 60000);
-  // Mail sistemi
-  initEmailJS();
-  if(window._mailInterval) clearInterval(window._mailInterval);
-  window._mailInterval = setInterval(checkAllMails, 300000);
-  setTimeout(checkAllMails, 8000);
+  // Mail sistemi — İSTEMCİ-TARAFLI GÖNDERİM DEVRE DIŞI.
+  // Hatırlatma mailleri artık sunucu cron'undan gönderiliyor:
+  // nextaura-admin → /api/cron/crm-reminders (her gün 07:00 TR).
+  // Tarayıcı açık olsa da checkAllMails çağrılmıyor → çift mail önlenir.
+  // (Ekran içi bildirim ve ses checkAllNotifications ile devam ediyor.)
   // Teklif programı referans senkronu (atanan teklif no → fırsat REF.)
   if(window._qrefInterval) clearInterval(window._qrefInterval);
   window._qrefInterval = setInterval(syncQuotationRefs, 300000);
