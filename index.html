@@ -163,6 +163,23 @@ function tpValueEur(d) {
   return v ? parseFloat(v) : null;
 }
 
+// Teklif programında silinmiş bir teklifin CRM bağlantısını temizler.
+// Yalnız teklif bağlantı alanları (quotationId/quotationUrl/quotationStatus) sıfırlanır →
+// Fırsatlar bölümündeki buton "📋 Teklif Oluştur"a döner. Fırsat/teklif talebi kaydı SİLİNMEZ.
+// Not: _editedBy'ye dokunulmaz (sistem işlemi — düzenleyen alanı korunur).
+async function clearDeletedQuotationLink(qid) {
+  if (!qid) return false;
+  const clr = obj => ({ ...obj, quotationId: '', quotationUrl: '', quotationStatus: '' });
+  const oppTargets  = (state.opportunities || []).filter(o => o.quotationId === qid);
+  const propTargets = (state.proposals || []).filter(p => p.quotationId === qid);
+  if (oppTargets.length === 0 && propTargets.length === 0) return false;
+  let opps = [...state.opportunities], props = [...state.proposals];
+  for (const o of oppTargets)  { const u = clr(o); await saveDoc('opportunities', o.id, u); opps  = opps.map(x => x.id === o.id ? u : x); }
+  for (const p of propTargets) { const u = clr(p); await saveDoc('proposals',    p.id, u); props = props.map(x => x.id === p.id ? u : x); }
+  setState({ opportunities: opps, proposals: props });
+  return true;
+}
+
 // Mevcut teklifi SSO ile aç. Teklif silinmişse CRM'den otomatik temizler.
 async function openQuotationWithSSO(quotationId) {
   // Personel listelerini her açılışta sync et (fire-and-forget) — yalnızca mevcut CRM kullanıcıları
@@ -184,10 +201,11 @@ async function openQuotationWithSSO(quotationId) {
     if (chk?.ok) {
       const chkBody = await chk.json().catch(() => null);
       if (chkBody?.data?.exists === false) {
-        // Teklif programında bulunamadı (silinmiş VEYA geçici erişim sorunu).
-        // BAĞLANTIYI SİLME — yalnızca uyar. Eski davranış quotationId/value/tenderRef'i
-        // geri dönüşsüz siliyordu; bu, geçici hatada veya yanlış silmede veri kaybına yol açıyordu.
-        showToast('⚠️ Bu teklif teklif programında şu an bulunamadı (silinmiş veya geçici erişim sorunu olabilir). CRM bağlantısı korundu — teklif geri yüklendiyse sayfayı yenileyip tekrar deneyin.');
+        // HTTP 200 + exists:false = teklif KESİN silinmiş (geçici erişim sorunu değil —
+        // o durumda yanıt !res.ok olur ve bu bloğa hiç girilmez). CRM bağlantısını otomatik
+        // temizle → buton "📋 Teklif Oluştur"a döner. Fırsat/teklif talebi kaydı korunur.
+        await clearDeletedQuotationLink(quotationId);
+        showToast('🧹 Bu teklif teklif programında silinmiş — CRM bağlantısı otomatik temizlendi. Yeniden teklif oluşturabilirsiniz.');
         return;
       } else if (chkBody?.data?.exists === true) {
         // Teklif mevcut → durum + toplam + referans + satış temsilcisi → Fırsatlar güncellenir
@@ -199,6 +217,7 @@ async function openQuotationWithSSO(quotationId) {
         // Revizyon ≥2 ise "-R2" eklenir. Numara yoksa (taslak) manuel referansa düşer.
         const tpReference = tpRefWithRev(chkBody.data);
         const tpSalesRep  = chkBody.data.salesRep  ?? null;
+        const tpLastEditor = chkBody.data.lastEditor ?? null;
         const relatedOpps = state.opportunities.filter(o => o.quotationId === quotationId);
         const _scrollSave = [...document.querySelectorAll('.apro-no-sb')].map(el => el.scrollLeft);
         let updatedOpps = [...state.opportunities];
@@ -208,7 +227,7 @@ async function openQuotationWithSSO(quotationId) {
             ...(tpTotal    !== null && tpTotal > 0 && { value: tpTotal }),
             ...(tpReference !== null && { tenderRef: tpReference }),
             ...(tpSalesRep  !== null && tpSalesRep !== '' && { assignedTo: tpSalesRep }),
-            ...stamp()
+            ...syncStamp(tpLastEditor)
           };
           await saveDoc('opportunities', o.id, upd);
           updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
@@ -573,6 +592,15 @@ function genId() { return Date.now().toString(36) + Math.random().toString(36).s
 
 function stamp() {
   return { _editedBy: state.currentUser?.displayName||'', _editedAt: new Date().toLocaleString('tr-TR') };
+}
+
+// Otomatik Teklif Programı senkronunda "Son Düzenleyen" damgası.
+// Gerçek teklif düzenleyicisi (API lastEditor) varsa onu yazar; yoksa mevcut _editedBy KORUNUR
+// (senkronu çalıştıran tarayıcının kullanıcısına ASLA atanmaz — eski hatanın kök nedeni buydu).
+function syncStamp(lastEditor) {
+  return lastEditor
+    ? { _editedBy: lastEditor, _editedAt: new Date().toLocaleString('tr-TR') }
+    : {};
 }
 
 function dlJSON() {
@@ -5847,7 +5875,7 @@ async function syncQuotationRefs() {
     if (ids.length === 0) return;
     let updatedOpps = [...state.opportunities];
     let updatedProps = [...state.proposals];
-    let changed = false, missingCount = 0;
+    let changed = false, clearedCount = 0;
     for (const qid of ids) {
       const res = await fetch(
         `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?id=${encodeURIComponent(qid)}`,
@@ -5858,16 +5886,31 @@ async function syncQuotationRefs() {
       const d = body && body.data;
       if (!d) continue;
 
-      // Teklif bulunamadı → BAĞLANTIYI KORU, sadece say (uyarı için).
-      // Eski davranış quotationId/value/tenderRef'i geri dönüşsüz siliyordu → veri kaybı.
-      // Geçici erişim sorunu veya yanlışlıkla silme durumunda bağlantı kaybedilmemeli.
-      if (d.exists !== true) {
-        missingCount++;
+      // HTTP 200 + exists:false = teklif KESİN silinmiş (geçici erişim sorunu bu bloğa
+      // hiç ulaşmaz; o durumda yanıt !res.ok olur ve yukarıda continue edilir).
+      // → CRM bağlantısını otomatik temizle: buton "📋 Teklif Oluştur"a döner.
+      // Fırsat/teklif talebi kaydı korunur, yalnız teklif bağlantı alanları sıfırlanır.
+      if (d.exists === false) {
+        for (const o of updatedOpps.filter(x => x.quotationId === qid)) {
+          const upd = { ...o, quotationId: '', quotationUrl: '', quotationStatus: '' };
+          await saveDoc('opportunities', o.id, upd);
+          updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
+          changed = true;
+        }
+        for (const p of updatedProps.filter(x => x.quotationId === qid)) {
+          const upd = { ...p, quotationId: '', quotationUrl: '', quotationStatus: '' };
+          await saveDoc('proposals', p.id, upd);
+          updatedProps = updatedProps.map(x => x.id === p.id ? upd : x);
+          changed = true;
+        }
+        clearedCount++;
         continue;
       }
+      if (d.exists !== true) continue; // beklenmeyen yanıt → dokunma
 
       const ref   = tpRefWithRev(d);     // revizyon ≥2 → "...-R2"
       const total = tpValueEur(d);       // daima EUR
+      const lastEditor = d.lastEditor ?? null; // gerçek teklif düzenleyicisi (Son Düzenleyen)
       // Fırsatlar: durum (hazırlandı/gönderildi) + REF + değer + temsilci
       for (const o of updatedOpps.filter(x => x.quotationId === qid)) {
         const patch = {};
@@ -5876,7 +5919,7 @@ async function syncQuotationRefs() {
         if (total != null && total > 0 && total !== o.value) patch.value = total;
         if (d.salesRep && d.salesRep !== o.assignedTo) patch.assignedTo = d.salesRep;
         if (Object.keys(patch).length === 0) continue;
-        const upd = { ...o, ...patch, ...stamp() };
+        const upd = { ...o, ...patch, ...syncStamp(lastEditor) };
         await saveDoc('opportunities', o.id, upd);
         updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
         changed = true;
@@ -5884,7 +5927,7 @@ async function syncQuotationRefs() {
       // Teklif talepleri: durum senkronu (buton/rapor durumları taze kalsın)
       for (const p of updatedProps.filter(x => x.quotationId === qid)) {
         if (d.status == null || d.status === p.quotationStatus) continue;
-        const pupd = { ...p, quotationStatus: d.status, ...stamp() };
+        const pupd = { ...p, quotationStatus: d.status, ...syncStamp(lastEditor) };
         await saveDoc('proposals', p.id, pupd);
         updatedProps = updatedProps.map(x => x.id === p.id ? pupd : x);
         changed = true;
@@ -5897,7 +5940,7 @@ async function syncQuotationRefs() {
         [...document.querySelectorAll('.apro-no-sb')].forEach((el, i) => { if (_scrollSave[i]) el.scrollLeft = _scrollSave[i]; });
       });
     }
-    if (missingCount > 0) showToast('⚠️ Teklif programında ' + missingCount + ' teklif bulunamadı (silinmiş veya geçici erişim sorunu). CRM bağlantıları KORUNDU — kontrol edin.');
+    if (clearedCount > 0) showToast('🧹 ' + clearedCount + ' silinmiş teklifin CRM bağlantısı otomatik temizlendi (buton "Teklif Oluştur"a döndü).');
   } catch {}
 }
 
