@@ -5356,6 +5356,143 @@ function personelPrim(person, period){
   sc.avail.forEach(r=>{ breakdown[r.kod] = pass ? (cfg.primBase||0)*(r.weight/sc.wsum)*r.oran*accel : 0; });
   return { ...sc, pass, accel, primAmount, breakdown };
 }
+// Tek personel performans raporu — yönetici-personel birebir görüşmesinde kullanılacak nitelikte çıktı.
+function printPersonelReport(person, period, isAdmin){
+  const sc = personelScore(person, period);
+  if(!sc){ showToast('⚠ Bu personel için değerlendirme verisi yok.','#dc2626'); return; }
+  const ev = personelEvalFor(person.displayName, period);
+  const pct = v => (v==null? '—' : Math.round(v*100)+'%');
+  const col = v => v==null?'#94a3b8':(v>=1?'#16a34a':v>=0.7?'#d97706':'#dc2626');
+  const skorPct = Math.round((sc.skor||0)*100);
+  const dept = DEPT_LABEL[person.department]||person.department||'-';
+
+  // Genel değerlendirme yorumu (skora göre)
+  let verdict, vColor, vBg;
+  if(sc.skor>=1){ verdict='Üstün Performans — dönem hedeflerinin üzerinde sonuç üretti.'; vColor='#166534'; vBg='#dcfce7'; }
+  else if(sc.skor>=0.85){ verdict='Beklentileri Karşılıyor — hedeflere büyük ölçüde ulaşıldı, birkaç alanda ivme gerekli.'; vColor='#166534'; vBg='#dcfce7'; }
+  else if(sc.skor>=0.70){ verdict='Yeterli / Gelişime Açık — eşik aşıldı ancak belirgin gelişim alanları var.'; vColor='#92400e'; vBg='#fef3c7'; }
+  else { verdict='Gelişim Gerekli — dönem hedeflerinin altında kalındı, aksiyon planı önerilir.'; vColor='#991b1b'; vBg='#fee2e2'; }
+
+  // Görev dökümü (dönem içi)
+  const myTasks = (state.tasks||[]).filter(t=>t.assignedTo===person.displayName && (_pInPeriod(t.dueDate,period)||_pInPeriod(t.completedAt,period)));
+  const tDone = myTasks.filter(t=>t.status==='tamam').length;
+  const tOpen = myTasks.filter(t=>t.status!=='tamam').length;
+  const tOverdue = myTasks.filter(t=>t.status!=='tamam' && t.dueDate && String(t.dueDate)<today()).length;
+  const tTotal = myTasks.length;
+
+  const statusLabel = v => v==null?['Veri yok','#94a3b8']:(v>=1?['Güçlü','#16a34a']:v>=0.7?['Yeterli','#d97706']:['Gelişmeli','#dc2626']);
+  const critRows = sc.rows.map(r=>{
+    const wpct = Math.round((r.weight/sc.wsum)*100);
+    const sl = statusLabel(r.oran);
+    return `<tr>
+      <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}</td>
+      <td style="text-align:center">${r.auto?'Otomatik':'Manuel'}</td>
+      <td style="text-align:center">${r.oran==null?'-':wpct+'%'}</td>
+      <td style="text-align:center;font-weight:700;color:${col(r.oran)}">${r.oran==null?'veri yok':pct(r.oran)}</td>
+      <td style="text-align:center;font-weight:700;color:${sl[1]}">${sl[0]}</td>
+    </tr>`;
+  }).join('');
+
+  // Güçlü yönler / gelişim alanları (otomatik türetim)
+  const strong = sc.rows.filter(r=>r.oran!=null && r.oran>=1).map(r=>escapeHtml(r.label));
+  const improve = sc.rows.filter(r=>r.oran!=null && r.oran<0.7).map(r=>escapeHtml(r.label));
+  const midd  = sc.rows.filter(r=>r.oran!=null && r.oran>=0.7 && r.oran<1).map(r=>escapeHtml(r.label));
+  const liOr = (arr,empty) => arr.length? arr.map(x=>`<li>${x}</li>`).join('') : `<li style="color:#94a3b8;list-style:none">${empty}</li>`;
+
+  const notesBlock = (ev && ev.notes) ? `
+  <h2>🗒️ Yönetici Değerlendirme Notu</h2>
+  <div class="note-box">${escapeHtml(ev.notes).replace(/\n/g,'<br>')}</div>` : `
+  <h2>🗒️ Yönetici Değerlendirme Notu</h2>
+  <div class="note-box" style="color:#94a3b8">— (Performans ekranındaki not alanından doldurulabilir) —</div>`;
+
+  const printHTML = `<!DOCTYPE html>
+<html lang="tr"><head><meta charset="UTF-8"/>
+<title>A-PRO CRM — Personel Performans Raporu</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:24px;color:#1e293b;font-size:13px}
+  h1{color:#1e2d4a;font-size:20px;margin-bottom:4px}
+  h2{color:#1e2d4a;font-size:14px;margin:20px 0 10px;border-bottom:2px solid #1e2d4a;padding-bottom:6px}
+  .meta{font-size:11px;color:#64748b;margin-bottom:20px}
+  .hdr{display:flex;align-items:center;gap:14px;background:#f0f5fc;border:1px solid #b0c8e0;border-radius:10px;padding:16px;margin-bottom:14px}
+  .avatar{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0}
+  .verdict{border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:13px;font-weight:700}
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .kpi{background:#f0f5fc;border:1px solid #b0c8e0;border-radius:8px;padding:12px;text-align:center}
+  .kpi-val{font-size:20px;font-weight:800;color:#2563eb}
+  .kpi-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em}
+  .target-bar{height:16px;background:#e0e7ff;border-radius:8px;overflow:hidden;margin:8px 0 18px}
+  .target-fill{height:100%;border-radius:8px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:6px}
+  .panel{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px}
+  .panel h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .panel ul{margin:0;padding-left:18px;font-size:12px;line-height:1.7}
+  .note-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;font-size:12.5px;line-height:1.6;min-height:40px}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px}
+  th{background:#1e2d4a;color:#fff;padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase}
+  td{padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px}
+  tr:nth-child(even){background:#f8fafc}
+  .disc-lines{border:1px solid #e2e8f0;border-radius:8px;padding:14px;min-height:70px;margin-bottom:22px}
+  .disc-lines div{border-bottom:1px dashed #cbd5e1;height:22px}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:26px}
+  .sign .box{border-top:1px solid #334155;padding-top:6px;font-size:11px;color:#475569;text-align:center}
+  @media print{body{padding:10px}.no-print{display:none}}
+</style></head>
+<body>
+  <h1>⚡ A-PRO İş Takip CRM — Personel Performans Değerlendirme Raporu</h1>
+  <div class="meta">Dönem: ${escapeHtml(period)} · Yazdırma tarihi: ${new Date().toLocaleString('tr-TR')} · Değerlendiren: ${escapeHtml((state.currentUser&&state.currentUser.displayName)||'-')}</div>
+  <div class="hdr">
+    <div class="avatar">${escapeHtml(person.displayName.split(' ').map(n=>n[0]).join('').slice(0,2))}</div>
+    <div style="flex:1">
+      <div style="font-size:17px;font-weight:800;color:#0f1f35">${escapeHtml(person.displayName)}</div>
+      <div style="font-size:12px;color:#64748b">${escapeHtml(dept)}${person.email?' · '+escapeHtml(person.email):''}</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:26px;font-weight:800;color:${col(sc.skor)}">${skorPct}%</div>
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase">Toplam Skor</div>
+    </div>
+  </div>
+  <div class="verdict" style="background:${vBg};color:${vColor}">${verdict}</div>
+  <div class="target-bar"><div class="target-fill" style="width:${Math.min(100,skorPct)}%;background:${col(sc.skor)}"></div></div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">
+    <div class="kpi"><div class="kpi-val" style="color:${col(sc.skor)}">${skorPct}%</div><div class="kpi-label">Skor</div></div>
+    <div class="kpi"><div class="kpi-val">${sc.managerScore||'—'}${sc.managerScore?'/5':''}</div><div class="kpi-label">Yön. Puanı</div></div>
+    <div class="kpi"><div class="kpi-val">${tTotal}</div><div class="kpi-label">Görev</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#16a34a">${tDone}</div><div class="kpi-label">Tamamlanan</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#2563eb">${tOpen}</div><div class="kpi-label">Açık</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:${tOverdue?'#dc2626':'#64748b'}">${tOverdue}</div><div class="kpi-label">Geciken</div></div>
+  </div>
+  <h2>📊 Kriter Bazlı Değerlendirme</h2>
+  <table>
+    <thead><tr><th>Kriter</th><th style="text-align:center">Tür</th><th style="text-align:center">Ağırlık</th><th style="text-align:center">Gerçekleşme</th><th style="text-align:center">Durum</th></tr></thead>
+    <tbody>${critRows||'<tr><td colspan="5" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
+  </table>
+  <h2>💬 Değerlendirme Özeti</h2>
+  <div class="cols">
+    <div class="panel" style="border-color:#bbf7d0;background:#f0fdf4"><h3 style="color:#166534">✅ Güçlü Yönler</h3><ul>${liOr(strong,'Bu dönem hedefi aşan kriter yok.')}</ul></div>
+    <div class="panel" style="border-color:#fecaca;background:#fef2f2"><h3 style="color:#991b1b">⚠ Gelişim Alanları</h3><ul>${liOr(improve,'Eşik altı kriter yok.')}</ul></div>
+  </div>
+  ${midd.length?`<div class="panel" style="border-color:#fde68a;background:#fffbeb;margin-bottom:6px"><h3 style="color:#92400e">◐ İzlenecek Alanlar (yeterli, hedefe yaklaşıyor)</h3><ul>${liOr(midd,'')}</ul></div>`:''}
+  ${notesBlock}
+  <h2>🤝 Görüşme Notları (personel ile birlikte doldurulur)</h2>
+  <div class="disc-lines"><div></div><div></div><div></div></div>
+  <div class="sign">
+    <div class="box">Personel — Ad Soyad / İmza / Tarih</div>
+    <div class="box">Yönetici — Ad Soyad / İmza / Tarih</div>
+  </div>
+  <div style="margin-top:24px;font-size:10px;color:#94a3b8;text-align:center">A-PRO Mühendislik · CRM Sistemi · Gizlidir</div>
+</body></html>`;
+
+  var ep=document.getElementById('print-overlay'); if(ep) ep.remove();
+  var po=document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
+  var ptb=document.createElement('div'); ptb.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#1e2d4a;color:#fff;flex-shrink:0;';
+  var ptbT=document.createElement('div'); ptbT.style.cssText='font-weight:800;font-size:15px;'; ptbT.textContent='🖨️ Performans Raporu — '+person.displayName;
+  var ptbB=document.createElement('div'); ptbB.style.cssText='display:flex;gap:10px;';
+  var ppBtn=document.createElement('button'); ppBtn.textContent='🖨️ Yazdır'; ppBtn.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; ppBtn.onclick=function(){window.print();};
+  var pcBtn=document.createElement('button'); pcBtn.textContent='✕ Kapat'; pcBtn.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; pcBtn.onclick=function(){var el=document.getElementById('print-overlay');if(el)el.remove();};
+  ptbB.appendChild(ppBtn); ptbB.appendChild(pcBtn); ptb.appendChild(ptbT); ptb.appendChild(ptbB); po.appendChild(ptb);
+  var pc=document.createElement('div'); pc.style.cssText='flex:1;overflow-y:auto;'; pc.innerHTML=printHTML; po.appendChild(pc);
+  document.body.appendChild(po);
+}
 async function personelSaveDoc(coll, rec){
   await saveDoc(coll, rec.id, rec);
   const arr = (state[coll]||[]).slice();
@@ -5553,6 +5690,30 @@ function renderPersonelPerformans(period, isAdmin){
       showToast('✅ Yönetici puanı kaydedildi.');
     }, {maxWidth:'200px'});
 
+    // Yönetici nitel değerlendirme notu (personelle görüşmede kullanılır) — blur'da kaydedilir.
+    const evNow = personelEvalFor(u.displayName, period);
+    const ta = h('textarea',{
+      placeholder:'Yönetici değerlendirme notu — güçlü yönler, gelişim alanları, görüşülecek konular… (raporda görünür)',
+      style:{width:'100%',minHeight:'62px',resize:'vertical',border:'1px solid #cbd5e1',borderRadius:'8px',padding:'8px 10px',fontSize:'12px',fontFamily:'inherit',color:'#334155',boxSizing:'border-box'}
+    });
+    ta.value = (evNow && evNow.notes) || '';
+    ta.addEventListener('blur', async()=>{
+      const cur = personelEvalFor(u.displayName, period);
+      const prev = (cur && cur.notes) || '';
+      if(ta.value === prev) return;
+      const rec = cur ? { ...cur } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
+      rec.notes = ta.value;
+      rec.updatedAt = today();
+      const sc3 = personelScore(u, period);
+      rec.totalScore = sc3 ? sc3.skor : 0;
+      await personelSaveDoc('evaluations', rec);
+      showToast('✅ Değerlendirme notu kaydedildi.');
+    });
+    const notesEl = h('div',{style:{marginTop:'10px'}},
+      h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,marginBottom:'5px'}},'📝 Yönetici Değerlendirme Notu'),
+      ta
+    );
+
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
       ...sc.rows.map(r=>h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'4px 0',fontSize:'12px'}},
         h('span',{style:{color: r.oran==null?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
@@ -5577,8 +5738,10 @@ function renderPersonelPerformans(period, isAdmin){
       ),
       h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
         isAdmin?msSel:h('span',{style:{fontSize:'12px',color:T3}},'Yönetici Puanı: '+(sc.managerScore||'—')),
-        btn(open?'▲ Kriterleri gizle':'▼ Kriter detayı',()=>{PMOD.perfOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'})
+        btn(open?'▲ Kriterleri gizle':'▼ Kriter detayı',()=>{PMOD.perfOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}),
+        btn('🖨️ Rapor',()=>printPersonelReport(u, period, isAdmin),'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe'})
       ),
+      isAdmin?notesEl:h('span'),
       detail
     );
   });
