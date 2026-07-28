@@ -1,0 +1,148 @@
+<svg width="2560" height="1440" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2560 1440">
+  <defs>
+    <linearGradient id="redStripe" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#C00000;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF2200;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="bgOverlay" x1="0" y1="0" x2="2560" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" style="stop-color:#0D1B2A;stop-opacity:0" />
+      <stop offset="30%" style="stop-color:#0D1B2A;stop-opacity:0.5" />
+      <stop offset="100%" style="stop-color:#0D1B2A;stop-opacity:0.88" />
+    </linearGradient>
+    <linearGradient id="stripeFade" x1="0" y1="0" x2="768" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="65%" style="stop-color:#0D1B2A;stop-opacity:0"/>
+      <stop offset="100%" style="stop-color:#0D1B2A;stop-opacity:1"/>
+    </linearGradient>
+    <pattern id="pipePat" x="0" y="0" width="320" height="320" patternUnits="userSpaceOnUse">
+      <rect x="0" y="120" width="320" height="28" fill="#1a2d42" rx="14"/>
+      <rect x="140" y="0" width="18" height="320" fill="#152436" rx="9"/>
+      <circle cx="149" cy="155" r="22" fill="#1e3350"/>
+      <rect x="135" y="148" width="28" height="8" fill="#243d58" rx="4"/>
+      <circle cx="149" cy="148" r="8" fill="#2a4a6a"/>
+      <rect x="60" y="120" width="18" height="80" fill="#1a2d42" rx="9"/>
+      <rect x="240" y="120" width="18" height="80" fill="#1a2d42" rx="9"/>
+      <circle cx="69" cy="175" r="12" fill="#1e3350"/>
+      <circle cx="249" cy="175" r="12" fill="#1e3350"/>
+    </pattern>
+    <filter id="textGlow" x="-3%" y="-20%" width="106%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="redGlow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feFlood flood-color="#FF2200" flood-opacity="0.5" result="color"/>
+      <feComposite in="color" in2="blur" operator="in" result="glow"/>
+      <feMerge><feMergeNode in="glow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- BASE BACKGROUND -->
+  <rect width="2560" height="1440" fill="#0D1B2A"/>
+
+  <!-- PIPE PATTERN OVERLAY - right area -->
+  <rect x="700" y="0" width="1860" height="1440" fill="url(#pipePat)" opacity="0.5"/>
+
+  <!-- LEFT RED GRADIENT STRIPE (30% = 768px) -->
+  <rect x="0" y="0" width="768" height="1440" fill="url(#redStripe)"/>
+
+  <!-- STRIPE EDGE BLEND -->
+  <rect x="0" y="0" width="768" height="1440" fill="url(#stripeFade)"/>
+
+  <!-- DARK DEPTH OVERLAY on pipe area -->
+  <rect x="700" y="0" width="1860" height="1440" fill="url(#bgOverlay)"/>
+
+  <!-- DIAGONAL ACCENT LINES from stripe edge -->
+  <line x1="748" y1="0" x2="848" y2="1440" stroke="#FF2200" stroke-width="3" opacity="0.55"/>
+  <line x1="768" y1="0" x2="868" y2="1440" stroke="#C00000" stroke-width="1.5" opacity="0.25"/>
+
+  <!-- FIRE/FLAME SHIELD ICON -->
+  <g transform="translate(870, 430)" filter="url(#redGlow)">
+    <path d="M110,0 L220,48 L220,155 Q220,265 110,320 Q0,265 0,155 L0,48 Z"
+          fill="none" stroke="#FF2200" stroke-width="5.5"/>
+    <path d="M110,18 L202,60 L202,155 Q202,250 110,298 Q18,250 18,155 L18,60 Z"
+          fill="#C00000" opacity="0.14"/>
+    <path d="M55,270 Q18,220 28,155 Q36,102 16,64 Q46,82 50,115 Q60,78 72,26 Q90,84 86,122 Q100,92 96,64 Q122,100 114,140 Q122,175 94,270 Z"
+          fill="url(#redStripe)" opacity="0.95"/>
+    <path d="M55,255 Q28,210 38,152 Q45,105 30,74 Q54,90 57,118 Q65,83 74,38 Q88,90 84,124 Q96,97 93,73 Q115,105 108,142 Q114,170 88,255 Z"
+          fill="#FF6633" opacity="0.65"/>
+  </g>
+
+  <!-- COMPANY NAME — font-size 112, fits within 1020..2480 -->
+  <text x="1020" y="710"
+        font-family="'Arial Black', 'Impact', 'Franklin Gothic Heavy', Arial, sans-serif"
+        font-size="112"
+        font-weight="900"
+        fill="white"
+        letter-spacing="4"
+        filter="url(#textGlow)">A-PRO MÜHENDİSLİK</text>
+
+  <!-- RED UNDERLINE -->
+  <rect x="1020" y="734" width="1440" height="6" fill="url(#redStripe)" rx="3"/>
+  <rect x="1020" y="744" width="860" height="2.5" fill="#FF2200" opacity="0.35" rx="1.5"/>
+
+  <!-- SUBTITLE -->
+  <text x="1024" y="836"
+        font-family="Arial, 'Helvetica Neue', sans-serif"
+        font-size="64"
+        font-weight="400"
+        fill="rgba(255,255,255,0.88)"
+        letter-spacing="2">Yangın Söndürme &amp; Algılama Sistemleri</text>
+
+  <!-- DESCRIPTOR ROW -->
+  <text x="1026" y="920"
+        font-family="Arial, 'Helvetica Neue', sans-serif"
+        font-size="38"
+        font-weight="300"
+        fill="rgba(255,255,255,0.42)"
+        letter-spacing="7">ENDÜSTRİYEL YANGIN KORUMA SİSTEMLERİ</text>
+
+  <!-- WHITE FLAME SILHOUETTE on red stripe - decorative -->
+  <path d="M280,900 Q140,800 180,620 Q220,460 140,300 Q260,380 280,520 Q320,400 380,200 Q460,380 440,540 Q500,420 480,320 Q580,460 540,620 Q580,720 480,900 Z"
+        fill="white" opacity="0.08"/>
+
+  <!-- VERTICAL TEXT ON RED STRIPE -->
+  <text transform="translate(68,980) rotate(-90)"
+        font-family="Arial, sans-serif"
+        font-size="30"
+        fill="rgba(255,255,255,0.22)"
+        letter-spacing="10">FIRE PROTECTION ENGINEERING SYSTEMS</text>
+
+  <!-- BOTTOM RULE LINE -->
+  <rect x="0" y="1340" width="2560" height="1.5" fill="rgba(255,255,255,0.07)"/>
+
+  <!-- BOTTOM BAR -->
+  <rect x="0" y="1342" width="2560" height="98" fill="rgba(0,0,0,0.38)"/>
+
+  <!-- BOTTOM BAR - red left accent -->
+  <rect x="0" y="1342" width="8" height="98" fill="url(#redStripe)"/>
+
+  <!-- WEBSITE URL -->
+  <text x="2450" y="1408"
+        font-family="Arial, 'Helvetica Neue', sans-serif"
+        font-size="44"
+        font-weight="400"
+        fill="rgba(255,255,255,0.62)"
+        text-anchor="end"
+        letter-spacing="1.5">www.apro.com.tr</text>
+
+  <!-- BOTTOM LEFT CERTIFICATIONS -->
+  <text x="130" y="1408"
+        font-family="Arial, 'Helvetica Neue', sans-serif"
+        font-size="36"
+        font-weight="300"
+        fill="rgba(255,255,255,0.38)"
+        letter-spacing="5">ISO 9001  ·  TSE  ·  NFPA Sertifikalı</text>
+
+  <!-- BOTTOM CENTER RED DOTS -->
+  <circle cx="1280" cy="1391" r="4.5" fill="#FF2200" opacity="0.75"/>
+  <circle cx="1258" cy="1391" r="3" fill="#FF2200" opacity="0.4"/>
+  <circle cx="1302" cy="1391" r="3" fill="#FF2200" opacity="0.4"/>
+
+  <!-- TOP-RIGHT CORNER ACCENT BRACKET -->
+  <rect x="2500" y="0" width="60" height="5" fill="#FF2200" opacity="0.8"/>
+  <rect x="2555" y="0" width="5" height="60" fill="#FF2200" opacity="0.8"/>
+
+  <!-- TOP-LEFT CORNER -->
+  <rect x="0" y="0" width="60" height="5" fill="white" opacity="0.06"/>
+
+</svg>

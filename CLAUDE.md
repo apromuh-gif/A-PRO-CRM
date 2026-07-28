@@ -10,7 +10,7 @@
 ## Teklif Programı Entegrasyonu
 Bu CRM, A-PRO Teklif Programı (Next.js/PostgreSQL) ile entegre edilmektedir.
 Tam entegrasyon planı ve teknik detaylar:
-`/Users/erkankaracakale/Desktop/CLAUDE-HAZIRLANAN PROJE DATABASE/A-PRO TEKLİF PROGRAMI/docs/crm-integration.md`
+`/Users/erkankaracakale/Desktop/CLAUDE-HAZIRLANAN PROJE DATABASE/A-PRO PLATFORM/A-PRO TEKLİF PROGRAMI/docs/crm-integration.md`
 
 ## Teknik Mimari
 - Tek HTML dosyası — Firebase + Vanilla JS, framework yok

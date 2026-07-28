@@ -1,13 +1,26 @@
-# A-PRO Mühendislik — CRM & Teklif Programı Kullanım Kılavuzu
+# NextAura — CRM & Teklif Programı Kullanım Kılavuzu
 
-> **Sistemler:** A-PRO CRM (NextAura) · A-PRO Teklif Programı  
-> **Güncellenme:** Haziran 2026 — v2.8
+> **Sistemler:** NextAura CRM · NextAura Teklif Programı  
+> **Güncellenme:** Haziran 2026 — v2.9
+
+---
+
+## Yenilikler — Haziran 2026 (v2.9)
+
+NextAura artık firmanıza özel marka ile çalışır:
+
+- **Firmanıza özel marka:** Kendi logonuzu ve firma bilgilerinizi yüklersiniz; PDF / Excel / ön izleme çıktıları firmanızın markasıyla üretilir.
+- **Logo yüklenmemişse çıktıda hiç logo basılmaz** — başka bir firmanın logosu asla görünmez.
+- **Veri ve personel gizliliği:** Yalnızca kendi müşterilerinizi, tekliflerinizi ve personelinizi (Satış Temsilcisi / Hazırlayan listesi) görürsünüz.
+- **Yönetici erişimi:** Firmanızda bir kullanıcı **Yönetici** yetkisiyle "Ayarlar" menüsüne erişip logo ve firma bilgilerini düzenler.
+
+> ℹ️ Firmanıza özel logo ve bilgi kurulumu için **BÖLÜM 6**'ya bakın.
 
 ---
 
 ## Hangi Sistem Ne İçin?
 
-| A-PRO CRM (NextAura) | A-PRO Teklif Programı |
+| NextAura CRM | NextAura Teklif Programı |
 |---|---|
 | Müşteri ilişkileri takibi | Detaylı mühendislik teklifi hazırlama |
 | Satış fırsatı yönetimi | Kalem kalem fiyatlandırma |
@@ -15,7 +28,7 @@
 | Randevu & ziyaret kaydı | PDF / Excel çıktı ve arşiv |
 | Servis & bakım takibi | Boru/fittings otomatik hesaplama |
 | AI otomatik yönetici raporu | Teklif numaralandırma |
-| **Giriş:** apromuh-gif.github.io/A-PRO-CRM | **Giriş:** apro-platform.vercel.app |
+| **Giriş:** crm.nextaura.tr | **Giriş:** CRM üzerinden tek tıkla (SSO) |
 
 **Temel kural:** Müşteri ilişkisini CRM'den yönetin, teklifin içeriğini Teklif Programı'ndan hazırlayın. İki sistem tam entegredir — CRM'den "Teklif Oluştur" butonuna basıldığında Teklif Programı yeni sekmede **otomatik giriş yapılmış şekilde** açılır.
 
@@ -113,11 +126,11 @@ Müşteriden yanıt geldiğinde:
 
 ---
 
-## BÖLÜM 1 — A-PRO CRM (NextAura)
+## BÖLÜM 1 — NextAura CRM
 
 ### 1.1 Giriş
 
-1. `apromuh-gif.github.io/A-PRO-CRM` adresine gidin (veya ana ekrana eklenmiş PWA'yı açın)
+1. `crm.nextaura.tr` adresine gidin (veya ana ekrana eklenmiş PWA'yı açın)
 2. Kullanıcı adı ve şifrenizle giriş yapın
 3. Ana ekranda üst sekme çubuğu görünür
 
@@ -294,13 +307,13 @@ Sistem her 60 saniyede yaklaşan olayları kontrol eder ve sesli + mail bildirim
 
 ---
 
-## BÖLÜM 2 — A-PRO Teklif Programı
+## BÖLÜM 2 — NextAura Teklif Programı
 
 ### 2.1 Giriş
 
 **Önerilen yol:** CRM'den teklif butonuna basın — Teklif Programı yeni sekmede **otomatik giriş yapılmış şekilde** açılır.
 
-**Doğrudan erişim:** `apro-platform.vercel.app` adresine gidin ve kullanıcı hesabınızla giriş yapın.
+**Doğrudan erişim:** NextAura tarafından firmanıza verilen Teklif Programı adresine gidin ve kullanıcı hesabınızla giriş yapın.
 
 > 🔐 CRM'de kayıtlı her kullanıcı Teklif Programı'na da erişebilir. CRM'den silinen bir kullanıcının Teklif Programı erişimi de otomatik kaldırılır.
 
@@ -582,6 +595,63 @@ C: Hayır. CRM'den silinen kullanıcının Teklif Programı erişimi otomatik ol
 
 **S: Teklif Programı'nda EUR yerine TRY kullanabilir miyim?**  
 C: Evet, teklif oluştururken para birimi seçilebilir. TCMB kuru üzerinden otomatik dönüşüm yapılır.
+
+**S: Kendi firma logomu teklif çıktısına nasıl eklerim?**  
+C: Yönetici yetkili kullanıcı → ⚙️ Ayarlar → Firma Bilgileri → Logo Yükle (PNG/JPEG, max 1.5 MB) → Kaydet. Ayrıntı için BÖLÜM 6.
+
+**S: Çıktıda neden hiç logo görünmüyor?**  
+C: Henüz logo yüklemediyseniz çıktıda logo basılmaz. Başka firmanın logosu asla görünmez. Logonuzu Ayarlar'dan yükleyin.
+
+**S: "Hazırlayan" listesinde başka firmanın isimleri görünüyor.**  
+C: Güncellendi. Liste artık yalnızca kendi firmanızın kullanıcılarını gösterir. Görünmeye devam ederse oturumu kapatıp tekrar girin.
+
+---
+
+## BÖLÜM 6 — Kiracı (Firma) Kurulumu: Logo, Marka ve Personel
+
+> Bu bölüm, NextAura Teklif Programı'nı **kendi markanızla** kullanmanız için gereken kurulum adımlarını anlatır.
+
+### 6.1 Çok Kiracılı Mantık
+
+NextAura tek bir platformdur; her firma (kiracı) bu platformu kendi markasıyla, **birbirinden tamamen yalıtılmış** şekilde kullanır:
+
+- Her kiracı yalnızca **kendi** müşterilerini, tekliflerini, ürünlerini ve personelini görür.
+- Bir kiracının verisi başka kiracıya **asla** görünmez.
+- Teklif çıktıları (PDF / Excel / ön izleme) her kiracının **kendi logosu ve firma bilgileriyle** üretilir.
+
+### 6.2 Kiracı Yöneticisi (Ayarlar Erişimi)
+
+Logo ve firma bilgilerini düzenlemek için **Yönetici** yetkisi gerekir:
+
+1. Firmada bir kullanıcı Yönetici olarak atanır → sol menüde **⚙️ Ayarlar** görünür.
+2. CRM üzerinden (SSO) giren kullanıcılar varsayılan olarak normal kullanıcıdır; yönetici yetkisi sistem tarafından bir kez tanımlanır. Yönetici yapıldıktan sonra CRM'den girişlerde de yetki korunur.
+
+> ℹ️ Yönetici yetkisi tanımlandıktan sonra ilgili kullanıcı **mevcut oturumdan çıkıp tekrar girer**; "Ayarlar" menüsü o zaman görünür.
+
+### 6.3 Logo ve Firma Bilgilerini Yükleme
+
+1. Sol menü → **⚙️ Ayarlar**
+2. **Firma Bilgileri** bölümünde doldurun:
+   - Firma adı, adres, telefon, e-posta, web sitesi
+3. **Logo Yükle** alanından firma logonuzu seçin:
+   - Biçim: **PNG veya JPEG**
+   - Boyut: **en fazla 1.5 MB**
+   - "Logoyu kaldır" ile mevcut logoyu silebilirsiniz
+4. **Kaydet**
+
+### 6.4 Çıktıya Etkisi
+
+| Alan | Çıktıda nerede görünür |
+|---|---|
+| Firma logosu | PDF / Excel / ön izleme **üst başlık** |
+| Firma adı | Başlık ve **alt bilgi (footer)** |
+| Adres / telefon / e-posta / web | Başlıktaki firma bilgi bloğu |
+
+> ⚠️ **Logo yüklenmezse çıktıda hiç logo basılmaz** (boş bırakılır). Başka bir firmanın logosu asla görünmez. Logonuzu yükledikten sonra tüm yeni çıktılar otomatik olarak markanızla üretilir.
+
+### 6.5 Personel Listesi (Satış Temsilcisi / Hazırlayan)
+
+Proje Bilgileri bölümündeki **Satış Temsilcisi** ve **Hazırlayan** açılır listeleri yalnızca **kendi firmanızın** kullanıcılarını gösterir. Başka firmaların personeli bu listelerde görünmez.
 
 ---
 

@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 4 Temmuz 2026 (Hatırlatma mailleri sunucu cron'una taşındı)
+> Son güncelleme: 28 Temmuz 2026 (Performans/Prim Faz 2 + karlılık marj% + Test Modu)
 
 ---
 
@@ -469,3 +469,39 @@ EPC & Anahtar Teslim Projeler · İnşaat & Taahhüt · Yangın & Güvenlik Sist
 |---|---|
 | `KULLANIM_KILAVUZU.html` | Tam stillenmiş HTML kılavuz (11 bölüm, sidebar navigasyon) |
 | `KULLANIM_KILAVUZU.md` | Markdown versiyonu |
+
+---
+
+## 🧑‍💼 Performans & Prim — Faz 2 (28 Temmuz 2026)
+
+### Prim kriter ağırlıkları (tüm departmanlar)
+Teknik / Proje / Muhasebe kriter ağırlıkları kullanıcı onaylı değerlerle güncellendi
+(her departman toplam %100). Ağırlıklar artık **her zaman koddan** (`DEFAULT_EVAL_CONFIG`)
+gelir; Firestore `settings/evalConfig` yalnızca prim ayarlarını (taban/eşik/hızlandırıcı)
+saklar — böylece kod ağırlık değişiklikleri asla gizlenmez.
+
+### Faz 2-A — Kriter bazlı manuel girdi
+Manuel (auto olmayan) her kriter ayrı puanlanır (`evaluations.criteria[kod]`, 0–150%).
+Önceden tüm manuel kriterler tek yönetici puanına düşüyordu; artık her biri bağımsız.
+
+### Faz 2-B — Görev metriği ayrımı
+"Sözde otomatik" görev kriterleri farklılaştırıldı:
+- `gorev`/`is_emri` → tamamlama oranı (`personelTaskStats`)
+- `zamaninda_teslim`/`km_tasi`/`raporlama` → zamanında tamamlama (`personelTaskPunctual`)
+- `kesif_sure` → geciktirilmemiş teklif oranı
+
+### Faz 2-C + Karlılık entegrasyonu
+`karlilik` kriteri **kâr marjı %** üzerinden hesaplanır:
+- Gerçekleşen marj Teklif Programı `/api/v1/crm/profit` endpoint'inden çekilir
+  (`state.profitActuals[rep][YYYY-MM]` = marj %).
+- Kâr = KDV hariç teklif toplamı − net alış maliyeti; marj = kâr / ciro.
+- Hedef: `targets.profitReps[rep]` artık **% marj** (örn. %20); gerçekleşme = gerçekleşen% / hedef%.
+- Targets ekranı: "€/Yıl" → "% Marj" + bu ayın gerçekleşen marjı gösterimi.
+
+### 🧪 Test Modu (yalnızca yönetici)
+Personel → Performans ekranında **Test Modunu Aç** butonu: tüm personele örnek
+hedef/gerçekleşme/puan yükler, prim hesabını canlı gösterir. Test modunda hiçbir giriş
+DB'ye yazılmaz (`personelSaveDoc`/`saveTargets`/manuel kriter guard'lı); kapatınca gerçek
+veriler geri yüklenir, F5 de temizler.
+
+**Durum:** Tümü canlı (CRM `7f95572`, Teklif `0365423`). Endpoint doğrulandı (401/200).

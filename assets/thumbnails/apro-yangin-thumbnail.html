@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>A-PRO Thumbnail Preview</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #111; display: flex; flex-direction: column; align-items: center; padding: 20px; font-family: Arial, sans-serif; }
+  .info { color: #888; font-size: 13px; margin-bottom: 12px; text-align: center; }
+  canvas { display: block; border: 1px solid #333; }
+</style>
+</head>
+<body>
+<div class="info">A-PRO Mühendislik — YouTube Thumbnail 1280×720px &nbsp;|&nbsp; Right-click canvas → Save image to download</div>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const W = 1280, H = 720;
+
+// ── 1. BACKGROUND ──────────────────────────────────────────────────
+const bg = ctx.createLinearGradient(0, 0, 0, H);
+bg.addColorStop(0,   '#0a0000');
+bg.addColorStop(0.3, '#1a0000');
+bg.addColorStop(0.6, '#220000');
+bg.addColorStop(1,   '#0d0000');
+ctx.fillStyle = bg;
+ctx.fillRect(0, 0, W, H);
+
+// Radial fire glow — center-right
+const glow1 = ctx.createRadialGradient(W*0.72, H*0.55, 20, W*0.72, H*0.55, 480);
+glow1.addColorStop(0,   'rgba(255,80,0,0.45)');
+glow1.addColorStop(0.4, 'rgba(200,20,0,0.30)');
+glow1.addColorStop(1,   'rgba(0,0,0,0)');
+ctx.fillStyle = glow1;
+ctx.fillRect(0, 0, W, H);
+
+// Secondary glow left
+const glow2 = ctx.createRadialGradient(W*0.18, H*0.7, 10, W*0.18, H*0.7, 320);
+glow2.addColorStop(0,   'rgba(255,40,0,0.25)');
+glow2.addColorStop(1,   'rgba(0,0,0,0)');
+ctx.fillStyle = glow2;
+ctx.fillRect(0, 0, W, H);
+
+// ── 2. SUBTLE FLAME SHAPES ─────────────────────────────────────────
+function drawFlame(x, y, w, h, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const g = ctx.createLinearGradient(x, y+h, x, y);
+  g.addColorStop(0,   '#ff4400');
+  g.addColorStop(0.4, '#ff8800');
+  g.addColorStop(0.8, '#ffcc00');
+  g.addColorStop(1,   'rgba(255,220,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(x, y+h);
+  ctx.bezierCurveTo(x-w*0.3, y+h*0.6, x-w*0.1, y+h*0.2, x, y);
+  ctx.bezierCurveTo(x+w*0.1, y+h*0.2, x+w*0.4, y+h*0.6, x+w, y+h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+drawFlame(880, 140, 90, 300, 0.18);
+drawFlame(950, 180, 70, 240, 0.14);
+drawFlame(820, 200, 60, 200, 0.12);
+drawFlame(1050, 160, 80, 280, 0.16);
+drawFlame(1130, 200, 65, 220, 0.12);
+drawFlame(120, 350, 55, 180, 0.10);
+drawFlame(60,  380, 50, 160, 0.08);
+
+// ── 3. ENGINEER SILHOUETTE (right side) ────────────────────────────
+ctx.save();
+ctx.globalAlpha = 0.22;
+const silhouetteGrad = ctx.createLinearGradient(900, 0, 900, H);
+silhouetteGrad.addColorStop(0, '#ff2200');
+silhouetteGrad.addColorStop(1, '#660000');
+ctx.fillStyle = silhouetteGrad;
+
+// Simple engineer silhouette: helmet + body + arm raised to pipe
+// Head + helmet
+ctx.beginPath();
+ctx.ellipse(1010, 195, 28, 26, 0, 0, Math.PI*2); ctx.fill();
+// Helmet brim
+ctx.fillRect(982, 188, 56, 10);
+// Body (torso)
+ctx.beginPath();
+ctx.moveTo(985, 221); ctx.lineTo(1035, 221);
+ctx.lineTo(1048, 400); ctx.lineTo(972, 400); ctx.closePath(); ctx.fill();
+// Left arm (raised to pipe)
+ctx.beginPath();
+ctx.moveTo(985, 240); ctx.lineTo(940, 260); ctx.lineTo(900, 230); ctx.lineTo(910, 215);
+ctx.lineTo(952, 242); ctx.lineTo(982, 228); ctx.closePath(); ctx.fill();
+// Right arm down
+ctx.beginPath();
+ctx.moveTo(1035, 240); ctx.lineTo(1075, 310); ctx.lineTo(1063, 320); ctx.lineTo(1023, 252); ctx.closePath(); ctx.fill();
+// Legs
+ctx.fillRect(978, 398, 22, 160);
+ctx.fillRect(1015, 398, 22, 155);
+// Horizontal pipe the engineer is inspecting
+ctx.fillRect(780, 210, 200, 14);
+ctx.fillRect(780, 230, 200, 8);
+// Pipe vertical drop
+ctx.fillRect(780, 210, 14, 80);
+ctx.fillRect(966, 210, 14, 80);
+ctx.restore();
+
+// ── 4. TOP WARNING STRIPE ──────────────────────────────────────────
+// Red bar
+const stripeGrad = ctx.createLinearGradient(0, 0, W, 0);
+stripeGrad.addColorStop(0, '#cc0000');
+stripeGrad.addColorStop(0.5, '#ee0000');
+stripeGrad.addColorStop(1, '#cc0000');
+ctx.fillStyle = stripeGrad;
+ctx.fillRect(0, 0, W, 68);
+
+// Diagonal hazard stripes (subtle)
+ctx.save();
+ctx.globalAlpha = 0.12;
+ctx.fillStyle = '#000';
+for (let i = -10; i < W + 80; i += 36) {
+  ctx.beginPath();
+  ctx.moveTo(i, 0); ctx.lineTo(i+18, 0); ctx.lineTo(i+18-68, 68); ctx.lineTo(i-68, 68);
+  ctx.closePath(); ctx.fill();
+}
+ctx.restore();
+
+// Top stripe text
+ctx.save();
+ctx.font = 'bold 32px Arial, sans-serif';
+ctx.fillStyle = '#ffffff';
+ctx.letterSpacing = '3px';
+ctx.textAlign = 'center';
+ctx.shadowColor = 'rgba(0,0,0,0.6)';
+ctx.shadowBlur = 6;
+// Warning triangles flanking the text
+function miniTriangle(x, y, size, col) {
+  ctx.save();
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(x, y-size); ctx.lineTo(x+size*0.87, y+size*0.5); ctx.lineTo(x-size*0.87, y+size*0.5);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = `bold ${Math.round(size*1.1)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.fillText('!', x, y+size*0.4);
+  ctx.restore();
+}
+miniTriangle(90, 34, 20, '#ffdd00');
+miniTriangle(W-90, 34, 20, '#ffdd00');
+ctx.fillText('YANGIN YÖNETMELİĞİ 2024', W/2, 45);
+ctx.restore();
+
+// ── 5. WARNING TRIANGLE (left-center) ─────────────────────────────
+function bigWarningTriangle(cx, cy, size) {
+  // Outer yellow ring
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,100,0,0.9)';
+  ctx.shadowBlur = 30;
+  
+  // Yellow fill
+  ctx.fillStyle = '#ffdd00';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - size);
+  ctx.lineTo(cx + size*0.87, cy + size*0.5);
+  ctx.lineTo(cx - size*0.87, cy + size*0.5);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Inner red border
+  ctx.strokeStyle = '#cc0000';
+  ctx.lineWidth = size * 0.07;
+  ctx.stroke();
+  
+  // Inner triangle (inset)
+  const inset = size * 0.82;
+  ctx.fillStyle = '#ff2200';
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - inset*0.88);
+  ctx.lineTo(cx + inset*0.76, cy + inset*0.44);
+  ctx.lineTo(cx - inset*0.76, cy + inset*0.44);
+  ctx.closePath();
+  ctx.fill();
+  
+  // Exclamation mark
+  ctx.fillStyle = '#ffdd00';
+  ctx.font = `bold ${Math.round(size*1.05)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.fillText('!', cx, cy + size*0.48);
+  
+  ctx.restore();
+}
+bigWarningTriangle(175, 390, 100);
+
+// ── 6. MAIN TEXT ───────────────────────────────────────────────────
+// "BU 5 HATADAN" — white, massive
+ctx.save();
+ctx.shadowColor = 'rgba(0,0,0,0.95)';
+ctx.shadowBlur = 20;
+ctx.shadowOffsetX = 4;
+ctx.shadowOffsetY = 4;
+ctx.fillStyle = '#ffffff';
+ctx.font = 'bold 138px Arial Black, Arial, sans-serif';
+ctx.textAlign = 'left';
+ctx.fillText('BU 5', 290, 340);
+ctx.restore();
+
+ctx.save();
+ctx.shadowColor = 'rgba(0,0,0,0.95)';
+ctx.shadowBlur = 20;
+ctx.shadowOffsetX = 4;
+ctx.shadowOffsetY = 4;
+ctx.fillStyle = '#ffffff';
+ctx.font = 'bold 130px Arial Black, Arial, sans-serif';
+ctx.textAlign = 'left';
+ctx.fillText('HATADAN', 290, 480);
+ctx.restore();
+
+// "HABERİNİZ VAR MI?" — yellow
+ctx.save();
+ctx.shadowColor = 'rgba(180,0,0,0.85)';
+ctx.shadowBlur = 25;
+ctx.shadowOffsetX = 3;
+ctx.shadowOffsetY = 3;
+ctx.fillStyle = '#ffdd00';
+ctx.font = 'bold 78px Arial Black, Arial, sans-serif';
+ctx.textAlign = 'left';
+ctx.fillText('HABERİNİZ VAR MI?', 288, 580);
+ctx.restore();
+
+// ── 7. TEXT BACKDROP GLOW ──────────────────────────────────────────
+ctx.save();
+ctx.globalCompositeOperation = 'multiply';
+// dark vignette behind text area
+const textShadow = ctx.createLinearGradient(220, 250, 220, 620);
+textShadow.addColorStop(0, 'rgba(0,0,0,0)');
+textShadow.addColorStop(0.1, 'rgba(0,0,0,0.35)');
+textShadow.addColorStop(0.9, 'rgba(0,0,0,0.35)');
+textShadow.addColorStop(1, 'rgba(0,0,0,0)');
+ctx.fillStyle = textShadow;
+ctx.fillRect(220, 250, 880, 380);
+ctx.restore();
+
+// ── 8. A-PRO LOGO (bottom left) ────────────────────────────────────
+ctx.save();
+// Dark pill background
+ctx.fillStyle = 'rgba(0,0,0,0.75)';
+ctx.beginPath();
+ctx.roundRect(22, H-82, 180, 62, 8);
+ctx.fill();
+
+// Red "A-PRO" text with flame icon
+ctx.font = 'bold 30px Arial Black, Arial, sans-serif';
+ctx.fillStyle = '#ff2200';
+ctx.shadowColor = 'rgba(255,0,0,0.5)';
+ctx.shadowBlur = 10;
+ctx.textAlign = 'left';
+ctx.fillText('A-PRO', 50, H-48);
+
+ctx.font = '14px Arial, sans-serif';
+ctx.fillStyle = '#cccccc';
+ctx.shadowBlur = 0;
+ctx.fillText('MÜHENDİSLİK', 50, H-28);
+
+// Flame icon before text
+ctx.font = '26px serif';
+ctx.fillText('🔥', 22, H-42);
+ctx.restore();
+
+// ── 9. BOTTOM GRADIENT FADE ────────────────────────────────────────
+const bottomFade = ctx.createLinearGradient(0, H-120, 0, H);
+bottomFade.addColorStop(0, 'rgba(0,0,0,0)');
+bottomFade.addColorStop(1, 'rgba(0,0,0,0.55)');
+ctx.fillStyle = bottomFade;
+ctx.fillRect(0, H-120, W, 120);
+
+// ── 10. OUTER VIGNETTE ─────────────────────────────────────────────
+const vig = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, H*0.85);
+vig.addColorStop(0, 'rgba(0,0,0,0)');
+vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+ctx.fillStyle = vig;
+ctx.fillRect(0, 0, W, H);
+
+// ── DONE ──
+console.log('Thumbnail rendered at 1280x720');
+</script>
+</body>
+</html>

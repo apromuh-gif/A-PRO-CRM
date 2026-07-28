@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// ============================================================================
+// A-PRO CRM — Firestore Güvenlik Kuralları (a-pro-crm projesi)
+// Firebase Console → Firestore Database → Rules sekmesine yapıştırıp Publish edin.
+// ÖNCE Console'daki "Rules Playground" ile test edin; canlıya almadan önce
+// bir admin ve bir normal kullanıcı ile giriş/okuma/yazma denemesi yapın.
+//
+// Önceki kural ("allow read, write: if request.auth != null") her oturum açmış
+// kullanıcıya TÜM verilere yazma + kullanıcı rolü (isAdmin) değiştirme izni
+// veriyordu. Bu kurallar:
+//   • İş verisi  → oturum açmış kullanıcı okur/yazar (normal kullanım korunur)
+//   • users      → herkes okur; yalnız admin başkasının rolünü değiştirir
+//   • settings   → herkes okur; yalnız admin yazar (Gemini key/hedef korunur)
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Kullanıcının kendi rol dokümanını okuyup admin mi diye bakar.
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+        && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.isAdmin == true;
+    }
+
+    // İlk kurulum admini (yalnız bu e-posta kendi rol dokümanını oluşturabilir).
+    function isBootstrapAdmin() {
+      return signedIn() && request.auth.token.email == 'apromuh@gmail.com';
+    }
+
+    // --- İş verileri: oturum açmış kullanıcı okur/yazar ---
+    match /customers/{id}     { allow read, write: if signedIn(); }
+    match /suppliers/{id}     { allow read, write: if signedIn(); }
+    match /opportunities/{id} { allow read, write: if signedIn(); }
+    match /proposals/{id}     { allow read, write: if signedIn(); }
+    match /services/{id}      { allow read, write: if signedIn(); }
+    match /serviceOpps/{id}   { allow read, write: if signedIn(); }
+    match /maintenances/{id}  { allow read, write: if signedIn(); }
+    match /visits/{id}        { allow read, write: if signedIn(); }
+    match /appointments/{id}  { allow read, write: if signedIn(); }
+
+    // --- Personel modülü (Görev / Performans / Prim) ---
+    // Görevler & değerlendirmeler: oturum açmış kullanıcı okur/yazar
+    match /tasks/{id}         { allow read, write: if signedIn(); }
+    match /evaluations/{id}   { allow read, write: if signedIn(); }
+    // Prim (para tutarları): herkes okur, yalnız admin yazar (sunucu tarafı kilit)
+    match /prim/{id}          { allow read: if signedIn(); allow write: if isAdmin(); }
+
+    // --- Kullanıcı/rol dokümanları ---
+    // Okuma: tüm oturum açmış kullanıcılar (atama listeleri vb.)
+    // Oluşturma: admin; ya da bootstrap admini yalnız kendi dokümanını
+    // Güncelle/Sil: yalnız admin (yetki yükseltme engellenir)
+    match /users/{email} {
+      allow read:   if signedIn();
+      allow create: if isAdmin() || (isBootstrapAdmin() && email == request.auth.token.email);
+      allow update, delete: if isAdmin();
+    }
+
+    // --- Ayarlar (Gemini API key, yıllık hedefler) ---
+    match /settings/{doc} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // Tanımsız yol → reddet
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

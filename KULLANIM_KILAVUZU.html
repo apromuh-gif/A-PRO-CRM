@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A-PRO Mühendislik — Kullanım Kılavuzu</title>
+<title>NextAura — Kullanım Kılavuzu</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4f8; color: #1e293b; }
@@ -135,15 +135,15 @@
 
 <div class="sidebar">
   <div class="sidebar-logo">
-    A-PRO <span>NextAura</span>
-    <small>Kullanım Kılavuzu v2.8</small>
+    <span>NextAura</span>
+    <small>Kullanım Kılavuzu v2.9</small>
   </div>
 
   <div class="nav-section">Başlangıç</div>
   <div class="nav-item active" onclick="navTo('intro',this)">🏠 Sistemlere Genel Bakış</div>
   <div class="nav-item highlight" onclick="navTo('workflow',this)">🚀 Standart Satış Akışı</div>
 
-  <div class="nav-section">A-PRO CRM</div>
+  <div class="nav-section">NextAura CRM</div>
   <div class="nav-item" onclick="navTo('dashboard',this)">📊 Dashboard</div>
   <div class="nav-item" onclick="navTo('customers',this)">👥 Müşteriler</div>
   <div class="nav-item" onclick="navTo('opportunities',this)">🎯 Fırsatlar</div>
@@ -160,6 +160,11 @@
   <div class="nav-item" onclick="navTo('integration',this)">🔗 CRM ↔ Teklif Senkronu</div>
   <div class="nav-item" onclick="navTo('btn-states',this)">🔘 Buton Durumları</div>
   <div class="nav-item" onclick="navTo('user-access',this)">👤 Kullanıcı Erişimi</div>
+
+  <div class="nav-section">Kiracı Kurulumu</div>
+  <div class="nav-item highlight" onclick="navTo('kiraci',this)">🏢 Firma Logosu & Marka</div>
+
+  <div class="nav-section">Diğer</div>
   <div class="nav-item" onclick="navTo('workflows',this)">📋 Hızlı Akışlar</div>
   <div class="nav-item" onclick="navTo('faq',this)">❓ Sık Sorulan Sorular</div>
 </div>
@@ -167,21 +172,21 @@
 <div class="main">
 
   <div class="hero">
-    <h1>A-PRO Mühendislik — Kullanım Kılavuzu</h1>
-    <p>A-PRO CRM (NextAura) ve A-PRO Teklif Programı için kapsamlı kullanım rehberi</p>
+    <h1>NextAura — Kullanım Kılavuzu</h1>
+    <p>NextAura CRM ve NextAura Teklif Programı için kapsamlı kullanım rehberi</p>
     <div class="hero-badges">
-      <span class="badge">📅 Haziran 2026 — v2.8</span>
-      <span class="badge">🌐 apromuh-gif.github.io/A-PRO-CRM</span>
-      <span class="badge">🧾 apro-platform.vercel.app</span>
+      <span class="badge">📅 Haziran 2026 — v2.9</span>
+      <span class="badge">🌐 crm.nextaura.tr</span>
       <span class="badge">🔐 SSO Entegrasyonu</span>
+      <span class="badge">🏢 Çok Kiracılı (Beyaz Etiket)</span>
     </div>
   </div>
 
   <!-- Sistem kartları -->
   <div class="sys-grid" id="intro">
     <div class="sys-card">
-      <h3>📱 A-PRO CRM (NextAura)</h3>
-      <div class="sys-url">apromuh-gif.github.io/A-PRO-CRM</div>
+      <h3>📱 NextAura CRM</h3>
+      <div class="sys-url">crm.nextaura.tr</div>
       <ul>
         <li>Müşteri ilişkileri takibi</li>
         <li>Satış fırsatı yönetimi</li>
@@ -194,8 +199,8 @@
       </ul>
     </div>
     <div class="sys-card">
-      <h3>🧾 A-PRO Teklif Programı</h3>
-      <div class="sys-url">apro-platform.vercel.app</div>
+      <h3>🧾 NextAura Teklif Programı</h3>
+      <div class="sys-url">CRM üzerinden tek tıkla (SSO)</div>
       <ul>
         <li>Detaylı mühendislik teklifi hazırlama</li>
         <li>3 teklif formatı (Sistem / Birim Fiyatlı / Master)</li>
@@ -589,9 +594,48 @@
       <div class="info"><p>ℹ️ Teklif Programı için ayrı kullanıcı tanımlamanıza gerek yok. CRM'de eklediğiniz her kullanıcı SSO ile Teklif Programı'na erişebilir.</p></div>
     </div>
 
+    <!-- ══ KİRACI KURULUMU ══ -->
+    <div class="section" id="kiraci">
+      <div class="section-title"><div class="num gold">13</div> Kiracı (Firma) Kurulumu: Logo &amp; Marka</div>
+      <div class="section-sub">NextAura'yı kendi markanızla kullanmanız için gereken kurulum adımları.</div>
+
+      <h3 class="sub">Çok Kiracılı Mantık</h3>
+      <p>NextAura tek bir platformdur; her firma (kiracı) bu platformu <strong>birbirinden tamamen yalıtılmış</strong> şekilde kullanır:</p>
+      <table>
+        <tr><th>İlke</th><th>Anlamı</th></tr>
+        <tr><td>Veri izolasyonu</td><td>Her kiracı yalnızca kendi müşteri, teklif, ürün ve personelini görür</td></tr>
+        <tr><td>Marka izolasyonu</td><td>Çıktılar (PDF/Excel/ön izleme) her kiracının kendi logo ve bilgileriyle üretilir</td></tr>
+        <tr><td>Logosuz çıktı</td><td>Logo yüklenmemişse hiç logo basılmaz — başka firmanın logosu asla görünmez</td></tr>
+      </table>
+
+      <h3 class="sub">Kiracı Yöneticisi (Ayarlar Erişimi)</h3>
+      <p>Logo ve firma bilgilerini düzenlemek için <strong>Yönetici</strong> yetkisi gerekir. Firmada bir kullanıcı Yönetici yapılır → sol menüde <strong>⚙️ Ayarlar</strong> görünür. Yetki tanımlandıktan sonra CRM (SSO) girişlerinde de korunur.</p>
+      <div class="warn"><p>⚠️ Yönetici yetkisi verildikten sonra ilgili kullanıcı <strong>oturumu kapatıp tekrar girmelidir</strong>; "Ayarlar" menüsü o zaman görünür.</p></div>
+
+      <h3 class="sub">Logo ve Firma Bilgilerini Yükleme</h3>
+      <ol class="steps">
+        <li><span>Sol menü → <strong>⚙️ Ayarlar</strong></span></li>
+        <li><span><strong>Firma Bilgileri</strong>: firma adı, adres, telefon, e-posta, web sitesi</span></li>
+        <li><span><strong>Logo Yükle</strong>: <strong>PNG veya JPEG</strong>, en fazla <strong>1.5 MB</strong> (gerekirse "Logoyu kaldır")</span></li>
+        <li><span><strong>Kaydet</strong></span></li>
+      </ol>
+
+      <h3 class="sub">Çıktıya Etkisi</h3>
+      <table>
+        <tr><th>Alan</th><th>Çıktıda nerede görünür</th></tr>
+        <tr><td>Firma logosu</td><td>PDF / Excel / ön izleme <strong>üst başlık</strong></td></tr>
+        <tr><td>Firma adı</td><td>Başlık ve <strong>alt bilgi (footer)</strong></td></tr>
+        <tr><td>Adres / telefon / e-posta / web</td><td>Başlıktaki firma bilgi bloğu</td></tr>
+      </table>
+      <div class="warn"><p>⚠️ Logo yüklenmezse çıktıda <strong>hiç logo basılmaz</strong>. Logonuzu yükledikten sonra tüm yeni çıktılar otomatik markanızla üretilir.</p></div>
+
+      <h3 class="sub">Personel Listesi (Satış Temsilcisi / Hazırlayan)</h3>
+      <p>Proje Bilgileri'ndeki <strong>Satış Temsilcisi</strong> ve <strong>Hazırlayan</strong> açılır listeleri yalnızca <strong>kendi firmanızın</strong> kullanıcılarını gösterir; başka firmaların personeli görünmez.</p>
+    </div>
+
     <!-- ══ HIZLI AKIŞLAR ══ -->
     <div class="section" id="workflows">
-      <div class="section-title"><div class="num">13</div> Hızlı Akış Şemaları</div>
+      <div class="section-title"><div class="num">14</div> Hızlı Akış Şemaları</div>
 
       <h3 class="sub">📌 Yeni Müşteri → Fırsat → Teklif</h3>
       <ol class="steps">
@@ -623,7 +667,7 @@
 
     <!-- ══ SSS ══ -->
     <div class="section" id="faq">
-      <div class="section-title"><div class="num">14</div> Sık Sorulan Sorular</div>
+      <div class="section-title"><div class="num">15</div> Sık Sorulan Sorular</div>
 
       <div class="faq-item">
         <div class="faq-q" onclick="toggleFaq(this)">Teklif Programı'na ayrı giriş yapmam gerekiyor mu?<span class="chevron">▼</span></div>
@@ -656,6 +700,21 @@
       </div>
 
       <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">Kendi firma logomu teklif çıktısına nasıl eklerim?<span class="chevron">▼</span></div>
+        <div class="faq-a"><p>Yönetici yetkili kullanıcı → ⚙️ Ayarlar → Firma Bilgileri → <strong>Logo Yükle</strong> (PNG/JPEG, en fazla 1.5 MB) → Kaydet. Ayrıntı için <strong>Bölüm 13</strong>.</p></div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">Çıktıda neden hiç logo görünmüyor?<span class="chevron">▼</span></div>
+        <div class="faq-a"><p>Henüz logo yüklemediyseniz çıktıda logo basılmaz. Başka bir firmanın logosu asla görünmez. Logonuzu Ayarlar'dan yükleyin.</p></div>
+      </div>
+
+      <div class="faq-item">
+        <div class="faq-q" onclick="toggleFaq(this)">"Hazırlayan" listesinde başka firmanın isimleri görünüyor<span class="chevron">▼</span></div>
+        <div class="faq-a"><p>Güncellendi. Liste artık yalnızca kendi firmanızın kullanıcılarını gösterir. Görünmeye devam ederse oturumu kapatıp tekrar girin.</p></div>
+      </div>
+
+      <div class="faq-item">
         <div class="faq-q" onclick="toggleFaq(this)">Teklif formatını sonradan değiştirebilir miyim?<span class="chevron">▼</span></div>
         <div class="faq-a"><p>Hayır. Format teklif oluşturulurken bir kez seçilir. Yanlış format seçildiyse DRAFT teklifte yeni teklif oluşturup eskisini silin.</p></div>
       </div>
@@ -678,7 +737,7 @@
     </div>
 
     <div style="text-align:center; padding: 32px; color:#94a3b8; font-size:12px;">
-      A-PRO Mühendislik · Haziran 2026 — v2.8 · Teknik destek için sistem yöneticinize başvurun
+      NextAura · Haziran 2026 — v2.9 · Teknik destek için sistem yöneticinize başvurun
     </div>
 
   </div>
