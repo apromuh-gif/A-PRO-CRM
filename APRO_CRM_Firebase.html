@@ -5585,7 +5585,10 @@ function personelCritNumbers(kod, name, period){
     const pace = annual*mNum/12;
     const won = O.filter(o=>(kod==='sirket_hedef'||o.assignedTo===name)&&o.stage==='KAZANILDI'&&_pYtdInPeriod(_pOppDate(o),period)).reduce((a,o)=>a+(Number(o.value)||0),0);
     const kalanVal = pace - won;
-    return { hedef: eur(pace)+' <span style="color:#94a3b8;font-size:10px">('+eur(annual)+'/yıl)</span>', gerc: eur(won),
+    return {
+      hedef: eur(pace)+' <span style="color:#94a3b8;font-size:10px">('+eur(annual)+'/yıl)</span>', // üst kart (YTD)
+      hedefTable: eur(annual)+' <span style="color:#94a3b8;font-size:10px">/yıl</span>',           // kriter tablosu (yıllık)
+      gerc: eur(won),
       kalan: kalanVal>0 ? eur(kalanVal) : '<span style="color:#16a34a;font-weight:700">✓ Aşıldı</span>' };
   }
   if(kod==='karlilik'){
@@ -5595,7 +5598,7 @@ function personelCritNumbers(kod, name, period){
     if(!targetPct) return null;
     const realN = realizedPct==null ? null : (Number(realizedPct)||0);
     const kalan = realN==null ? '—' : (realN>=targetPct ? '<span style="color:#16a34a;font-weight:700">✓ Aşıldı</span>' : '%'+(Math.round((targetPct-realN)*10)/10));
-    return { hedef: '%'+targetPct+' marj', gerc: realizedPct==null?'—':'%'+(Math.round((Number(realizedPct)||0)*10)/10)+' marj', kalan };
+    return { hedef: '%'+targetPct+' marj', hedefTable: '%'+targetPct+' marj', gerc: realizedPct==null?'—':'%'+(Math.round((Number(realizedPct)||0)*10)/10)+' marj', kalan };
   }
   return null;
 }
@@ -5649,7 +5652,7 @@ function printPersonelReport(person, period, isAdmin){
     const num = personelCritNumbers(r.kod, person.displayName, period);
     return `<tr>
       <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}</td>
-      <td style="text-align:right;white-space:nowrap">${num?num.hedef:'<span style="color:#cbd5e1">—</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">${num?(num.hedefTable||num.hedef):'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;font-weight:700;white-space:nowrap">${num?num.gerc:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;white-space:nowrap">${num?num.kalan:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:center;font-weight:700;color:${col(r.oran)}">${r.oran==null?'veri yok':pct(r.oran)}</td>
@@ -5663,8 +5666,8 @@ function printPersonelReport(person, period, isAdmin){
     .sort((a,b)=>String(_pOppDate(b)||'').localeCompare(String(_pOppDate(a)||'')));
   const wonTotal = wonProjects.reduce((a,o)=>a+(Number(o.value)||0),0);
   const wonRows = wonProjects.map(o=>{
-    const c = (typeof custById==='function') ? custById(o.customerId) : null;
-    const cn = (c && c.firmName) || '-';
+    const c = (state.customers||[]).find(x=>x.id===o.customerId);
+    const cn = (c && (c.firmName||c.name)) || o.customerName || o.firmName || '-';
     const dt = String(_pOppDate(o)||'').slice(0,10);
     return `<tr><td>${escapeHtml(o.title||'-')}</td><td>${escapeHtml(cn)}</td><td style="text-align:right;font-weight:700;white-space:nowrap">${eur(Number(o.value)||0)}</td><td style="text-align:center;white-space:nowrap">${dt?_toTR(dt):'-'}</td></tr>`;
   }).join('');
@@ -5735,14 +5738,19 @@ function printPersonelReport(person, period, isAdmin){
   }).join('');
   const trendLabels = trendData.map(d=>{
     const c = d.skor==null?'#94a3b8':(d.skor>=1?'#16a34a':d.skor>=0.7?'#d97706':'#dc2626');
+    const lbl = d.skor==null?'veri yok':(d.skor>=1?'Güçlü':d.skor>=0.7?'Yeterli':'Gelişmeli');
     return `<div style="flex:1;text-align:center">
       <div style="font-size:12px;font-weight:800;color:${c}">${d.skor==null?'—':Math.round(d.skor*100)+'%'}</div>
+      <div style="font-size:9px;font-weight:700;color:${c};white-space:nowrap">${lbl}</div>
       <div style="font-size:9px;color:#64748b;white-space:nowrap">${d.p.slice(5)}.${d.p.slice(2,4)}</div>
     </div>`;
   }).join('');
   const trendSection = `
   <h2>📈 Skor Trendi <span style="font-size:11px;font-weight:400;color:#64748b">(son 6 ay)</span></h2>
   <div style="border:1px solid #e2e8f0;border-radius:10px;padding:16px 14px 12px;margin-bottom:20px">
+    <div style="font-size:11px;color:#475569;line-height:1.5;margin-bottom:12px">
+      Her bar, o aya ait <b>toplam performans skorunu</b> gösterir — tüm değerlendirme kriterlerinin (satış, karlılık, aktivite, görev, yönetici puanı…) prim ağırlıklarıyla alınan <b>ağırlıklı ortalamasıdır</b>. Örn. <b>%13</b> = o ay kriterlerin ortalama gerçekleşmesi hedefin %13'ü. Amaç, personelin aylara göre yükseliş/düşüş eğilimini tek bakışta görmektir.
+    </div>
     <div style="position:relative;height:${TREND_H}px">
       <div style="position:absolute;left:0;right:0;top:${_yTop(1)}px;border-top:1px dashed #94a3b8"><span style="position:absolute;right:0;top:-13px;font-size:9px;color:#64748b;background:#fff;padding:0 4px">%100 hedef</span></div>
       <div style="position:absolute;left:0;right:0;top:${_yTop(0.7)}px;border-top:1px dashed #f59e0b"><span style="position:absolute;right:0;top:-13px;font-size:9px;color:#d97706;background:#fff;padding:0 4px">%70 prim eşiği</span></div>
@@ -5833,14 +5841,7 @@ function printPersonelReport(person, period, isAdmin){
     <thead><tr><th>Kriter</th><th style="text-align:right">Hedef</th><th style="text-align:right">Gerçekleşen</th><th style="text-align:right">Hedefe Kalan</th><th style="text-align:center">Oran</th><th style="text-align:center">Durum</th></tr></thead>
     <tbody>${critRows||'<tr><td colspan="6" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
   </table>
-  <div style="font-size:11px;color:#64748b;line-height:1.6;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin:-10px 0 20px">
-    <b>Nasıl okunur?</b><br>
-    • <b>Satış hedefi (Hedef sütunu):</b> yıllık hedefin yıl başından seçili döneme kadar orantılanmış <b>kümülatif (YTD)</b> tutarıdır — <i>yıllık × geçen ay ÷ 12</i>. Örn. ${escapeHtml(period)} dönemi = ${_monthNum(period)}. ay: yıllık hedef × ${_monthNum(period)}/12. Gerçekleşen, aynı dönemde toplam kazanılan cirodur.<br>
-    • <b>Oran:</b> gerçekleşen ÷ hedef. %150 tavanlıdır.<br>
-    • <b>Toplam skor:</b> kriterlerin, ayarlardaki prim ağırlıklarıyla alınan ağırlıklı ortalamasıdır; verisi olmayan kriterler hesaba katılmaz (ağırlıkları kalan kriterlere dağılır).
-  </div>
   ${wonSection}
-  ${taskSection}
   ${trendSection}
   <h2>💬 Değerlendirme Özeti</h2>
   <div class="cols">
