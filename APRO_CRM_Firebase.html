@@ -664,24 +664,50 @@ async function saveStrategy(strategy) {
   } catch(e) { showToast('❌ Strateji kaydedilemedi!','#dc2626'); }
 }
 async function loadEvalConfig() {
+  // Kriter yapısı ve ağırlıklar HER ZAMAN koddan (DEFAULT_EVAL_CONFIG) gelir — tek doğruluk kaynağı.
+  // Kayıttan yalnızca prim ayarları (taban/eşik/hızlandırıcı) alınır; böylece kod ağırlık değişiklikleri asla gizlenmez.
+  const base = JSON.parse(JSON.stringify(DEFAULT_EVAL_CONFIG));
   try {
     const snap = await db.collection('settings').doc('evalConfig').get();
     if(snap.exists && snap.data()) {
       const saved = snap.data();
-      // Kayıtlı config ile varsayılanları birleştir; eksik departman varsayılandan gelir
-      const merged = {};
-      Object.keys(DEFAULT_EVAL_CONFIG).forEach(dep=>{ merged[dep] = saved[dep] || DEFAULT_EVAL_CONFIG[dep]; });
-      return merged;
+      Object.keys(base).forEach(dep=>{
+        const s = saved[dep];
+        if(s && typeof s==='object'){
+          if(typeof s.primBase==='number')    base[dep].primBase    = s.primBase;
+          if(typeof s.threshold==='number')   base[dep].threshold   = s.threshold;
+          if(typeof s.accelerator==='number') base[dep].accelerator = s.accelerator;
+        }
+      });
     }
-    return JSON.parse(JSON.stringify(DEFAULT_EVAL_CONFIG));
-  } catch(e) { return JSON.parse(JSON.stringify(DEFAULT_EVAL_CONFIG)); }
+  } catch(e) { /* varsayılan kullanılır */ }
+  return base;
 }
 async function saveEvalConfig(cfg) {
   try {
-    await db.collection('settings').doc('evalConfig').set(cfg);
-    state.evalConfig = cfg;
-    showToast('✅ Değerlendirme ayarları kaydedildi!');
+    // Yalnızca prim parametrelerini sakla — kriter/ağırlık koddan yönetildiği için kaydedilmez.
+    const out = {};
+    Object.keys(cfg||{}).forEach(dep=>{
+      const c = cfg[dep]||{};
+      out[dep] = { primBase:Number(c.primBase)||0, threshold:Number(c.threshold)||0, accelerator:Number(c.accelerator)||1 };
+    });
+    await db.collection('settings').doc('evalConfig').set(out);
+    state.evalConfig = await loadEvalConfig();
+    showToast('✅ Prim ayarları kaydedildi!');
   } catch(e) { showToast('❌ Kaydedilemedi!','#dc2626'); }
+}
+
+async function loadProfitActuals() {
+  // Teklif Programı'ndan gerçekleşen kâr MARJI (%): { repName: { 'YYYY-MM': marjYuzde } }.
+  // karlilik prim kriteri bunu hedef %'siyle karşılaştırır. Erişilemezse boş obje → kriter hesap dışı.
+  try {
+    if (typeof TEKLIF_APP_URL === 'undefined' || typeof TEKLIF_API_KEY === 'undefined' || !TEKLIF_API_KEY) return {};
+    const res = await fetch(`${TEKLIF_APP_URL}/api/v1/crm/profit`, { headers: { 'x-crm-key': TEKLIF_API_KEY } });
+    if(!res.ok) return {};
+    const body = await res.json().catch(()=>null);
+    const data = body && body.data ? body.data : null;
+    return (data && data.marginByRep && typeof data.marginByRep==='object') ? data.marginByRep : {};
+  } catch(e) { return {}; }
 }
 
 async function loadApiKey() {
@@ -2642,15 +2668,22 @@ function buildTargetsModal() {
               h('div',{style:{height:'100%',width:svcPct+'%',background:svcPct>=100?'linear-gradient(90deg,#16a34a,#22c55e)':svcPct>=50?'linear-gradient(90deg,#d97706,#fbbf24)':'linear-gradient(90deg,#0891b2,#22d3ee)',borderRadius:'4px',transition:'width .4s ease'}})
             ) : h('span')
           ),
-          // Karlılık hedefi (Personel modülü — gerçekleşme Faz 2'de Teklif Programı'ndan)
-          h('div',{style:{marginTop:'10px'}},
-            h('div',{style:{fontSize:'11px',color:'#4a6080',fontWeight:'600',marginBottom:'5px'}},'📈 KARLILIK HEDEFİ (net kâr)'),
-            h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
-              makeNumInput(()=>Number(targets.profitReps[u.displayName])||0, v=>targets.profitReps[u.displayName]=v),
-              h('div',{style:{color:'#4a6080',fontSize:'13px',fontWeight:'600',whiteSpace:'nowrap'}},'€/Yıl'),
-              h('span',{style:{fontSize:'11px',color:'#94a3b8',whiteSpace:'nowrap'}},'gerçekleşme Faz 2')
-            )
-          )
+          // Karlılık hedefi (% kâr marjı) — gerçekleşme Teklif Programı'ndan (bu ayın marjı)
+          (()=>{
+            const curMonth = today().slice(0,7);
+            const pa = state.profitActuals && state.profitActuals[u.displayName];
+            const realPct = pa && typeof pa==='object' ? pa[curMonth] : null;
+            const tgtPct = Number(targets.profitReps[u.displayName])||0;
+            const achPct = (realPct!=null && tgtPct>0) ? Math.min(100, Math.round(realPct/tgtPct*100)) : null;
+            return h('div',{style:{marginTop:'10px'}},
+              h('div',{style:{fontSize:'11px',color:'#4a6080',fontWeight:'600',marginBottom:'5px'}},'📈 KARLILIK HEDEFİ (kâr marjı)'),
+              h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
+                makeNumInput(()=>Number(targets.profitReps[u.displayName])||0, v=>targets.profitReps[u.displayName]=v),
+                h('div',{style:{color:'#4a6080',fontSize:'13px',fontWeight:'600',whiteSpace:'nowrap'}},'% Marj'),
+                h('span',{style:{fontSize:'11px',color:'#94a3b8',whiteSpace:'nowrap'}}, realPct!=null ? ('bu ay: %'+realPct+(achPct!=null?' ('+achPct+'%)':'')) : 'gerçekleşme -')
+              )
+            );
+          })()
         )
       );
     });
@@ -5266,6 +5299,18 @@ function personelTaskStats(name, period){
   const done = ts.filter(t=>t.status==='tamam').length;
   return { total, done, ratio: total? done/total : 0 };
 }
+// Zamanında teslim oranı — tamamlanan görevlerin vadesinde kapatılma oranı (tamamlama ≠ zamanında)
+function personelTaskPunctual(name, period){
+  const ts = (state.tasks||[]).filter(t=>t.assignedTo===name && (_pInPeriod(t.dueDate,period)||_pInPeriod(t.completedAt,period)));
+  if(!ts.length) return null;
+  const onTime = ts.filter(t=>{
+    if(!_pIsDone(t.status)) return false;               // tamamlanmamış = zamanında değil
+    if(!t.dueDate) return true;                          // vade yoksa zamanında say
+    const done = String(t.completedAt||today()).slice(0,10);
+    return done <= String(t.dueDate).slice(0,10);
+  }).length;
+  return onTime/ts.length;
+}
 function personelAutoMetric(kod, name, period, dept){
   const inP = s=>_pInPeriod(s,period);
   const monthOf = a => (Number(a)||0)/12;
@@ -5284,7 +5329,15 @@ function personelAutoMetric(kod, name, period, dept){
       const won = O.filter(o=>o.assignedTo===name&&o.stage==='KAZANILDI'&&inP(_pOppDate(o))).reduce((a,o)=>a+(Number(o.value)||0),0);
       return Math.min(won/t,1.5);
     }
-    case 'karlilik': return null; // Faz 2 — Teklif Programı endpoint
+    case 'karlilik': {
+      // Gerçekleşen kâr MARJI (%) Teklif Programı'ndan state.profitActuals[name][period] olarak yüklenir.
+      // Hedef: targets.profitReps[name] (% marj, örn. 20). Gerçekleşme = gerçekleşen% / hedef%.
+      const pa = state.profitActuals && state.profitActuals[name];
+      const realizedPct = pa && typeof pa==='object' ? pa[period] : pa;
+      const targetPct = Number(state.targets && state.targets.profitReps && state.targets.profitReps[name]) || 0;
+      if(realizedPct==null || !targetPct) return null;
+      return Math.min((Number(realizedPct)||0)/targetPct, 1.5);
+    }
     case 'teklif_takip': {
       const ps = P.filter(p=>p.assignedTo===name && inP(p.dueDate||p.createdAt||p.updatedAt));
       if(!ps.length) return null;
@@ -5320,8 +5373,24 @@ function personelAutoMetric(kod, name, period, dept){
       if(!ss.length) return null;
       return ss.filter(s=>_pIsDone(s.status)).length/ss.length;
     }
+    // Görev tamamlama oranı (tamamlanan/toplam) — genel iş disiplini ve iş emri kapatma
+    case 'gorev':
+    case 'is_emri': {
+      const st = personelTaskStats(name,period);
+      return st.total? st.ratio : null;
+    }
+    // Zamanında teslim / kilometre taşı / raporlama — vadesinde kapatma oranı (tamamlamadan farklı)
+    case 'zamaninda_teslim':
+    case 'km_tasi':
+    case 'raporlama':
+      return personelTaskPunctual(name, period);
+    // Keşif/teklif hazırlama süresi — bu kişiye ait tekliflerin zamanında (gecikmesiz) hazırlanma oranı
+    case 'kesif_sure': {
+      const ps = P.filter(p=>p.assignedTo===name && inP(p.dueDate||p.createdAt||p.updatedAt));
+      if(!ps.length) return null;
+      return ps.filter(p=>!_pIsOverdue(p)).length/ps.length;
+    }
     default: {
-      // görev-tabanlı otomatik kriterler (gorev, raporlama, zamaninda_teslim, is_emri, km_tasi, kesif_sure...)
       const st = personelTaskStats(name,period);
       return st.total? st.ratio : null;
     }
@@ -5332,9 +5401,11 @@ function personelEvalFor(name, period){
 }
 function personelCritOran(c, name, period, dept, ev){
   if(c.auto) return personelAutoMetric(c.kod, name, period, dept);
+  // Manuel kriter: yönetici o kritere değer girdiyse onu kullan
   if(ev && ev.criteria && typeof ev.criteria[c.kod]==='number') return ev.criteria[c.kod];
-  const ms = ev && ev.managerScore;
-  return ms ? ms/5 : null; // manuel kriterler Yönetici Puanına (1-5) iner
+  // "yonetici" kalemi Yönetici Puanı (1-5) ile beslenir; diğer manuel kriterler girilene kadar hesap dışıdır
+  if(c.kod==='yonetici'){ const ms = ev && ev.managerScore; return ms ? ms/5 : null; }
+  return null;
 }
 function personelScore(person, period){
   const dept = person.department;
@@ -5716,11 +5787,38 @@ function renderPersonelPerformans(period, isAdmin){
       ta
     );
 
+    // Manuel kriter için yönetici giriş alanı (0-100%) — rec.criteria[kod]'e yazar
+    const critInput = (r) => {
+      const cur = (evNow && evNow.criteria && typeof evNow.criteria[r.kod]==='number') ? evNow.criteria[r.kod] : null;
+      const inp = h('input',{type:'number',min:'0',max:'150',step:'1',
+        value: cur==null?'':String(Math.round(cur*100)),
+        placeholder:'—',
+        style:{width:'58px',textAlign:'right',padding:'3px 6px',border:'1px solid #cbd5e1',borderRadius:'6px',fontSize:'12px'}});
+      inp.addEventListener('change', async()=>{
+        const ev = personelEvalFor(u.displayName, period);
+        const rec = ev ? { ...ev, criteria:{ ...(ev.criteria||{}) } } : { id:genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
+        const raw = String(inp.value).trim();
+        if(raw==='') delete rec.criteria[r.kod];
+        else rec.criteria[r.kod] = Math.max(0,Math.min(150,Number(raw)||0))/100;
+        rec.updatedAt = today();
+        await personelSaveDoc('evaluations', rec);
+        const sc2 = personelScore(u, period);
+        if(sc2){ rec.totalScore = sc2.skor; await saveDoc('evaluations', rec.id, rec); }
+        showToast('✅ Kriter puanı kaydedildi.');
+      });
+      return inp;
+    };
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
-      ...sc.rows.map(r=>h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'4px 0',fontSize:'12px'}},
-        h('span',{style:{color: r.oran==null?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
-        h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, r.oran==null?'veri yok':pct(r.oran)+' ('+Math.round((r.weight/sc.wsum)*100)+'%)')
-      ))
+      isAdmin?h('div',{style:{fontSize:'10px',color:T4,marginBottom:'6px'}},'⚙ otomatik (sistemden) · ✎ manuel (yönetici % girer, boş = hesap dışı)'):h('span'),
+      ...sc.rows.map(r=>{
+        const editable = isAdmin && !r.auto && r.kod!=='yonetici';
+        return h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'4px 0',fontSize:'12px'}},
+          h('span',{style:{color: r.oran==null && !editable?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
+          editable
+            ? h('span',{style:{display:'flex',alignItems:'center',gap:'5px'}}, critInput(r), h('span',{style:{color:'#64748b',fontSize:'11px'}},'% · ağırlık '+Math.round(r.weight*100)+'%'))
+            : h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, r.oran==null?'veri yok':pct(r.oran)+' ('+Math.round((r.weight/sc.wsum)*100)+'%)')
+        );
+      })
     ) : h('span');
 
     return h('div',{style:{background:'#ffffff',border:'1px solid #d0daea',borderRadius:'12px',padding:'14px',marginBottom:'10px'}},
@@ -6121,6 +6219,7 @@ function render() {
   state.targets = await loadTargets();
   state.strategy = await loadStrategy();
   state.evalConfig = await loadEvalConfig();
+  state.profitActuals = await loadProfitActuals();
   state.geminiKey = await loadApiKey();
   state.loading = false;
   render();
