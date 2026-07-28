@@ -495,6 +495,11 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
   }
   try {
     showNotification('teklif-aciliyor', 'Teklif Programı', 'Teklif oluşturuluyor...', 'info');
+    // Satış temsilcisi = fırsatın sahibi (assignedTo); yoksa teklifi açan kullanıcı.
+    // Hazırlayan = teklifi açan CRM kullanıcısı. Böylece Teklif'te tekrar seçilmez (mükerrer önlenir).
+    const _opp = opportunityId ? state.opportunities.find(o => o.id === opportunityId) : null;
+    const salesRepName = (_opp && _opp.assignedTo) || state.currentUser?.displayName || '';
+    const preparedByName = state.currentUser?.displayName || '';
     const res = await fetch(TEKLIF_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
@@ -504,6 +509,8 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         email: customer.email || '',
         crmCustomerId: customer.id || '',
         crmOpportunityTitle: opportunityTitle || '',
+        salesRep: salesRepName,
+        preparedBy: preparedByName,
         format: apiFormat,
         currency: currency,
         language: language,
