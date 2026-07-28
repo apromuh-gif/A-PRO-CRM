@@ -204,6 +204,7 @@ const TEKLIF_AUTH_URL = TEKLIF_APP_URL + '/api/v1/crm/auth';
 const TEKLIF_USERS_URL      = TEKLIF_APP_URL + '/api/v1/crm/users';
 const TEKLIF_STAFF_SYNC_URL = TEKLIF_APP_URL + '/api/v1/crm/staff-lists';
 const TEKLIF_BACKFILL_URL   = TEKLIF_APP_URL + '/api/v1/crm/backfill-salesrep';
+const TEKLIF_APPROVE_URL    = TEKLIF_APP_URL + '/api/v1/crm/approve-quotation';
 const TEKLIF_API_KEY  = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a83ef805af0';
 
 // Tek seferlik backfill: eski (salesRep boş) tekliflere, bağlı fırsatın sahibini (assignedTo) yaz.
@@ -253,6 +254,36 @@ async function backfillTeklifSalesReps() {
   }
 }
 window.backfillTeklifSalesReps = backfillTeklifSalesReps;
+
+// Tek seferlik: mevcut KAZANILDI fırsatların bağlı tekliflerini Teklif Programı'nda
+// toplu APPROVED'a çeker (karlılığa dahil eder). Bundan sonraki kazanmalar otomatik olur.
+async function approveWonQuotationsBulk() {
+  const targets = (state.opportunities || []).filter(o =>
+    o.stage === 'KAZANILDI' && o.quotationId && o.quotationStatus !== 'APPROVED');
+  if (!targets.length) { alert('Onaylanacak kazanılmış teklif yok. (KAZANILDI + bağlı teklif + henüz onaysız bulunamadı.)'); return; }
+  const lines = targets.slice(0, 20).map(o => '• ' + (o.title || o.quotationId) + '  →  ' + (o.assignedTo || '(temsilci yok)')).join('\n');
+  if (!confirm(targets.length + ' kazanılmış teklif APPROVED yapılacak (karlılığa dahil):\n\n' + lines + '\n\nDevam edilsin mi?')) return;
+  let ok = 0, fail = 0;
+  for (const o of targets) {
+    try {
+      const prop = (state.proposals || []).find(p => p.quotationId === o.quotationId);
+      const res = await fetch(TEKLIF_APPROVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+        body: JSON.stringify({ quotationId: o.quotationId, salesRep: o.assignedTo || '', preparedBy: (prop && prop.preparedBy) || '' }),
+      });
+      const b = await res.json().catch(() => null);
+      if (res.ok && b && b.success) {
+        const upd = {...o, quotationStatus: 'APPROVED', ...stamp()};
+        await saveDoc('opportunities', o.id, upd);
+        setState({opportunities: (state.opportunities || []).map(x => x.id === o.id ? upd : x)});
+        ok++;
+      } else { fail++; }
+    } catch (e) { fail++; }
+  }
+  alert('✅ Tamamlandı. Onaylanan: ' + ok + (fail ? ', başarısız: ' + fail : ''));
+}
+window.approveWonQuotationsBulk = approveWonQuotationsBulk;
 
 // CRM kullanıcısı için teklif programında oturum açar, session token döndürür.
 async function getCrmSessionToken() {
@@ -1141,6 +1172,35 @@ async function saveServiceOpp(form, isEdit) {
   showToast('✅ İş Takip kaydedildi!');
 }
 
+// Fırsat "KAZANILDI" olduğunda bağlı teklifi Teklif Programı'nda APPROVED durumuna çeker.
+// Karlılık (profit) yalnızca APPROVED teklifleri topladığı için bu adım olmadan
+// kazanılan satış karlılıkta "veri yok" kalır. Endpoint idempotenttir (tekrar tetiklenirse hata vermez).
+async function approveWonQuotation(opp) {
+  try {
+    if (typeof TEKLIF_APPROVE_URL === 'undefined' || !TEKLIF_API_KEY) return;
+    if (!opp || opp.stage !== 'KAZANILDI' || !opp.quotationId) return;
+    if (opp.quotationStatus === 'APPROVED') return;
+    // Hazırlayan: bağlı teklif talebinden; satış temsilcisi: fırsat sahibi.
+    const prop = (state.proposals || []).find(p => p.quotationId === opp.quotationId);
+    const res = await fetch(TEKLIF_APPROVE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+      body: JSON.stringify({
+        quotationId: opp.quotationId,
+        salesRep: opp.assignedTo || '',
+        preparedBy: (prop && prop.preparedBy) || '',
+      }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok || !body || !body.success) return;
+    // Yerel durumu APPROVED yap → buton/rozet güncellensin.
+    const upd = {...opp, quotationStatus: 'APPROVED', ...stamp()};
+    await saveDoc('opportunities', opp.id, upd);
+    setState({opportunities: (state.opportunities || []).map(o => o.id === opp.id ? upd : o)});
+    showToast('✅ Teklif onaylandı — karlılığa dahil edildi.');
+  } catch (e) { /* sessiz: kazanma kaydını engellemez */ }
+}
+
 async function saveOpp(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
@@ -1149,6 +1209,8 @@ async function saveOpp(form, isEdit) {
   const list = isEdit ? state.opportunities.map(o=>o.id===id?data:o) : [...state.opportunities, data];
   setState({opportunities:list, modal:null, saving:false});
   showToast('✅ Fırsat kaydedildi!');
+  // Kazanıldı + bağlı teklif varsa → teklifi APPROVED'a çek (karlılık dahli).
+  if (data.stage === 'KAZANILDI' && data.quotationId) approveWonQuotation(data);
 }
 async function saveProp(form, isEdit) {
   setState({saving:true});
@@ -6135,6 +6197,7 @@ function render() {
               {icon:'🔊', label:'Ses Testi',       color:'#059669', action:()=>{ menu.remove(); try{const ctx=window._audioCtx||(window._audioCtx=new(window.AudioContext||window.webkitAudioContext)());if(ctx.state==='suspended'){ctx.resume().then(()=>playBeep('win'));}else{playBeep('win');}}catch(e){} }},
               {sep:true},
               {icon:'🔁', label:'Teklif Temsilcisi Eşle', color:'#15803d', action:()=>{ menu.remove(); backfillTeklifSalesReps(); }},
+              {icon:'🏆', label:'Kazanılanları Onayla', color:'#4f46e5', action:()=>{ menu.remove(); approveWonQuotationsBulk(); }},
             ];
             items.forEach(item=>{
               if(item.sep){
