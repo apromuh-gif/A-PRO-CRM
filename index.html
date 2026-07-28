@@ -5577,16 +5577,26 @@ function personelCritNumbers(kod, name, period){
     if(!annual) return null;
     const pace = annual*mNum/12;
     const won = O.filter(o=>(kod==='sirket_hedef'||o.assignedTo===name)&&o.stage==='KAZANILDI'&&_pYtdInPeriod(_pOppDate(o),period)).reduce((a,o)=>a+(Number(o.value)||0),0);
-    return { hedef: eur(pace)+' <span style="color:#94a3b8;font-size:10px">('+eur(annual)+'/yıl)</span>', gerc: eur(won) };
+    const kalanVal = pace - won;
+    return { hedef: eur(pace)+' <span style="color:#94a3b8;font-size:10px">('+eur(annual)+'/yıl)</span>', gerc: eur(won),
+      kalan: kalanVal>0 ? eur(kalanVal) : '<span style="color:#16a34a;font-weight:700">✓ Aşıldı</span>' };
   }
   if(kod==='karlilik'){
     const pa = state.profitActuals && state.profitActuals[name];
     const realizedPct = pa && typeof pa==='object' ? pa[period] : pa;
     const targetPct = Number(state.targets && state.targets.profitReps && state.targets.profitReps[name]) || 0;
     if(!targetPct) return null;
-    return { hedef: '%'+targetPct+' marj', gerc: realizedPct==null?'—':'%'+(Math.round((Number(realizedPct)||0)*10)/10)+' marj' };
+    const realN = realizedPct==null ? null : (Number(realizedPct)||0);
+    const kalan = realN==null ? '—' : (realN>=targetPct ? '<span style="color:#16a34a;font-weight:700">✓ Aşıldı</span>' : '%'+(Math.round((targetPct-realN)*10)/10));
+    return { hedef: '%'+targetPct+' marj', gerc: realizedPct==null?'—':'%'+(Math.round((Number(realizedPct)||0)*10)/10)+' marj', kalan };
   }
   return null;
+}
+// Bir dönemden (YYYY-MM) geriye doğru n ay listesi (trend grafiği için).
+function _prevPeriods(period, n){
+  const parts = String(period).split('-'); let y=Number(parts[0]), m=Number(parts[1]); const out=[];
+  for(let i=0;i<n;i++){ out.unshift(y+'-'+String(m).padStart(2,'0')); m--; if(m<1){ m=12; y--; } }
+  return out;
 }
 // Tek personel performans raporu — yönetici-personel birebir görüşmesinde kullanılacak nitelikte çıktı.
 function printPersonelReport(person, period, isAdmin){
@@ -5619,14 +5629,68 @@ function printPersonelReport(person, period, isAdmin){
     const num = personelCritNumbers(r.kod, person.displayName, period);
     return `<tr>
       <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}</td>
-      <td style="text-align:center">${r.auto?'Otomatik':'Manuel'}</td>
       <td style="text-align:center">${r.oran==null?'-':wpct+'%'}</td>
       <td style="text-align:right;white-space:nowrap">${num?num.hedef:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;font-weight:700;white-space:nowrap">${num?num.gerc:'<span style="color:#cbd5e1">—</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">${num?num.kalan:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:center;font-weight:700;color:${col(r.oran)}">${r.oran==null?'veri yok':pct(r.oran)}</td>
       <td style="text-align:center;font-weight:700;color:${sl[1]}">${sl[0]}</td>
     </tr>`;
   }).join('');
+
+  // Prime dahil kazanılan projeler (dönem — YTD): satış hedefi gerçekleşmesini oluşturan kalemler.
+  const wonProjects = (state.opportunities||[])
+    .filter(o=>o.assignedTo===person.displayName && o.stage==='KAZANILDI' && _pYtdInPeriod(_pOppDate(o),period))
+    .sort((a,b)=>String(_pOppDate(b)||'').localeCompare(String(_pOppDate(a)||'')));
+  const wonTotal = wonProjects.reduce((a,o)=>a+(Number(o.value)||0),0);
+  const wonRows = wonProjects.map(o=>{
+    const c = (typeof custById==='function') ? custById(o.customerId) : null;
+    const cn = (c && c.firmName) || '-';
+    const dt = String(_pOppDate(o)||'').slice(0,10);
+    return `<tr><td>${escapeHtml(o.title||'-')}</td><td>${escapeHtml(cn)}</td><td style="text-align:right;font-weight:700;white-space:nowrap">${eur(Number(o.value)||0)}</td><td style="text-align:center;white-space:nowrap">${dt?_toTR(dt):'-'}</td></tr>`;
+  }).join('');
+  const wonSection = `
+  <h2>🏆 Prime Dahil Kazanılan Projeler <span style="font-size:11px;font-weight:400;color:#64748b">(dönem başından ${escapeHtml(period)} sonuna)</span></h2>
+  <table>
+    <thead><tr><th>Proje</th><th>Müşteri</th><th style="text-align:right">Tutar</th><th style="text-align:center">Kapanış</th></tr></thead>
+    <tbody>${wonRows||'<tr><td colspan="4" style="text-align:center;color:#94a3b8">Bu dönemde kazanılan proje yok.</td></tr>'}</tbody>
+    ${wonProjects.length?`<tfoot><tr style="background:#f0fdf4"><td colspan="2" style="text-align:right;font-weight:800">Toplam (${wonProjects.length} proje)</td><td style="text-align:right;font-weight:800;color:#16a34a">${eur(wonTotal)}</td><td></td></tr></tfoot>`:''}
+  </table>`;
+
+  // Görev dökümü tablosu (dönem içi)
+  const _taskStatusLbl = t => t.status==='tamam'?['Tamamlandı','#16a34a']:(t.dueDate&&String(t.dueDate)<today()?['Geciken','#dc2626']:['Açık','#2563eb']);
+  const taskRows = myTasks.slice()
+    .sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')))
+    .map(t=>{ const sl=_taskStatusLbl(t); return `<tr><td>${escapeHtml(t.title||t.desc||'-')}</td><td style="text-align:center;font-weight:700;color:${sl[1]}">${sl[0]}</td><td style="text-align:center;white-space:nowrap">${t.dueDate?_toTR(t.dueDate):'-'}</td></tr>`; }).join('');
+  const taskSection = `
+  <h2>✅ Görev Dökümü <span style="font-size:11px;font-weight:400;color:#64748b">(${escapeHtml(period)})</span></h2>
+  <table>
+    <thead><tr><th>Görev</th><th style="text-align:center">Durum</th><th style="text-align:center">Vade</th></tr></thead>
+    <tbody>${taskRows||'<tr><td colspan="3" style="text-align:center;color:#94a3b8">Bu dönemde görev yok.</td></tr>'}</tbody>
+  </table>`;
+
+  // Öngörülen prim (eşik + hızlandırıcı dahil) — yalnızca yöneticiye gösterilir.
+  const primInfo = personelPrim(person, period);
+  const primBanner = (isAdmin && primInfo) ? `
+  <div style="background:${primInfo.pass?'#ecfdf5':'#fef2f2'};border:1px solid ${primInfo.pass?'#a7f3d0':'#fecaca'};border-radius:10px;padding:12px 16px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:13px;font-weight:700;color:${primInfo.pass?'#065f46':'#991b1b'}">💰 Öngörülen Prim${primInfo.pass?(primInfo.accel>1?' <span style="font-weight:400;font-size:11px">(×'+primInfo.accel+' hızlandırıcı dahil)</span>':''):' <span style="font-weight:400;font-size:11px">(eşik altı — prim oluşmadı)</span>'}</div>
+    <div style="font-size:20px;font-weight:800;color:${primInfo.pass?'#16a34a':'#dc2626'}">${eur(primInfo.primAmount)}</div>
+  </div>` : '';
+
+  // Skor trendi (son 6 ay) — sparkline benzeri bar grafiği.
+  const trendData = _prevPeriods(period,6).map(p=>{ const s=personelScore(person,p); return { p, skor: s? s.skor : null }; });
+  const trendBars = trendData.map(d=>{
+    const hpct = d.skor==null?0:Math.min(100,(d.skor/1.5)*100);
+    const c = d.skor==null?'#e2e8f0':(d.skor>=1?'#16a34a':d.skor>=0.7?'#d97706':'#dc2626');
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div style="font-size:10px;font-weight:700;color:${c}">${d.skor==null?'—':Math.round(d.skor*100)+'%'}</div>
+      <div style="width:70%;height:64px;display:flex;align-items:flex-end"><div style="width:100%;height:${hpct}%;background:${c};border-radius:4px 4px 0 0;min-height:2px"></div></div>
+      <div style="font-size:9px;color:#64748b;white-space:nowrap">${d.p.slice(5)}.${d.p.slice(2,4)}</div>
+    </div>`;
+  }).join('');
+  const trendSection = `
+  <h2>📈 Skor Trendi <span style="font-size:11px;font-weight:400;color:#64748b">(son 6 ay)</span></h2>
+  <div style="display:flex;gap:6px;align-items:flex-end;border:1px solid #e2e8f0;border-radius:10px;padding:14px 12px;margin-bottom:20px">${trendBars}</div>`;
 
   // Güçlü yönler / gelişim alanları (otomatik türetim)
   const strong = sc.rows.filter(r=>r.oran!=null && r.oran>=1).map(r=>escapeHtml(r.label));
@@ -5688,6 +5752,7 @@ function printPersonelReport(person, period, isAdmin){
   </div>
   <div class="verdict" style="background:${vBg};color:${vColor}">${verdict}</div>
   <div class="target-bar"><div class="target-fill" style="width:${Math.min(100,skorPct)}%;background:${col(sc.skor)}"></div></div>
+  ${primBanner}
   <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">
     <div class="kpi"><div class="kpi-val" style="color:${col(sc.skor)}">${skorPct}%</div><div class="kpi-label">Skor</div></div>
     <div class="kpi"><div class="kpi-val">${sc.managerScore||'—'}${sc.managerScore?'/5':''}</div><div class="kpi-label">Yön. Puanı</div></div>
@@ -5698,9 +5763,18 @@ function printPersonelReport(person, period, isAdmin){
   </div>
   <h2>📊 Kriter Bazlı Değerlendirme</h2>
   <table>
-    <thead><tr><th>Kriter</th><th style="text-align:center">Tür</th><th style="text-align:center">Ağırlık</th><th style="text-align:right">Hedef</th><th style="text-align:right">Gerçekleşen</th><th style="text-align:center">Oran</th><th style="text-align:center">Durum</th></tr></thead>
+    <thead><tr><th>Kriter</th><th style="text-align:center">Prim Ağırlığı</th><th style="text-align:right">Hedef</th><th style="text-align:right">Gerçekleşen</th><th style="text-align:right">Hedefe Kalan</th><th style="text-align:center">Oran</th><th style="text-align:center">Durum</th></tr></thead>
     <tbody>${critRows||'<tr><td colspan="7" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
   </table>
+  <div style="font-size:11px;color:#64748b;line-height:1.6;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin:-10px 0 20px">
+    <b>Nasıl okunur?</b><br>
+    • <b>Satış hedefi (Hedef sütunu):</b> yıllık hedefin yıl başından seçili döneme kadar orantılanmış <b>kümülatif (YTD)</b> tutarıdır — <i>yıllık × geçen ay ÷ 12</i>. Örn. yıllık ${escapeHtml(period)} dönemi = ${_monthNum(period)}. ay: yıllık hedef × ${_monthNum(period)}/12. Gerçekleşen, aynı dönemde toplam kazanılan cirodur.<br>
+    • <b>Prim Ağırlığı:</b> kriterin toplam skora (ve prime) katkı payı. Toplam skor = Σ (ağırlık ÷ toplam ağırlık) × oran.<br>
+    • <b>Oran:</b> gerçekleşen ÷ hedef. %150 tavanlıdır.
+  </div>
+  ${wonSection}
+  ${taskSection}
+  ${trendSection}
   <h2>💬 Değerlendirme Özeti</h2>
   <div class="cols">
     <div class="panel" style="border-color:#bbf7d0;background:#f0fdf4"><h3 style="color:#166534">✅ Güçlü Yönler</h3><ul>${liOr(strong,'Bu dönem hedefi aşan kriter yok.')}</ul></div>
