@@ -2796,7 +2796,7 @@ function buildTargetsModal() {
             const pa = state.profitActuals && state.profitActuals[u.displayName];
             const realPct = pa && typeof pa==='object' ? pa[curMonth] : null;
             const tgtPct = Number(targets.profitReps[u.displayName])||0;
-            const achPct = (realPct!=null && tgtPct>0) ? Math.min(100, Math.round(realPct/tgtPct*100)) : null;
+            const achPct = (realPct!=null && tgtPct>0) ? Math.min(150, Math.round(realPct/tgtPct*100)) : null;
             return h('div',{style:{marginTop:'10px'}},
               h('div',{style:{fontSize:'11px',color:'#4a6080',fontWeight:'600',marginBottom:'5px'}},'📈 KARLILIK HEDEFİ (kâr marjı)'),
               h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
@@ -5405,6 +5405,14 @@ function renderMaintenances() {
 // PERSONEL MODÜLÜ (Faz 1) — Görev / Performans / Prim
 // ═══════════════════════════════════════════════════════
 function _pInPeriod(s, period){ return !!s && String(s).slice(0,7)===period; }
+// YTD (yıl başından dönem sonuna): aynı yıl + dönem ayına kadar (dahil).
+function _pYtdInPeriod(s, period){
+  if(!s) return false;
+  const ss = String(s).slice(0,7);
+  return ss.slice(0,4)===String(period).slice(0,4) && ss <= period;
+}
+// Dönemin ay numarası (1-12) — yıllık hedefi orantılamak için (pace = yıllık × ay/12).
+function _monthNum(period){ return Number(String(period).slice(5,7))||0; }
 function _pOppDate(o){ return o.wonAt||o.closedAt||o.updatedAt||o.dueDate||o.createdAt; }
 function _pIsDone(status){ return ['tamam','Tamamlandı','Yapıldı','Onaylandı','Kapandı','Çözüldü'].includes(status); }
 function _pIsOverdue(rec){
@@ -5440,16 +5448,22 @@ function personelAutoMetric(kod, name, period, dept){
   const SO=(state.serviceOpps||[]), V=(state.visits||[]), A=(state.appointments||[]);
   switch(kod){
     case 'sirket_hedef': {
-      const comp = monthOf(state.targets && state.targets.company);
-      if(!comp) return null;
-      const won = O.filter(o=>o.stage==='KAZANILDI'&&inP(_pOppDate(o))).reduce((a,o)=>a+(Number(o.value)||0),0);
-      return Math.min(won/comp,1.5);
+      // YTD bazlı: yıl başından dönem sonuna kadar kazanılan ÷ (yıllık hedef × geçen ay / 12).
+      const annual = Number(state.targets && state.targets.company)||0;
+      if(!annual) return null;
+      const paceTarget = annual * _monthNum(period)/12;
+      if(!paceTarget) return null;
+      const won = O.filter(o=>o.stage==='KAZANILDI'&&_pYtdInPeriod(_pOppDate(o),period)).reduce((a,o)=>a+(Number(o.value)||0),0);
+      return Math.min(won/paceTarget,1.5);
     }
     case 'birey_hedef': {
-      const t = monthOf(state.targets && state.targets.reps && state.targets.reps[name]);
-      if(!t) return null;
-      const won = O.filter(o=>o.assignedTo===name&&o.stage==='KAZANILDI'&&inP(_pOppDate(o))).reduce((a,o)=>a+(Number(o.value)||0),0);
-      return Math.min(won/t,1.5);
+      // YTD bazlı: yıl başından dönem sonuna kadar kazanılan ÷ (yıllık hedef × geçen ay / 12).
+      const annual = Number(state.targets && state.targets.reps && state.targets.reps[name])||0;
+      if(!annual) return null;
+      const paceTarget = annual * _monthNum(period)/12;
+      if(!paceTarget) return null;
+      const won = O.filter(o=>o.assignedTo===name&&o.stage==='KAZANILDI'&&_pYtdInPeriod(_pOppDate(o),period)).reduce((a,o)=>a+(Number(o.value)||0),0);
+      return Math.min(won/paceTarget,1.5);
     }
     case 'karlilik': {
       // Gerçekleşen kâr MARJI (%) Teklif Programı'ndan state.profitActuals[name][period] olarak yüklenir.
@@ -5551,6 +5565,29 @@ function personelPrim(person, period){
   sc.avail.forEach(r=>{ breakdown[r.kod] = pass ? (cfg.primBase||0)*(r.weight/sc.wsum)*r.oran*accel : 0; });
   return { ...sc, pass, accel, primAmount, breakdown };
 }
+// Rapor için rakamsal Hedef/Gerçekleşen değerleri (YTD) — yalnızca satış/karlılık kriterleri.
+// Diğer kriterlerde null döner → tablo '—' gösterir.
+function personelCritNumbers(kod, name, period){
+  const O=(state.opportunities||[]);
+  const mNum=_monthNum(period);
+  if(kod==='birey_hedef' || kod==='sirket_hedef'){
+    const annual = kod==='birey_hedef'
+      ? Number(state.targets && state.targets.reps && state.targets.reps[name])||0
+      : Number(state.targets && state.targets.company)||0;
+    if(!annual) return null;
+    const pace = annual*mNum/12;
+    const won = O.filter(o=>(kod==='sirket_hedef'||o.assignedTo===name)&&o.stage==='KAZANILDI'&&_pYtdInPeriod(_pOppDate(o),period)).reduce((a,o)=>a+(Number(o.value)||0),0);
+    return { hedef: eur(pace)+' <span style="color:#94a3b8;font-size:10px">('+eur(annual)+'/yıl)</span>', gerc: eur(won) };
+  }
+  if(kod==='karlilik'){
+    const pa = state.profitActuals && state.profitActuals[name];
+    const realizedPct = pa && typeof pa==='object' ? pa[period] : pa;
+    const targetPct = Number(state.targets && state.targets.profitReps && state.targets.profitReps[name]) || 0;
+    if(!targetPct) return null;
+    return { hedef: '%'+targetPct+' marj', gerc: realizedPct==null?'—':'%'+(Math.round((Number(realizedPct)||0)*10)/10)+' marj' };
+  }
+  return null;
+}
 // Tek personel performans raporu — yönetici-personel birebir görüşmesinde kullanılacak nitelikte çıktı.
 function printPersonelReport(person, period, isAdmin){
   const sc = personelScore(person, period);
@@ -5579,10 +5616,13 @@ function printPersonelReport(person, period, isAdmin){
   const critRows = sc.rows.map(r=>{
     const wpct = Math.round((r.weight/sc.wsum)*100);
     const sl = statusLabel(r.oran);
+    const num = personelCritNumbers(r.kod, person.displayName, period);
     return `<tr>
       <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}</td>
       <td style="text-align:center">${r.auto?'Otomatik':'Manuel'}</td>
       <td style="text-align:center">${r.oran==null?'-':wpct+'%'}</td>
+      <td style="text-align:right;white-space:nowrap">${num?num.hedef:'<span style="color:#cbd5e1">—</span>'}</td>
+      <td style="text-align:right;font-weight:700;white-space:nowrap">${num?num.gerc:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:center;font-weight:700;color:${col(r.oran)}">${r.oran==null?'veri yok':pct(r.oran)}</td>
       <td style="text-align:center;font-weight:700;color:${sl[1]}">${sl[0]}</td>
     </tr>`;
@@ -5658,8 +5698,8 @@ function printPersonelReport(person, period, isAdmin){
   </div>
   <h2>📊 Kriter Bazlı Değerlendirme</h2>
   <table>
-    <thead><tr><th>Kriter</th><th style="text-align:center">Tür</th><th style="text-align:center">Ağırlık</th><th style="text-align:center">Gerçekleşme</th><th style="text-align:center">Durum</th></tr></thead>
-    <tbody>${critRows||'<tr><td colspan="5" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
+    <thead><tr><th>Kriter</th><th style="text-align:center">Tür</th><th style="text-align:center">Ağırlık</th><th style="text-align:right">Hedef</th><th style="text-align:right">Gerçekleşen</th><th style="text-align:center">Oran</th><th style="text-align:center">Durum</th></tr></thead>
+    <tbody>${critRows||'<tr><td colspan="7" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
   </table>
   <h2>💬 Değerlendirme Özeti</h2>
   <div class="cols">
