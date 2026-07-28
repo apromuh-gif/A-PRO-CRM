@@ -5475,10 +5475,14 @@ function personelAutoMetric(kod, name, period, dept){
       return Math.min((Number(realizedPct)||0)/targetPct, 1.5);
     }
     case 'teklif_takip': {
-      const ps = P.filter(p=>p.assignedTo===name && inP(p.dueDate||p.createdAt||p.updatedAt));
+      // Teklif kayıtlarında sahibi 'preparedBy', vadesi 'validUntil'dır (assignedTo/dueDate yok).
+      // Bu kişinin dönemde oluşturduğu VEYA hâlâ açık (takipteki) teklifleri değerlendir.
+      const isFinal = s => s==='Onaylandı' || s==='Reddedildi';
+      const ps = P.filter(p=>p.preparedBy===name && (inP(p.createdAt||p.sentDate||p.updatedAt) || !isFinal(p.status)));
       if(!ps.length) return null;
-      const ok = ps.filter(p=>!_pIsOverdue(p)).length;
-      return ok/ps.length;
+      // Vadesi (validUntil) geçmiş ve hâlâ kapatılmamış teklifler "takip edilmemiş" sayılır.
+      const overdue = ps.filter(p=>!isFinal(p.status) && p.validUntil && String(p.validUntil).slice(0,10) < today()).length;
+      return Math.max(0, 1 - overdue/ps.length);
     }
     case 'aktivite': {
       const v = V.filter(x=>x.assignedTo===name&&inP(x.date||x.visitDate||x.createdAt)).length;
@@ -5522,9 +5526,12 @@ function personelAutoMetric(kod, name, period, dept){
       return personelTaskPunctual(name, period);
     // Keşif/teklif hazırlama süresi — bu kişiye ait tekliflerin zamanında (gecikmesiz) hazırlanma oranı
     case 'kesif_sure': {
-      const ps = P.filter(p=>p.assignedTo===name && inP(p.dueDate||p.createdAt||p.updatedAt));
+      // Teklif kayıtlarında sahibi 'preparedBy', vadesi 'validUntil'dır.
+      const isFinal = s => s==='Onaylandı' || s==='Reddedildi';
+      const ps = P.filter(p=>p.preparedBy===name && (inP(p.createdAt||p.sentDate||p.updatedAt) || !isFinal(p.status)));
       if(!ps.length) return null;
-      return ps.filter(p=>!_pIsOverdue(p)).length/ps.length;
+      const overdue = ps.filter(p=>!isFinal(p.status) && p.validUntil && String(p.validUntil).slice(0,10) < today()).length;
+      return Math.max(0, 1 - overdue/ps.length);
     }
     default: {
       const st = personelTaskStats(name,period);
@@ -5624,12 +5631,10 @@ function printPersonelReport(person, period, isAdmin){
 
   const statusLabel = v => v==null?['Veri yok','#94a3b8']:(v>=1?['Güçlü','#16a34a']:v>=0.7?['Yeterli','#d97706']:['Gelişmeli','#dc2626']);
   const critRows = sc.rows.map(r=>{
-    const wpct = Math.round((r.weight/sc.wsum)*100);
     const sl = statusLabel(r.oran);
     const num = personelCritNumbers(r.kod, person.displayName, period);
     return `<tr>
       <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}</td>
-      <td style="text-align:center">${r.oran==null?'-':wpct+'%'}</td>
       <td style="text-align:right;white-space:nowrap">${num?num.hedef:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;font-weight:700;white-space:nowrap">${num?num.gerc:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;white-space:nowrap">${num?num.kalan:'<span style="color:#cbd5e1">—</span>'}</td>
@@ -5763,14 +5768,14 @@ function printPersonelReport(person, period, isAdmin){
   </div>
   <h2>📊 Kriter Bazlı Değerlendirme</h2>
   <table>
-    <thead><tr><th>Kriter</th><th style="text-align:center">Prim Ağırlığı</th><th style="text-align:right">Hedef</th><th style="text-align:right">Gerçekleşen</th><th style="text-align:right">Hedefe Kalan</th><th style="text-align:center">Oran</th><th style="text-align:center">Durum</th></tr></thead>
-    <tbody>${critRows||'<tr><td colspan="7" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
+    <thead><tr><th>Kriter</th><th style="text-align:right">Hedef</th><th style="text-align:right">Gerçekleşen</th><th style="text-align:right">Hedefe Kalan</th><th style="text-align:center">Oran</th><th style="text-align:center">Durum</th></tr></thead>
+    <tbody>${critRows||'<tr><td colspan="6" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
   </table>
   <div style="font-size:11px;color:#64748b;line-height:1.6;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin:-10px 0 20px">
     <b>Nasıl okunur?</b><br>
-    • <b>Satış hedefi (Hedef sütunu):</b> yıllık hedefin yıl başından seçili döneme kadar orantılanmış <b>kümülatif (YTD)</b> tutarıdır — <i>yıllık × geçen ay ÷ 12</i>. Örn. yıllık ${escapeHtml(period)} dönemi = ${_monthNum(period)}. ay: yıllık hedef × ${_monthNum(period)}/12. Gerçekleşen, aynı dönemde toplam kazanılan cirodur.<br>
-    • <b>Prim Ağırlığı:</b> kriterin toplam skora (ve prime) katkı payı. Toplam skor = Σ (ağırlık ÷ toplam ağırlık) × oran.<br>
-    • <b>Oran:</b> gerçekleşen ÷ hedef. %150 tavanlıdır.
+    • <b>Satış hedefi (Hedef sütunu):</b> yıllık hedefin yıl başından seçili döneme kadar orantılanmış <b>kümülatif (YTD)</b> tutarıdır — <i>yıllık × geçen ay ÷ 12</i>. Örn. ${escapeHtml(period)} dönemi = ${_monthNum(period)}. ay: yıllık hedef × ${_monthNum(period)}/12. Gerçekleşen, aynı dönemde toplam kazanılan cirodur.<br>
+    • <b>Oran:</b> gerçekleşen ÷ hedef. %150 tavanlıdır.<br>
+    • <b>Toplam skor:</b> kriterlerin, ayarlardaki prim ağırlıklarıyla alınan ağırlıklı ortalamasıdır; verisi olmayan kriterler hesaba katılmaz (ağırlıkları kalan kriterlere dağılır).
   </div>
   ${wonSection}
   ${taskSection}
