@@ -583,6 +583,9 @@ let state = {
   filters: {title:'',customer:'',stage:'',sector:'',assigned:'',admin:''},
   loading: true,
   saving: false,
+  profitActuals: {},
+  testMode: false,
+  _testBackup: null,
 };
 
 let toastTimer = null;
@@ -739,6 +742,7 @@ async function saveTargets(targets) {
     Object.keys(targets.serviceReps||{}).forEach(k=>{ clean.serviceReps[k] = Number(targets.serviceReps[k])||0; });
     Object.keys(targets.profitReps||{}).forEach(k=>{ clean.profitReps[k] = Number(targets.profitReps[k])||0; });
     targets = clean;
+    if(state.testMode){ state.targets = targets; showToast('🧪 Test modu — hedefler kaydedilmedi'); return; }
     await db.collection('settings').doc('targets').set(targets);
     state.targets = targets;
     showToast('✅ Hedefler kaydedildi!');
@@ -5566,8 +5570,56 @@ function printPersonelReport(person, period, isAdmin){
   var pc=document.createElement('div'); pc.style.cssText='flex:1;overflow-y:auto;'; pc.innerHTML=printHTML; po.appendChild(pc);
   document.body.appendChild(po);
 }
+// ═══ TEST MODU — örnek verilerle performans/prim hesabını dener, DB'ye HİÇ yazmaz ═══
+function personelTestModeToggle(period){
+  if(state.testMode){ personelTestModeExit(); return; }
+  // Mevcut veriyi yedekle (çıkışta geri yüklenir)
+  state._testBackup = {
+    evaluations: JSON.parse(JSON.stringify(state.evaluations||[])),
+    targets: JSON.parse(JSON.stringify(state.targets||{})),
+    profitActuals: JSON.parse(JSON.stringify(state.profitActuals||{})),
+  };
+  const P = period || (state.personelPeriod || today().slice(0,7));
+  const people = personelPeople();
+  if(!state.targets.reps) state.targets.reps = {};
+  if(!state.targets.serviceReps) state.targets.serviceReps = {};
+  if(!state.targets.profitReps) state.targets.profitReps = {};
+  if(!state.profitActuals) state.profitActuals = {};
+  const evals = (state.evaluations||[]).slice();
+  people.forEach((u,idx)=>{
+    const n = u.displayName;
+    // Örnek hedefler + gerçekleşmeler (dönüşümlü değerler → farklı skorlar görünsün)
+    state.targets.reps[n]        = state.targets.reps[n]        || 1200000;
+    state.targets.serviceReps[n] = state.targets.serviceReps[n] || 300000;
+    state.targets.profitReps[n]  = state.targets.profitReps[n]  || 20;              // hedef %20 marj
+    state.profitActuals[n] = { [P]: [27.7, 18.5, 22.0, 15.0][idx%4] };             // gerçekleşen marj %
+    // Örnek yönetici puanı + manuel kriterler
+    const ex = evals.find(e=>e.personName===n && e.period===P);
+    const rec = ex ? {...ex, criteria:{...(ex.criteria||{})}} : { id:'test_'+idx, personName:n, department:u.department, period:P, criteria:{}, managerScore:0 };
+    rec.managerScore = [4,5,3,4][idx%4];
+    ['ilk_cozum','teknik_dogruluk','proje_butce','is_guvenligi','iscilik_kalite','saha_rapor','malzeme_verim','yasal_uyum','evrak_duzen','raporlama'].forEach(k=>{
+      if(rec.criteria[k]==null) rec.criteria[k] = [0.9,0.75,1.0,0.85][idx%4];
+    });
+    const i = evals.findIndex(e=>e.personName===n && e.period===P);
+    if(i>=0) evals[i]=rec; else evals.push(rec);
+  });
+  state.evaluations = evals;
+  state.testMode = true;
+  showToast('🧪 TEST MODU AÇIK — örnek veriler yüklendi, hiçbir şey kaydedilmez');
+  render();
+}
+function personelTestModeExit(){
+  const b = state._testBackup;
+  if(b){ state.evaluations=b.evaluations; state.targets=b.targets; state.profitActuals=b.profitActuals; }
+  state._testBackup = null;
+  state.testMode = false;
+  showToast('✅ Test modu kapatıldı — gerçek veriler geri yüklendi');
+  render();
+}
+
 async function personelSaveDoc(coll, rec){
-  await saveDoc(coll, rec.id, rec);
+  // TEST MODU: DB'ye yazma, yalnızca bellekte güncelle (F5'te silinir).
+  if(!state.testMode) await saveDoc(coll, rec.id, rec);
   const arr = (state[coll]||[]).slice();
   const i = arr.findIndex(x=>x.id===rec.id);
   if(i>=0) arr[i]=rec; else arr.push(rec);
@@ -5803,8 +5855,8 @@ function renderPersonelPerformans(period, isAdmin){
         rec.updatedAt = today();
         await personelSaveDoc('evaluations', rec);
         const sc2 = personelScore(u, period);
-        if(sc2){ rec.totalScore = sc2.skor; await saveDoc('evaluations', rec.id, rec); }
-        showToast('✅ Kriter puanı kaydedildi.');
+        if(sc2){ rec.totalScore = sc2.skor; if(!state.testMode) await saveDoc('evaluations', rec.id, rec); }
+        showToast(state.testMode?'🧪 Test — kaydedilmedi':'✅ Kriter puanı kaydedildi.');
       });
       return inp;
     };
@@ -5845,7 +5897,17 @@ function renderPersonelPerformans(period, isAdmin){
       detail
     );
   });
-  return h('div',{}, ...cards);
+  // TEST MODU çubuğu (yalnızca yönetici) — örnek verilerle dener, DB'ye yazmaz
+  const testBar = isAdmin ? h('div',{style:{display:'flex',alignItems:'center',gap:'12px',flexWrap:'wrap',background:state.testMode?'#fef3c7':'#f1f5f9',border:'1px solid '+(state.testMode?'#f59e0b':'#cbd5e1'),borderRadius:'10px',padding:'10px 14px',marginBottom:'12px'}},
+      h('div',{style:{flex:'1',minWidth:'220px'}},
+        h('div',{style:{fontWeight:'700',fontSize:'13px',color:state.testMode?'#92400e':'#334155'}}, state.testMode?'🧪 TEST MODU AÇIK':'🧪 Test Modu'),
+        h('div',{style:{fontSize:'11px',color:state.testMode?'#b45309':'#64748b',marginTop:'2px'}}, state.testMode?'Örnek veriler yüklü — hiçbir giriş veritabanına kaydedilmez. Kapatınca gerçek veriler geri gelir.':'Örnek hedef/gerçekleşme/puanlarla prim hesabını dener; veritabanına yazmaz.')
+      ),
+      h('button',{onclick:()=>personelTestModeToggle(period),
+        style:{background:state.testMode?'#dc2626':'#2563eb',color:'#fff',border:'none',borderRadius:'8px',padding:'8px 16px',fontSize:'13px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap'}},
+        state.testMode?'Test Modunu Kapat':'Test Modunu Aç')
+    ) : h('span');
+  return h('div',{}, testBar, ...cards);
 }
 
 function renderPersonelPrim(period){
