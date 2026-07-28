@@ -125,7 +125,7 @@ const DEFAULT_STRATEGY = {
 // auto:true → sistemden otomatik hesaplanır; auto:false → Yönetici Puanı / manuel.
 const DEFAULT_EVAL_CONFIG = {
   satis: {
-    threshold:0.70, accelerator:1.5, primBase:0,
+    threshold:0.70, overCap:1.5, overAccel:1.0, primBase:0,
     criteria:[
       {kod:'birey_hedef',    label:'Bireysel hedef gerçekleşme',  auto:true,  weight:0.35},
       {kod:'karlilik',       label:'Karlılık gerçekleşme (Faz 2)',auto:true,  weight:0.25},
@@ -138,7 +138,7 @@ const DEFAULT_EVAL_CONFIG = {
     ],
   },
   saha: {
-    threshold:0.70, accelerator:1.5, primBase:0,
+    threshold:0.70, overCap:1.5, overAccel:1.0, primBase:0,
     criteria:[
       {kod:'zamaninda_teslim',label:'Zamanında teslim oranı',      auto:true,  weight:0.20},
       {kod:'proje_butce',     label:'Proje bütçe hedefi',           auto:false, weight:0.30},
@@ -151,7 +151,7 @@ const DEFAULT_EVAL_CONFIG = {
     ],
   },
   teknik: {
-    threshold:0.70, accelerator:1.5, primBase:0,
+    threshold:0.70, overCap:1.5, overAccel:1.0, primBase:0,
     criteria:[
       {kod:'birey_hedef',     label:'Bireysel satış hedefi gerçekleşme',auto:true, weight:0.25},
       {kod:'cozum_suresi',    label:'Arıza/çağrı çözüm süresi (SLA)',auto:true, weight:0.15},
@@ -163,7 +163,7 @@ const DEFAULT_EVAL_CONFIG = {
     ],
   },
   proje: {
-    threshold:0.70, accelerator:1.5, primBase:0,
+    threshold:0.70, overCap:1.5, overAccel:1.0, primBase:0,
     criteria:[
       {kod:'birey_hedef',     label:'Bireysel satış hedefi gerçekleşme',auto:true, weight:0.20},
       {kod:'km_tasi',         label:'Kilometre taşı zamanında teslim',auto:true, weight:0.20},
@@ -174,7 +174,7 @@ const DEFAULT_EVAL_CONFIG = {
     ],
   },
   muhasebe: {
-    threshold:0.70, accelerator:1.5, primBase:0,
+    threshold:0.70, overCap:1.5, overAccel:1.0, primBase:0,
     criteria:[
       {kod:'tahsilat',        label:'Tahsilat/alacak takibi',         auto:false,weight:0.25},
       {kod:'faturalama',      label:'Faturalama doğruluğu & zamanı',  auto:false,weight:0.10},
@@ -766,7 +766,8 @@ async function loadEvalConfig() {
         if(s && typeof s==='object'){
           if(typeof s.primBase==='number')    base[dep].primBase    = s.primBase;
           if(typeof s.threshold==='number')   base[dep].threshold   = s.threshold;
-          if(typeof s.accelerator==='number') base[dep].accelerator = s.accelerator;
+          if(typeof s.overCap==='number')     base[dep].overCap     = s.overCap;
+          if(typeof s.overAccel==='number')   base[dep].overAccel   = s.overAccel;
         }
       });
     }
@@ -779,7 +780,7 @@ async function saveEvalConfig(cfg) {
     const out = {};
     Object.keys(cfg||{}).forEach(dep=>{
       const c = cfg[dep]||{};
-      out[dep] = { primBase:Number(c.primBase)||0, threshold:Number(c.threshold)||0, accelerator:Number(c.accelerator)||1 };
+      out[dep] = { primBase:Number(c.primBase)||0, threshold:Number(c.threshold)||0, overCap:Number(c.overCap)||1.5, overAccel:Number(c.overAccel)||1 };
     });
     await db.collection('settings').doc('evalConfig').set(out);
     state.evalConfig = await loadEvalConfig();
@@ -5565,12 +5566,30 @@ function personelPrim(person, period){
   const sc = personelScore(person, period);
   if(!sc) return null;
   const cfg = sc.cfg;
-  const pass = sc.skor >= (cfg.threshold||0);
-  const accel = sc.skor>1 ? (cfg.accelerator||1) : 1;
-  const primAmount = pass ? (cfg.primBase||0)*sc.skor*accel : 0;
+  const base = cfg.primBase||0;               // Tüm kriterler %100 karşılandığında hak edilen TOPLAM taban prim.
+  const pass = sc.skor >= (cfg.threshold||0); // Eşik altında prim oluşmaz.
+  const overCap = Number(cfg.overCap)||1.5;   // Aşım tavanı: oran en çok bu kadar sayılır (örn. 1.5 = %150).
+  const overAccel = (cfg.overAccel!=null?Number(cfg.overAccel):1); // İvme: aşımın ödüllendirme çarpanı.
+  const OVER_KODS = ['birey_hedef','karlilik']; // Aşım primi YALNIZCA bireysel hedef ve karlılıkta çalışır.
+  // TABAN prim = Tam Prim × Σ(ağırlık payı × min(gerçekleşme,%100)). Her kriter EN ÇOK kendi payı kadar
+  // katkı verir; karşılanmayan kriterin payı taban primden düşülür.
+  // AŞIM primi = Tam Prim × Σ(birey,karlılık) ağırlık × (min(oran,tavan)−1) × ivme. Tavan aşırı primi sınırlar.
   const breakdown = {};
-  sc.avail.forEach(r=>{ breakdown[r.kod] = pass ? (cfg.primBase||0)*(r.weight/sc.wsum)*r.oran*accel : 0; });
-  return { ...sc, pass, accel, primAmount, breakdown };
+  let primRatio = 0, overRatio = 0;
+  sc.avail.forEach(r=>{
+    const oran = Number(r.oran)||0;
+    const wshare = r.weight/sc.wsum;
+    const share = wshare * Math.min(oran, 1);   // kriter başına %100 tavan
+    primRatio += share;
+    breakdown[r.kod] = pass ? base*share : 0;
+    if(OVER_KODS.indexOf(r.kod)>=0 && oran>1){  // yalnız hedefi aşan birey/karlılık
+      overRatio += wshare * (Math.min(oran, overCap) - 1) * overAccel;
+    }
+  });
+  const baseAmount = pass ? base*primRatio : 0;
+  const overAmount = pass ? base*overRatio : 0;
+  const primAmount = baseAmount + overAmount;
+  return { ...sc, pass, accel:1, primRatio, overRatio, baseAmount, overAmount, primAmount, breakdown };
 }
 // Rapor için rakamsal Hedef/Gerçekleşen değerleri (YTD) — yalnızca satış/karlılık kriterleri.
 // Diğer kriterlerde null döner → tablo '—' gösterir.
@@ -5693,9 +5712,12 @@ function printPersonelReport(person, period, isAdmin){
 
   // Öngörülen prim (eşik + hızlandırıcı dahil) — yalnızca yöneticiye gösterilir.
   const primInfo = personelPrim(person, period);
+  const _primSub = (primInfo && primInfo.pass && primInfo.overAmount>0)
+    ? ' <span style="font-weight:400;font-size:11px;color:#065f46">(Taban '+eur(primInfo.baseAmount)+' + Aşım '+eur(primInfo.overAmount)+')</span>'
+    : (primInfo && !primInfo.pass ? ' <span style="font-weight:400;font-size:11px">(eşik altı — prim oluşmadı)</span>' : '');
   const primBanner = (isAdmin && primInfo) ? `
   <div style="background:${primInfo.pass?'#ecfdf5':'#fef2f2'};border:1px solid ${primInfo.pass?'#a7f3d0':'#fecaca'};border-radius:10px;padding:12px 16px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center">
-    <div style="font-size:13px;font-weight:700;color:${primInfo.pass?'#065f46':'#991b1b'}">💰 Öngörülen Prim${primInfo.pass?(primInfo.accel>1?' <span style="font-weight:400;font-size:11px">(×'+primInfo.accel+' hızlandırıcı dahil)</span>':''):' <span style="font-weight:400;font-size:11px">(eşik altı — prim oluşmadı)</span>'}</div>
+    <div style="font-size:13px;font-weight:700;color:${primInfo.pass?'#065f46':'#991b1b'}">💰 Öngörülen Prim${_primSub}</div>
     <div style="font-size:20px;font-weight:800;color:${primInfo.pass?'#16a34a':'#dc2626'}">${eur(primInfo.primAmount)}</div>
   </div>` : '';
 
@@ -5719,50 +5741,53 @@ function printPersonelReport(person, period, isAdmin){
     <div style="display:flex;flex-wrap:wrap;gap:10px">${_mCards}</div>
   </div>` : '';
 
-  // Skor trendi (son 6 ay) — referans çizgili bar grafiği.
-  // Aktivitesi olmayan aylar "veri yok" (gri) gösterilir; %0 (başarısız) ile karıştırılmaz.
-  const trendData = _prevPeriods(period,6).map(p=>{
-    const has = _personelActivity(person.displayName, p);
-    const s = has ? personelScore(person, p) : null;
-    return { p, skor: s? s.skor : null };
-  });
-  const TREND_H = 120, TREND_MAX = 1.5;
-  const _yTop = v => Math.round(TREND_H*(1 - v/TREND_MAX)); // % değerini üstten px konumuna çevir
-  const trendBars = trendData.map(d=>{
-    if(d.skor==null){
-      return `<div style="flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%"><div style="width:60%;height:5px;background:repeating-linear-gradient(45deg,#e2e8f0,#e2e8f0 3px,#fff 3px,#fff 6px);border-radius:3px" title="veri yok"></div></div>`;
-    }
-    const hpx = Math.max(3, Math.min(TREND_H,(d.skor/TREND_MAX)*TREND_H));
-    const c = d.skor>=1?'#16a34a':d.skor>=0.7?'#d97706':'#dc2626';
-    return `<div style="flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%"><div style="width:62%;height:${hpx}px;background:${c};border-radius:5px 5px 0 0"></div></div>`;
-  }).join('');
-  const trendLabels = trendData.map(d=>{
-    const c = d.skor==null?'#94a3b8':(d.skor>=1?'#16a34a':d.skor>=0.7?'#d97706':'#dc2626');
-    const lbl = d.skor==null?'veri yok':(d.skor>=1?'Güçlü':d.skor>=0.7?'Yeterli':'Gelişmeli');
-    return `<div style="flex:1;text-align:center">
-      <div style="font-size:12px;font-weight:800;color:${c}">${d.skor==null?'—':Math.round(d.skor*100)+'%'}</div>
-      <div style="font-size:9px;font-weight:700;color:${c};white-space:nowrap">${lbl}</div>
-      <div style="font-size:9px;color:#64748b;white-space:nowrap">${d.p.slice(5)}.${d.p.slice(2,4)}</div>
+  // Kriter Performans Görünümü — her kriterin hedefe göre gerçekleşmesini yatay çubuklarla gösterir.
+  // 0–%150 ölçek; %100 hedef ve %70 prim eşiği referans çizgileriyle güçlü/zayıf alanlar tek bakışta görünür.
+  const PERF_MAX = 1.5;
+  const _perfPos = v => Math.max(0, Math.min(100, (v/PERF_MAX)*100)); // değer → çubuk içi % konum
+  const perfBars = sc.rows.map(r=>{
+    const has = r.oran!=null && r.oran!==undefined;
+    const c = !has?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626');
+    const grad = !has?'#e2e8f0':(r.oran>=1?'linear-gradient(90deg,#4ade80,#16a34a)':r.oran>=0.7?'linear-gradient(90deg,#fcd34d,#f59e0b)':'linear-gradient(90deg,#fca5a5,#dc2626)');
+    const w = has ? Math.max(2, _perfPos(Math.min(r.oran,PERF_MAX))) : 0;
+    const val = has ? Math.round(r.oran*100)+'%' : 'veri yok';
+    const wPct = Math.round((Number(r.weight)||0)*100);
+    return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <div style="width:210px;flex-shrink:0;font-size:11px;color:#334155;text-align:right;line-height:1.25" title="${escapeHtml(r.label)}">
+        ${escapeHtml(r.label)} <span style="color:#94a3b8;font-size:9px;white-space:nowrap">· ağ. %${wPct}</span>
+      </div>
+      <div style="flex:1;position:relative;height:22px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
+        <div style="position:absolute;left:${_perfPos(0.7)}%;top:0;bottom:0;width:1px;background:#f59e0b;opacity:.55"></div>
+        <div style="position:absolute;left:${_perfPos(1)}%;top:0;bottom:0;width:2px;background:#0f172a;opacity:.6"></div>
+        <div style="position:absolute;left:0;top:0;bottom:0;width:${w}%;background:${grad};border-radius:5px 0 0 5px"></div>
+      </div>
+      <div style="width:66px;flex-shrink:0;font-size:12px;font-weight:800;color:${c};text-align:left">${val}</div>
     </div>`;
   }).join('');
+  const _perfAxis = `
+    <div style="display:flex;align-items:center;gap:10px;margin-top:2px">
+      <div style="width:210px;flex-shrink:0"></div>
+      <div style="flex:1;position:relative;height:14px">
+        <span style="position:absolute;left:0;font-size:9px;color:#94a3b8">%0</span>
+        <span style="position:absolute;left:${_perfPos(0.7)}%;transform:translateX(-50%);font-size:9px;color:#d97706;white-space:nowrap">%70 eşik</span>
+        <span style="position:absolute;left:${_perfPos(1)}%;transform:translateX(-50%);font-size:9px;color:#0f172a;font-weight:700;white-space:nowrap">%100 hedef</span>
+        <span style="position:absolute;right:0;font-size:9px;color:#94a3b8">%150</span>
+      </div>
+      <div style="width:66px;flex-shrink:0"></div>
+    </div>`;
   const trendSection = `
-  <h2>📈 Skor Trendi <span style="font-size:11px;font-weight:400;color:#64748b">(son 6 ay)</span></h2>
-  <div style="border:1px solid #e2e8f0;border-radius:10px;padding:16px 14px 12px;margin-bottom:20px">
-    <div style="font-size:11px;color:#475569;line-height:1.5;margin-bottom:12px">
-      Her bar, o aya ait <b>toplam performans skorunu</b> gösterir — tüm değerlendirme kriterlerinin (satış, karlılık, aktivite, görev, yönetici puanı…) prim ağırlıklarıyla alınan <b>ağırlıklı ortalamasıdır</b>. Örn. <b>%13</b> = o ay kriterlerin ortalama gerçekleşmesi hedefin %13'ü. Amaç, personelin aylara göre yükseliş/düşüş eğilimini tek bakışta görmektir.
+  <h2>🎯 Kriter Performans Görünümü <span style="font-size:11px;font-weight:400;color:#64748b">(${escapeHtml(period)})</span></h2>
+  <div style="border:1px solid #e2e8f0;border-radius:10px;padding:16px 16px 14px;margin-bottom:20px">
+    <div style="font-size:11px;color:#475569;line-height:1.5;margin-bottom:14px">
+      Her çubuk, bir değerlendirme kriterinin <b>hedefe göre gerçekleşmesini</b> gösterir. Koyu dikey çizgi <b>%100 hedef</b>, turuncu çizgi <b>%70 prim eşiğidir</b>. Çubuk hedef çizgisini geçtiyse kriter aşılmıştır; kısa kalan çubuklar gelişim alanlarını işaret eder. Parantez içindeki <i>ağırlık</i>, kriterin toplam skordaki payıdır.
     </div>
-    <div style="position:relative;height:${TREND_H}px">
-      <div style="position:absolute;left:0;right:0;top:${_yTop(1)}px;border-top:1px dashed #94a3b8"><span style="position:absolute;right:0;top:-13px;font-size:9px;color:#64748b;background:#fff;padding:0 4px">%100 hedef</span></div>
-      <div style="position:absolute;left:0;right:0;top:${_yTop(0.7)}px;border-top:1px dashed #f59e0b"><span style="position:absolute;right:0;top:-13px;font-size:9px;color:#d97706;background:#fff;padding:0 4px">%70 prim eşiği</span></div>
-      <div style="position:absolute;inset:0;display:flex;gap:8px;align-items:flex-end">${trendBars}</div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:6px">${trendLabels}</div>
-    <div style="font-size:11px;color:#64748b;line-height:1.5;margin-top:10px;border-top:1px solid #f1f5f9;padding-top:8px">
-      Turuncu kesikli çizgi <b>prim eşiği (%70)</b> — bu çizgiyi aşan aylarda prim hak edilir. Renkler:
-      <span style="color:#16a34a;font-weight:700">■ ≥%100</span> ·
-      <span style="color:#d97706;font-weight:700">■ %70–99</span> ·
-      <span style="color:#dc2626;font-weight:700">■ &lt;%70</span> ·
-      <span style="color:#94a3b8;font-weight:700">▨ veri yok</span>.
+    ${perfBars || '<div style="text-align:center;color:#94a3b8;font-size:12px;padding:10px">Veri yok</div>'}
+    ${_perfAxis}
+    <div style="font-size:11px;color:#64748b;line-height:1.5;margin-top:12px;border-top:1px solid #f1f5f9;padding-top:8px">
+      <span style="color:#16a34a;font-weight:700">■ ≥%100 Güçlü</span> ·
+      <span style="color:#d97706;font-weight:700">■ %70–99 Yeterli</span> ·
+      <span style="color:#dc2626;font-weight:700">■ &lt;%70 Gelişmeli</span> ·
+      <span style="color:#94a3b8;font-weight:700">■ veri yok</span>
     </div>
   </div>`;
 
@@ -6269,10 +6294,17 @@ function renderPersonelSettings(){
     return h('div',{style:{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'10px',padding:'12px',marginBottom:'8px'}},
       h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',marginBottom:'8px'}},d.l),
       row(
-        field('Prim Tabanı (€)', nInp(()=>c.primBase||0, v=>c.primBase=Number(v)||0,'130px'), true),
-        field('Eşik (0-1)', nInp(()=>c.threshold||0, v=>c.threshold=Number(v)||0), true),
-        field('Hızlandırıcı', nInp(()=>c.accelerator||1, v=>c.accelerator=Number(v)||1), true)
-      )
+        field('Tam Prim / %100 (€)', nInp(()=>c.primBase||0, v=>c.primBase=Number(v)||0,'130px'), true),
+        field('Eşik (0-1)', nInp(()=>c.threshold==null?0.7:c.threshold, v=>c.threshold=Number(v)||0), true)
+      ),
+      row(
+        field('Aşım tavanı (oran)', nInp(()=>c.overCap==null?1.5:c.overCap, v=>c.overCap=Number(v)||1.5), true),
+        field('Aşım ivmesi', nInp(()=>c.overAccel==null?1:c.overAccel, v=>c.overAccel=Number(v)||0), true)
+      ),
+      h('div',{style:{fontSize:'11px',color:'#64748b',marginTop:'6px',lineHeight:'1.5'}},
+        'Tam Prim: tüm kriterler %100 karşılandığında hak edilen toplam taban prim. Her kriter en çok kendi ağırlık payı kadar taban prim getirir; karşılanmayan kriterin payı toplamdan düşülür. Taban = Tam Prim × Σ(ağırlık × gerçekleşme, kriter başına %100 tavan). '
+        + 'Aşım Primi: yalnızca bireysel hedef ve karlılık %100&#39;ü aşarsa çalışır. Aşım = Tam Prim × Σ(ağırlık × (min(oran, aşım tavanı) − 1) × ivme). '
+        + 'Aşım tavanı: oran en çok bu kadar sayılır (1.5 = %150) — %300 aşsa bile aşım primi sınırlı kalır. İvme: aşımın ödül çarpanı (1 = normal). Skor eşiğin altındaysa hiç prim oluşmaz.')
     );
   });
 
