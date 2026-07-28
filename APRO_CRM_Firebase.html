@@ -102,6 +102,91 @@ const DEFAULT_USERS = [
   {email:"apromuh@gmail.com", displayName:"Erkan KARACAKALE", isAdmin:true, hasTarget:true},
 ];
 
+// ═══════════════════════════════════════════════════════
+// PERSONEL MODÜLÜ (Faz 1) — sabitler / varsayılanlar (additive)
+// ═══════════════════════════════════════════════════════
+const DEPARTMENTS = [
+  { v:'satis',    l:'Satış' },
+  { v:'saha',     l:'Şantiye / Saha' },
+  { v:'teknik',   l:'Teknik Servis' },
+  { v:'proje',    l:'Proje Grubu' },
+  { v:'muhasebe', l:'Muhasebe & İdari İşler' },
+];
+const DEPT_LABEL = Object.fromEntries(DEPARTMENTS.map(d=>[d.v,d.l]));
+
+// Stratejik hedefler — sektörler CRM listesinden ön-dolu gelir
+const DEFAULT_STRATEGY = {
+  targetSectors: ["ENERJİ","ENDÜSTRİYEL","KAMU","ASKERİ-SAVUNMA"],
+  targetSegment: '',
+  minProjectSize: 0,
+};
+
+// Departman bazlı performans kriterleri + ağırlıklar (spec §7).
+// auto:true → sistemden otomatik hesaplanır; auto:false → Yönetici Puanı / manuel.
+const DEFAULT_EVAL_CONFIG = {
+  satis: {
+    threshold:0.70, accelerator:1.5, primBase:0,
+    criteria:[
+      {kod:'birey_hedef',    label:'Bireysel hedef gerçekleşme',  auto:true,  weight:0.35},
+      {kod:'karlilik',       label:'Karlılık gerçekleşme (Faz 2)',auto:true,  weight:0.25},
+      {kod:'sirket_hedef',   label:'Şirket hedefi gerçekleşme',   auto:true,  weight:0.10},
+      {kod:'teklif_takip',   label:'Teklif takip oranı',          auto:true,  weight:0.05},
+      {kod:'aktivite',       label:'Aktivite (ziyaret/randevu/fırsat)',auto:true,weight:0.05},
+      {kod:'gorev',          label:'Görev tamamlama',             auto:true,  weight:0.05},
+      {kod:'hedefe_yonelim', label:'Hedefe yönelim (strateji)',   auto:true,  weight:0.05},
+      {kod:'yonetici',       label:'Kalite / müşteri / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.10},
+    ],
+  },
+  saha: {
+    threshold:0.70, accelerator:1.5, primBase:0,
+    criteria:[
+      {kod:'zamaninda_teslim',label:'Zamanında teslim oranı',      auto:true,  weight:0.20},
+      {kod:'proje_butce',     label:'Proje bütçe hedefi',           auto:false, weight:0.30},
+      {kod:'is_emri',         label:'İş emri tamamlama',            auto:true,  weight:0.05},
+      {kod:'is_guvenligi',    label:'İş güvenliği — uygunsuzluk',   auto:false, weight:0.15},
+      {kod:'iscilik_kalite',  label:'İşçilik kalitesi & yeniden-iş',auto:false, weight:0.10},
+      {kod:'saha_rapor',      label:'Saha raporu disiplini',        auto:false, weight:0.05},
+      {kod:'malzeme_verim',   label:'Malzeme/fire verimliliği',     auto:false, weight:0.05},
+      {kod:'yonetici',        label:'Kalite / müşteri / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.10},
+    ],
+  },
+  teknik: {
+    threshold:0.70, accelerator:1.5, primBase:0,
+    criteria:[
+      {kod:'birey_hedef',     label:'Bireysel satış hedefi gerçekleşme',auto:true, weight:0.25},
+      {kod:'cozum_suresi',    label:'Arıza/çağrı çözüm süresi (SLA)',auto:true, weight:0.15},
+      {kod:'periyodik_bakim', label:'Periyodik bakım zamanında',     auto:true, weight:0.20},
+      {kod:'acik_servis',     label:'Açık/geciken servis sayısı',    auto:true, weight:0.10},
+      {kod:'ilk_cozum',       label:'İlk seferde çözüm oranı',       auto:false,weight:0.15},
+      {kod:'gorev',           label:'Görev tamamlama',               auto:true, weight:0.05},
+      {kod:'yonetici',        label:'Kalite / müşteri / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.10},
+    ],
+  },
+  proje: {
+    threshold:0.70, accelerator:1.5, primBase:0,
+    criteria:[
+      {kod:'birey_hedef',     label:'Bireysel satış hedefi gerçekleşme',auto:true, weight:0.20},
+      {kod:'km_tasi',         label:'Kilometre taşı zamanında teslim',auto:true, weight:0.20},
+      {kod:'kesif_sure',      label:'Keşif/teklif hazırlama süresi',  auto:true, weight:0.15},
+      {kod:'teknik_dogruluk', label:'Teknik doğruluk / revizyon',     auto:false,weight:0.25},
+      {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.10},
+      {kod:'yonetici',        label:'Kalite / müşteri / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.10},
+    ],
+  },
+  muhasebe: {
+    threshold:0.70, accelerator:1.5, primBase:0,
+    criteria:[
+      {kod:'tahsilat',        label:'Tahsilat/alacak takibi',         auto:false,weight:0.25},
+      {kod:'faturalama',      label:'Faturalama doğruluğu & zamanı',  auto:false,weight:0.10},
+      {kod:'yasal_uyum',      label:'Yasal-mali yükümlülük uyumu',    auto:false,weight:0.15},
+      {kod:'evrak_duzen',     label:'Evrak & arşiv düzeni',           auto:false,weight:0.15},
+      {kod:'raporlama',       label:'Raporlama zamanında hazırlama',  auto:true, weight:0.10},
+      {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.10},
+      {kod:'yonetici',        label:'Kalite / iç-dış ilişki / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.15},
+    ],
+  },
+};
+
 const eur = v => new Intl.NumberFormat("tr-TR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(v||0);
 // XSS koruması: kullanıcı verisi innerHTML ile yazdırılan rapor/print şablonlarına gömülmeden önce kaçışlanır.
 const escapeHtml = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -486,6 +571,10 @@ let state = {
   currentUser: null,
   customers: [], opportunities: [], proposals: [], services: [], maintenances: [],
   users: [],
+  // Personel modülü (Faz 1) — additive
+  tasks: [], evaluations: [], prim: [],
+  strategy: null, evalConfig: null,
+  personelTab: 'gorevler', personelPeriod: '',
   targets: { company: 0, reps: {} },
   geminiKey: '',
   suppliers: [],
@@ -497,6 +586,9 @@ let state = {
 };
 
 let toastTimer = null;
+
+// Personel modülü (Faz 1) — geçici UI durumu (render dışı, additive)
+let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false };
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -551,6 +643,47 @@ async function loadTargets() {
   } catch(e) { return { company: 0, reps: {} }; }
 }
 
+// Personel modülü (Faz 1) — strateji & eval config yükle/kaydet (settings altında, additive)
+async function loadStrategy() {
+  try {
+    const snap = await db.collection('settings').doc('strategy').get();
+    if(snap.exists) return { ...DEFAULT_STRATEGY, ...snap.data() };
+    return { ...DEFAULT_STRATEGY };
+  } catch(e) { return { ...DEFAULT_STRATEGY }; }
+}
+async function saveStrategy(strategy) {
+  try {
+    const clean = {
+      targetSectors: Array.isArray(strategy.targetSectors)?strategy.targetSectors:[],
+      targetSegment: strategy.targetSegment||'',
+      minProjectSize: Number(strategy.minProjectSize)||0,
+    };
+    await db.collection('settings').doc('strategy').set(clean);
+    state.strategy = clean;
+    showToast('✅ Strateji kaydedildi!');
+  } catch(e) { showToast('❌ Strateji kaydedilemedi!','#dc2626'); }
+}
+async function loadEvalConfig() {
+  try {
+    const snap = await db.collection('settings').doc('evalConfig').get();
+    if(snap.exists && snap.data()) {
+      const saved = snap.data();
+      // Kayıtlı config ile varsayılanları birleştir; eksik departman varsayılandan gelir
+      const merged = {};
+      Object.keys(DEFAULT_EVAL_CONFIG).forEach(dep=>{ merged[dep] = saved[dep] || DEFAULT_EVAL_CONFIG[dep]; });
+      return merged;
+    }
+    return JSON.parse(JSON.stringify(DEFAULT_EVAL_CONFIG));
+  } catch(e) { return JSON.parse(JSON.stringify(DEFAULT_EVAL_CONFIG)); }
+}
+async function saveEvalConfig(cfg) {
+  try {
+    await db.collection('settings').doc('evalConfig').set(cfg);
+    state.evalConfig = cfg;
+    showToast('✅ Değerlendirme ayarları kaydedildi!');
+  } catch(e) { showToast('❌ Kaydedilemedi!','#dc2626'); }
+}
+
 async function loadApiKey() {
   try {
     const snap = await db.collection('settings').doc('config').get();
@@ -573,10 +706,12 @@ async function saveTargets(targets) {
       company: Number(targets.company)||0,
       serviceCompany: Number(targets.serviceCompany)||0,
       reps: {},
-      serviceReps: {}
+      serviceReps: {},
+      profitReps: {}
     };
     Object.keys(targets.reps||{}).forEach(k=>{ clean.reps[k] = Number(targets.reps[k])||0; });
     Object.keys(targets.serviceReps||{}).forEach(k=>{ clean.serviceReps[k] = Number(targets.serviceReps[k])||0; });
+    Object.keys(targets.profitReps||{}).forEach(k=>{ clean.profitReps[k] = Number(targets.profitReps[k])||0; });
     targets = clean;
     await db.collection('settings').doc('targets').set(targets);
     state.targets = targets;
@@ -774,6 +909,7 @@ function renderLogin() {
       setState({currentUser:user, view:'app', loading:true});
       await loadAllData();
       setState({loading:false});
+      personelAutoGenerateTasks(); // fire-and-forget, idempotent
     } catch(err) {
       loginState.checking=false;
       loginState.attempts++;
@@ -837,12 +973,13 @@ function renderLogin() {
 // VERİ YÜKLEME
 // ═══════════════════════════════════════════════════════
 async function loadAllData() {
-  const [customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments] = await Promise.all([
+  const [customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim] = await Promise.all([
     loadCollection('customers'), loadCollection('opportunities'),
     loadCollection('proposals'), loadCollection('services'), loadCollection('maintenances'),
-    loadCollection('suppliers'), loadCollection('serviceOpps'), loadCollection('visits'), loadCollection('appointments')
+    loadCollection('suppliers'), loadCollection('serviceOpps'), loadCollection('visits'), loadCollection('appointments'),
+    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('prim')
   ]);
-  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments});
+  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim});
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2355,6 +2492,7 @@ function buildTargetsModal() {
   const targets = JSON.parse(JSON.stringify(state.targets || {company:0, serviceCompany:0, reps:{}, serviceReps:{}}));
   if(!targets.serviceReps) targets.serviceReps = {};
   if(!targets.serviceCompany) targets.serviceCompany = 0;
+  if(!targets.profitReps) targets.profitReps = {};
   // state.users açılmadan önce openTargetsModal() ile taze yüklendi
   const activeReps = state.users.filter(u=>u.active!==false&&u.hasTarget!==false);
 
@@ -2503,6 +2641,15 @@ function buildTargetsModal() {
             svcTarget ? h('div',{style:{height:'7px',background:'#c8daea',borderRadius:'4px',overflow:'hidden'}},
               h('div',{style:{height:'100%',width:svcPct+'%',background:svcPct>=100?'linear-gradient(90deg,#16a34a,#22c55e)':svcPct>=50?'linear-gradient(90deg,#d97706,#fbbf24)':'linear-gradient(90deg,#0891b2,#22d3ee)',borderRadius:'4px',transition:'width .4s ease'}})
             ) : h('span')
+          ),
+          // Karlılık hedefi (Personel modülü — gerçekleşme Faz 2'de Teklif Programı'ndan)
+          h('div',{style:{marginTop:'10px'}},
+            h('div',{style:{fontSize:'11px',color:'#4a6080',fontWeight:'600',marginBottom:'5px'}},'📈 KARLILIK HEDEFİ (net kâr)'),
+            h('div',{style:{display:'flex',alignItems:'center',gap:'10px'}},
+              makeNumInput(()=>Number(targets.profitReps[u.displayName])||0, v=>targets.profitReps[u.displayName]=v),
+              h('div',{style:{color:'#4a6080',fontSize:'13px',fontWeight:'600',whiteSpace:'nowrap'}},'€/Yıl'),
+              h('span',{style:{fontSize:'11px',color:'#94a3b8',whiteSpace:'nowrap'}},'gerçekleşme Faz 2')
+            )
           )
         )
       );
@@ -2619,9 +2766,11 @@ function buildAdminModal() {
         const cbETarget = document.createElement('input');
         cbETarget.type='checkbox'; cbETarget.checked=eu.hasTarget!==false; cbETarget.style.accentColor='#10b981';
         cbETarget.addEventListener('change',e=>eu.hasTarget=e.target.checked);
+        const eDept = sel([{v:'',l:'— Departman seçin —'},...DEPARTMENTS], eu.department||'', v=>eu.department=v);
         const editPanel = h('div',{style:{marginTop:'12px',background:'#0d1f35',border:'1px solid #2563eb',borderRadius:'10px',padding:'14px'}},
           h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#60a5fa',marginBottom:'10px'}},'✏️ Kullanıcı Düzenle'),
           row(field('Görünen Ad',eName,true),field('E-posta',eEmail,true)),
+          row(field('Departman',eDept,true),h('div',{style:{flex:1}})),
           h('div',{style:{display:'flex',gap:'20px',marginBottom:'12px',flexWrap:'wrap'}},
             h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T3,cursor:'pointer'}},cbEAdmin,h('span',{},'Yönetici yetkisi')),
             h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T3,cursor:'pointer'}},cbETarget,h('span',{},'Satış & Servis Hedefi girilsin'))
@@ -2629,7 +2778,7 @@ function buildAdminModal() {
           h('div',{style:{display:'flex',gap:'8px'}},
             btn('✓ Kaydet',async()=>{
               if(!eu.displayName){flash('⚠ Ad boş olamaz.',false);return;}
-              const list=users.map(x=>x.email===u.email?{...x,displayName:eu.displayName,isAdmin:eu.isAdmin,hasTarget:eu.hasTarget!==false}:x);
+              const list=users.map(x=>x.email===u.email?{...x,displayName:eu.displayName,isAdmin:eu.isAdmin,hasTarget:eu.hasTarget!==false,department:eu.department||''}:x);
               await persistUsers(list); editingUser=null; flash('✅ Kullanıcı güncellendi.');
             },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','8px 14px',{flex:'1',fontSize:'12px'}),
             btn('İptal',()=>{editingUser=null;rerender();},'#21262d','#8b949e','8px 12px',{fontSize:'12px'})
@@ -2687,9 +2836,11 @@ function buildAdminModal() {
       const cbTarget=h('input',{type:'checkbox',style:{accentColor:'#10b981'}});
       cbTarget.checked=newU.hasTarget!==false;
       cbTarget.addEventListener('change',e=>newU.hasTarget=e.target.checked);
+      const nDept=sel([{v:'',l:'— Departman seçin —'},...DEPARTMENTS], newU.department||'', v=>newU.department=v);
       const addBox = h('div',{style:{background:G,border:'1px solid #6366f1',borderRadius:'10px',padding:'14px',marginBottom:'10px'}},
         row(field('Görünen Ad *',nName,true),field('Şifre *',nPw,true)),
         field('E-posta *',nEmail),
+        row(field('Departman',nDept,true),h('div',{style:{flex:1}})),
         h('div',{style:{display:'flex',gap:'20px',marginBottom:'12px',flexWrap:'wrap'}},
           h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T2,cursor:'pointer'}},cbAdmin,h('span',{},'Yönetici yetkisi ver')),
           h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T2,cursor:'pointer'}},cbTarget,h('span',{},'Satış & Servis Hedefi girilsin'))
@@ -2709,8 +2860,8 @@ function buildAdminModal() {
               else { flash('⚠ Hesap oluşturulamadı: '+(err.code==='auth/weak-password'?'Şifre zayıf.':err.message),false); return; }
             }
             const {password, ...rest} = newU;
-            await persistUsers([...users,{...rest,active:true,hasTarget:newU.hasTarget!==false,createdAt:today()}]);
-            newU={email:'',password:'',displayName:'',isAdmin:false,hasTarget:true}; adding=false; flash('✅ Kullanıcı eklendi.');
+            await persistUsers([...users,{...rest,active:true,hasTarget:newU.hasTarget!==false,department:newU.department||'',createdAt:today()}]);
+            newU={email:'',password:'',displayName:'',isAdmin:false,hasTarget:true,department:''}; adding=false; flash('✅ Kullanıcı eklendi.');
           },'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{flex:'1'}),
           btn('İptal',()=>{adding=false;rerender();},'#21262d','#8b949e')
         )
@@ -5096,6 +5247,608 @@ function renderMaintenances() {
 }
 
 // ═══════════════════════════════════════════════════════
+// PERSONEL MODÜLÜ (Faz 1) — Görev / Performans / Prim
+// ═══════════════════════════════════════════════════════
+function _pInPeriod(s, period){ return !!s && String(s).slice(0,7)===period; }
+function _pOppDate(o){ return o.wonAt||o.closedAt||o.updatedAt||o.dueDate||o.createdAt; }
+function _pIsDone(status){ return ['tamam','Tamamlandı','Yapıldı','Onaylandı','Kapandı','Çözüldü'].includes(status); }
+function _pIsOverdue(rec){
+  const d = rec.dueDate; if(!d) return false;
+  if(_pIsDone(rec.status)) return false;
+  return String(d) < today();
+}
+function personelPeople(){
+  return (state.users||[]).filter(u=>u.active!==false && u.department);
+}
+function personelTaskStats(name, period){
+  const ts = (state.tasks||[]).filter(t=>t.assignedTo===name && (_pInPeriod(t.dueDate,period)||_pInPeriod(t.completedAt,period)));
+  const total = ts.length;
+  const done = ts.filter(t=>t.status==='tamam').length;
+  return { total, done, ratio: total? done/total : 0 };
+}
+function personelAutoMetric(kod, name, period, dept){
+  const inP = s=>_pInPeriod(s,period);
+  const monthOf = a => (Number(a)||0)/12;
+  const O=(state.opportunities||[]), P=(state.proposals||[]), M=(state.maintenances||[]);
+  const SO=(state.serviceOpps||[]), V=(state.visits||[]), A=(state.appointments||[]);
+  switch(kod){
+    case 'sirket_hedef': {
+      const comp = monthOf(state.targets && state.targets.company);
+      if(!comp) return null;
+      const won = O.filter(o=>o.stage==='KAZANILDI'&&inP(_pOppDate(o))).reduce((a,o)=>a+(Number(o.value)||0),0);
+      return Math.min(won/comp,1.5);
+    }
+    case 'birey_hedef': {
+      const t = monthOf(state.targets && state.targets.reps && state.targets.reps[name]);
+      if(!t) return null;
+      const won = O.filter(o=>o.assignedTo===name&&o.stage==='KAZANILDI'&&inP(_pOppDate(o))).reduce((a,o)=>a+(Number(o.value)||0),0);
+      return Math.min(won/t,1.5);
+    }
+    case 'karlilik': return null; // Faz 2 — Teklif Programı endpoint
+    case 'teklif_takip': {
+      const ps = P.filter(p=>p.assignedTo===name && inP(p.dueDate||p.createdAt||p.updatedAt));
+      if(!ps.length) return null;
+      const ok = ps.filter(p=>!_pIsOverdue(p)).length;
+      return ok/ps.length;
+    }
+    case 'aktivite': {
+      const v = V.filter(x=>x.assignedTo===name&&inP(x.date||x.visitDate||x.createdAt)).length;
+      const a = A.filter(x=>x.assignedTo===name&&inP(x.date||x.datetime||x.createdAt)).length;
+      const no = O.filter(o=>o.assignedTo===name&&inP(o.createdAt)).length;
+      return Math.min((v+a+no)/20,1.5);
+    }
+    case 'hedefe_yonelim': {
+      const os = O.filter(o=>o.assignedTo===name&&inP(o.createdAt));
+      if(!os.length) return null;
+      const secs = (state.strategy && state.strategy.targetSectors) || DEFAULT_STRATEGY.targetSectors;
+      const good = os.filter(o=>secs.indexOf(o.sector)>=0).length;
+      return good/os.length;
+    }
+    case 'periyodik_bakim': {
+      const ms = M.filter(m=>m.assignedTo===name&&inP(m.dueDate||m.nextDate||m.date));
+      if(!ms.length) return null;
+      return ms.filter(m=>_pIsDone(m.status)).length/ms.length;
+    }
+    case 'acik_servis': {
+      const ss = SO.filter(s=>s.assignedTo===name&&inP(s.dueDate||s.createdAt||s.date));
+      if(!ss.length) return null;
+      const over = ss.filter(s=>_pIsOverdue(s)).length;
+      return Math.max(0, 1 - over/ss.length);
+    }
+    case 'cozum_suresi': {
+      const ss = SO.filter(s=>s.assignedTo===name&&inP(s.dueDate||s.createdAt||s.date));
+      if(!ss.length) return null;
+      return ss.filter(s=>_pIsDone(s.status)).length/ss.length;
+    }
+    default: {
+      // görev-tabanlı otomatik kriterler (gorev, raporlama, zamaninda_teslim, is_emri, km_tasi, kesif_sure...)
+      const st = personelTaskStats(name,period);
+      return st.total? st.ratio : null;
+    }
+  }
+}
+function personelEvalFor(name, period){
+  return (state.evaluations||[]).find(e=>e.personName===name && e.period===period) || null;
+}
+function personelCritOran(c, name, period, dept, ev){
+  if(c.auto) return personelAutoMetric(c.kod, name, period, dept);
+  if(ev && ev.criteria && typeof ev.criteria[c.kod]==='number') return ev.criteria[c.kod];
+  const ms = ev && ev.managerScore;
+  return ms ? ms/5 : null; // manuel kriterler Yönetici Puanına (1-5) iner
+}
+function personelScore(person, period){
+  const dept = person.department;
+  const cfg = (state.evalConfig && state.evalConfig[dept]) || DEFAULT_EVAL_CONFIG[dept];
+  if(!cfg) return null;
+  const ev = personelEvalFor(person.displayName, period);
+  const rows = cfg.criteria.map(c=>({ ...c, oran: personelCritOran(c, person.displayName, period, dept, ev) }));
+  const avail = rows.filter(r=>r.oran!==null && r.oran!==undefined);
+  const wsum = avail.reduce((a,r)=>a+(Number(r.weight)||0),0) || 1;
+  const skor = avail.reduce((a,r)=>a+(r.weight/wsum)*r.oran, 0);
+  return { dept, cfg, ev, rows, avail, wsum, skor, managerScore: (ev&&ev.managerScore)||0 };
+}
+function personelPrim(person, period){
+  const sc = personelScore(person, period);
+  if(!sc) return null;
+  const cfg = sc.cfg;
+  const pass = sc.skor >= (cfg.threshold||0);
+  const accel = sc.skor>1 ? (cfg.accelerator||1) : 1;
+  const primAmount = pass ? (cfg.primBase||0)*sc.skor*accel : 0;
+  const breakdown = {};
+  sc.avail.forEach(r=>{ breakdown[r.kod] = pass ? (cfg.primBase||0)*(r.weight/sc.wsum)*r.oran*accel : 0; });
+  return { ...sc, pass, accel, primAmount, breakdown };
+}
+// Tek personel performans raporu — yönetici-personel birebir görüşmesinde kullanılacak nitelikte çıktı.
+function printPersonelReport(person, period, isAdmin){
+  const sc = personelScore(person, period);
+  if(!sc){ showToast('⚠ Bu personel için değerlendirme verisi yok.','#dc2626'); return; }
+  const ev = personelEvalFor(person.displayName, period);
+  const pct = v => (v==null? '—' : Math.round(v*100)+'%');
+  const col = v => v==null?'#94a3b8':(v>=1?'#16a34a':v>=0.7?'#d97706':'#dc2626');
+  const skorPct = Math.round((sc.skor||0)*100);
+  const dept = DEPT_LABEL[person.department]||person.department||'-';
+
+  // Genel değerlendirme yorumu (skora göre)
+  let verdict, vColor, vBg;
+  if(sc.skor>=1){ verdict='Üstün Performans — dönem hedeflerinin üzerinde sonuç üretti.'; vColor='#166534'; vBg='#dcfce7'; }
+  else if(sc.skor>=0.85){ verdict='Beklentileri Karşılıyor — hedeflere büyük ölçüde ulaşıldı, birkaç alanda ivme gerekli.'; vColor='#166534'; vBg='#dcfce7'; }
+  else if(sc.skor>=0.70){ verdict='Yeterli / Gelişime Açık — eşik aşıldı ancak belirgin gelişim alanları var.'; vColor='#92400e'; vBg='#fef3c7'; }
+  else { verdict='Gelişim Gerekli — dönem hedeflerinin altında kalındı, aksiyon planı önerilir.'; vColor='#991b1b'; vBg='#fee2e2'; }
+
+  // Görev dökümü (dönem içi)
+  const myTasks = (state.tasks||[]).filter(t=>t.assignedTo===person.displayName && (_pInPeriod(t.dueDate,period)||_pInPeriod(t.completedAt,period)));
+  const tDone = myTasks.filter(t=>t.status==='tamam').length;
+  const tOpen = myTasks.filter(t=>t.status!=='tamam').length;
+  const tOverdue = myTasks.filter(t=>t.status!=='tamam' && t.dueDate && String(t.dueDate)<today()).length;
+  const tTotal = myTasks.length;
+
+  const statusLabel = v => v==null?['Veri yok','#94a3b8']:(v>=1?['Güçlü','#16a34a']:v>=0.7?['Yeterli','#d97706']:['Gelişmeli','#dc2626']);
+  const critRows = sc.rows.map(r=>{
+    const wpct = Math.round((r.weight/sc.wsum)*100);
+    const sl = statusLabel(r.oran);
+    return `<tr>
+      <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}</td>
+      <td style="text-align:center">${r.auto?'Otomatik':'Manuel'}</td>
+      <td style="text-align:center">${r.oran==null?'-':wpct+'%'}</td>
+      <td style="text-align:center;font-weight:700;color:${col(r.oran)}">${r.oran==null?'veri yok':pct(r.oran)}</td>
+      <td style="text-align:center;font-weight:700;color:${sl[1]}">${sl[0]}</td>
+    </tr>`;
+  }).join('');
+
+  // Güçlü yönler / gelişim alanları (otomatik türetim)
+  const strong = sc.rows.filter(r=>r.oran!=null && r.oran>=1).map(r=>escapeHtml(r.label));
+  const improve = sc.rows.filter(r=>r.oran!=null && r.oran<0.7).map(r=>escapeHtml(r.label));
+  const midd  = sc.rows.filter(r=>r.oran!=null && r.oran>=0.7 && r.oran<1).map(r=>escapeHtml(r.label));
+  const liOr = (arr,empty) => arr.length? arr.map(x=>`<li>${x}</li>`).join('') : `<li style="color:#94a3b8;list-style:none">${empty}</li>`;
+
+  const notesBlock = (ev && ev.notes) ? `
+  <h2>🗒️ Yönetici Değerlendirme Notu</h2>
+  <div class="note-box">${escapeHtml(ev.notes).replace(/\n/g,'<br>')}</div>` : `
+  <h2>🗒️ Yönetici Değerlendirme Notu</h2>
+  <div class="note-box" style="color:#94a3b8">— (Performans ekranındaki not alanından doldurulabilir) —</div>`;
+
+  const printHTML = `<!DOCTYPE html>
+<html lang="tr"><head><meta charset="UTF-8"/>
+<title>A-PRO CRM — Personel Performans Raporu</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:24px;color:#1e293b;font-size:13px}
+  h1{color:#1e2d4a;font-size:20px;margin-bottom:4px}
+  h2{color:#1e2d4a;font-size:14px;margin:20px 0 10px;border-bottom:2px solid #1e2d4a;padding-bottom:6px}
+  .meta{font-size:11px;color:#64748b;margin-bottom:20px}
+  .hdr{display:flex;align-items:center;gap:14px;background:#f0f5fc;border:1px solid #b0c8e0;border-radius:10px;padding:16px;margin-bottom:14px}
+  .avatar{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0}
+  .verdict{border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:13px;font-weight:700}
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .kpi{background:#f0f5fc;border:1px solid #b0c8e0;border-radius:8px;padding:12px;text-align:center}
+  .kpi-val{font-size:20px;font-weight:800;color:#2563eb}
+  .kpi-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em}
+  .target-bar{height:16px;background:#e0e7ff;border-radius:8px;overflow:hidden;margin:8px 0 18px}
+  .target-fill{height:100%;border-radius:8px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:6px}
+  .panel{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px}
+  .panel h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .panel ul{margin:0;padding-left:18px;font-size:12px;line-height:1.7}
+  .note-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;font-size:12.5px;line-height:1.6;min-height:40px}
+  table{width:100%;border-collapse:collapse;margin-bottom:20px}
+  th{background:#1e2d4a;color:#fff;padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase}
+  td{padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px}
+  tr:nth-child(even){background:#f8fafc}
+  .disc-lines{border:1px solid #e2e8f0;border-radius:8px;padding:14px;min-height:70px;margin-bottom:22px}
+  .disc-lines div{border-bottom:1px dashed #cbd5e1;height:22px}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:26px}
+  .sign .box{border-top:1px solid #334155;padding-top:6px;font-size:11px;color:#475569;text-align:center}
+  @media print{body{padding:10px}.no-print{display:none}}
+</style></head>
+<body>
+  <h1>⚡ A-PRO İş Takip CRM — Personel Performans Değerlendirme Raporu</h1>
+  <div class="meta">Dönem: ${escapeHtml(period)} · Yazdırma tarihi: ${new Date().toLocaleString('tr-TR')} · Değerlendiren: ${escapeHtml((state.currentUser&&state.currentUser.displayName)||'-')}</div>
+  <div class="hdr">
+    <div class="avatar">${escapeHtml(person.displayName.split(' ').map(n=>n[0]).join('').slice(0,2))}</div>
+    <div style="flex:1">
+      <div style="font-size:17px;font-weight:800;color:#0f1f35">${escapeHtml(person.displayName)}</div>
+      <div style="font-size:12px;color:#64748b">${escapeHtml(dept)}${person.email?' · '+escapeHtml(person.email):''}</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:26px;font-weight:800;color:${col(sc.skor)}">${skorPct}%</div>
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase">Toplam Skor</div>
+    </div>
+  </div>
+  <div class="verdict" style="background:${vBg};color:${vColor}">${verdict}</div>
+  <div class="target-bar"><div class="target-fill" style="width:${Math.min(100,skorPct)}%;background:${col(sc.skor)}"></div></div>
+  <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">
+    <div class="kpi"><div class="kpi-val" style="color:${col(sc.skor)}">${skorPct}%</div><div class="kpi-label">Skor</div></div>
+    <div class="kpi"><div class="kpi-val">${sc.managerScore||'—'}${sc.managerScore?'/5':''}</div><div class="kpi-label">Yön. Puanı</div></div>
+    <div class="kpi"><div class="kpi-val">${tTotal}</div><div class="kpi-label">Görev</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#16a34a">${tDone}</div><div class="kpi-label">Tamamlanan</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:#2563eb">${tOpen}</div><div class="kpi-label">Açık</div></div>
+    <div class="kpi"><div class="kpi-val" style="color:${tOverdue?'#dc2626':'#64748b'}">${tOverdue}</div><div class="kpi-label">Geciken</div></div>
+  </div>
+  <h2>📊 Kriter Bazlı Değerlendirme</h2>
+  <table>
+    <thead><tr><th>Kriter</th><th style="text-align:center">Tür</th><th style="text-align:center">Ağırlık</th><th style="text-align:center">Gerçekleşme</th><th style="text-align:center">Durum</th></tr></thead>
+    <tbody>${critRows||'<tr><td colspan="5" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
+  </table>
+  <h2>💬 Değerlendirme Özeti</h2>
+  <div class="cols">
+    <div class="panel" style="border-color:#bbf7d0;background:#f0fdf4"><h3 style="color:#166534">✅ Güçlü Yönler</h3><ul>${liOr(strong,'Bu dönem hedefi aşan kriter yok.')}</ul></div>
+    <div class="panel" style="border-color:#fecaca;background:#fef2f2"><h3 style="color:#991b1b">⚠ Gelişim Alanları</h3><ul>${liOr(improve,'Eşik altı kriter yok.')}</ul></div>
+  </div>
+  ${midd.length?`<div class="panel" style="border-color:#fde68a;background:#fffbeb;margin-bottom:6px"><h3 style="color:#92400e">◐ İzlenecek Alanlar (yeterli, hedefe yaklaşıyor)</h3><ul>${liOr(midd,'')}</ul></div>`:''}
+  ${notesBlock}
+  <h2>🤝 Görüşme Notları (personel ile birlikte doldurulur)</h2>
+  <div class="disc-lines"><div></div><div></div><div></div></div>
+  <div class="sign">
+    <div class="box">Personel — Ad Soyad / İmza / Tarih</div>
+    <div class="box">Yönetici — Ad Soyad / İmza / Tarih</div>
+  </div>
+  <div style="margin-top:24px;font-size:10px;color:#94a3b8;text-align:center">A-PRO Mühendislik · CRM Sistemi · Gizlidir</div>
+</body></html>`;
+
+  var ep=document.getElementById('print-overlay'); if(ep) ep.remove();
+  var po=document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
+  var ptb=document.createElement('div'); ptb.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#1e2d4a;color:#fff;flex-shrink:0;';
+  var ptbT=document.createElement('div'); ptbT.style.cssText='font-weight:800;font-size:15px;'; ptbT.textContent='🖨️ Performans Raporu — '+person.displayName;
+  var ptbB=document.createElement('div'); ptbB.style.cssText='display:flex;gap:10px;';
+  var ppBtn=document.createElement('button'); ppBtn.textContent='🖨️ Yazdır'; ppBtn.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; ppBtn.onclick=function(){window.print();};
+  var pcBtn=document.createElement('button'); pcBtn.textContent='✕ Kapat'; pcBtn.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; pcBtn.onclick=function(){var el=document.getElementById('print-overlay');if(el)el.remove();};
+  ptbB.appendChild(ppBtn); ptbB.appendChild(pcBtn); ptb.appendChild(ptbT); ptb.appendChild(ptbB); po.appendChild(ptb);
+  var pc=document.createElement('div'); pc.style.cssText='flex:1;overflow-y:auto;'; pc.innerHTML=printHTML; po.appendChild(pc);
+  document.body.appendChild(po);
+}
+async function personelSaveDoc(coll, rec){
+  await saveDoc(coll, rec.id, rec);
+  const arr = (state[coll]||[]).slice();
+  const i = arr.findIndex(x=>x.id===rec.id);
+  if(i>=0) arr[i]=rec; else arr.push(rec);
+  setState({ [coll]: arr });
+}
+async function personelDeleteDoc(coll, id){
+  await deleteDoc(coll, id);
+  setState({ [coll]: (state[coll]||[]).filter(x=>x.id!==id) });
+}
+// Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
+async function personelAutoGenerateTasks(){
+  try{
+    const existing = new Set((state.tasks||[]).map(t=>t.id));
+    const people = personelPeople();
+    const deptOf = name => { const u=people.find(x=>x.displayName===name); return u?u.department:''; };
+    const toAdd = [];
+    const push = (id,title,name,due,linkedType,linkedId,desc) => {
+      if(existing.has(id) || !name) return;
+      existing.add(id);
+      toAdd.push({ id, title, desc:desc||'', assignedTo:name, department:deptOf(name), dueDate:due||'', status:'acik', completedAt:null, priority:'orta', linkedType, linkedId, autoGenerated:true, createdBy:'sistem', createdAt:today() });
+    };
+    const offsetDay = n => { const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+    const cutoff = offsetDay(-90), soon = offsetDay(30);
+    (state.opportunities||[]).forEach(o=>{
+      if(o.stage!=='KAZANILDI') return;
+      const dt = String(_pOppDate(o)||'').slice(0,10);
+      if(dt && dt<cutoff) return;
+      push('auto_won_'+o.id, 'Kazanılan iş süreci: '+(o.title||'Fırsat'), o.assignedTo, o.dueDate||today(), 'opportunity', o.id, 'Sözleşme / sipariş / teslim sürecini başlat.');
+    });
+    (state.maintenances||[]).forEach(m=>{
+      const due = String(m.dueDate||m.nextDate||'').slice(0,10);
+      if(!due || due>soon || _pIsDone(m.status)) return;
+      push('auto_maint_'+m.id, 'Periyodik bakım: '+(m.customer||m.customerName||m.title||'Müşteri'), m.assignedTo, due, 'maintenance', m.id, 'Planlı bakımı gerçekleştir ve raporla.');
+    });
+    (state.proposals||[]).forEach(p=>{
+      if(_pIsDone(p.status)) return;
+      push('auto_prop_'+p.id, 'Teklif hazırla/takip: '+(p.title||'Teklif'), p.assignedTo, p.dueDate||'', 'proposal', p.id, 'Teklifi hazırla veya takibini yap.');
+    });
+    if(!toAdd.length) return;
+    for(const t of toAdd){ await saveDoc('tasks', t.id, t); }
+    setState({ tasks: [...(state.tasks||[]), ...toAdd] });
+  }catch(e){ /* sessiz — otomatik görev üretimi ana CRM akışını etkilemez */ }
+}
+
+function renderPersonel(){
+  const cu = state.currentUser; const isAdmin = !!(cu && cu.isAdmin);
+  const period = state.personelPeriod || today().slice(0,7);
+  const subTabs=[{id:'gorevler',l:'✅ Görevler'},{id:'performans',l:'📊 Performans'}];
+  if(isAdmin) subTabs.push({id:'prim',l:'💰 Prim'});
+  let active = state.personelTab || 'gorevler';
+  if(active==='prim' && !isAdmin) active='gorevler';
+
+  const mob = window.innerWidth<=768;
+  const tabBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'14px'}},
+    ...subTabs.map(t=>btn(t.l, ()=>setState({personelTab:t.id}), active===t.id?'linear-gradient(135deg,#2563eb,#7c3aed)':'#e8eef7', active===t.id?'#fff':'#2a5080','9px 16px',{fontSize:'13px',fontWeight:'700',border:active===t.id?'none':'1px solid #b8c8de'}))
+  );
+
+  const periodInp = inp('', period, v=>setState({personelPeriod:v}), 'month', {maxWidth:'170px'});
+  const headRow = h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',flexWrap:'wrap',marginBottom:'12px'}},
+    h('h2',{style:{fontSize:mob?'17px':'20px',fontWeight:'800',color:'#0f1f35',margin:'0'}},'🧑‍💼 Personel'),
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
+      h('span',{style:{fontSize:'12px',color:T3,fontWeight:'600'}},'Dönem:'),
+      periodInp,
+      isAdmin?btn('⚙ Ayarlar',()=>{PMOD.settingsOpen=!PMOD.settingsOpen;render();},'#e8eef7','#2a5080','9px 14px',{fontSize:'12px',border:'1px solid #b8c8de'}):h('span')
+    )
+  );
+
+  let body;
+  if(active==='gorevler') body = renderPersonelGorevler(period, isAdmin, cu);
+  else if(active==='performans') body = renderPersonelPerformans(period, isAdmin);
+  else body = renderPersonelPrim(period);
+
+  const settings = (isAdmin && PMOD.settingsOpen) ? renderPersonelSettings() : h('span');
+
+  return h('div',{}, headRow, tabBar, settings, body);
+}
+
+function renderPersonelGorevler(period, isAdmin, cu){
+  const myName = cu && cu.displayName;
+  let list = (state.tasks||[]).slice();
+  if(!isAdmin) list = list.filter(t=>t.assignedTo===myName);
+  const f = PMOD.taskFilter;
+  const filtered = list.filter(t=>{
+    if(f==='acik') return t.status!=='tamam';
+    if(f==='geciken') return t.status!=='tamam' && t.dueDate && String(t.dueDate)<today();
+    if(f==='tamam') return t.status==='tamam';
+    return true;
+  }).sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')));
+
+  const chips = [['acik','Açık'],['geciken','Geciken'],['tamam','Tamamlanan'],['hepsi','Hepsi']];
+  const filterBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}},
+    ...chips.map(([id,lb])=>btn(lb,()=>{PMOD.taskFilter=id;render();},f===id?'#1e3a6e':'#e8eef7',f===id?'#fff':'#2a5080','7px 13px',{fontSize:'12px',border:'1px solid #b8c8de'}))
+  );
+
+  const addBtn = btn('+ Görev Ekle',()=>{
+    PMOD.taskAdd=true;
+    PMOD.draft={ title:'', desc:'', assignedTo: isAdmin?'':myName, dueDate:'', priority:'orta' };
+    render();
+  },'linear-gradient(135deg,#10b981,#059669)','#fff','9px 16px',{fontSize:'13px',marginBottom:'12px'});
+
+  let addPanel = h('span');
+  if(PMOD.taskAdd){
+    const d = PMOD.draft;
+    const people = personelPeople();
+    const assignOpts = [{v:'',l:'— Kişi seçin —'}, ...people.map(u=>({v:u.displayName,l:u.displayName+' ('+(DEPT_LABEL[u.department]||'')+')'}))];
+    const assignEl = isAdmin
+      ? sel(assignOpts, d.assignedTo, v=>d.assignedTo=v)
+      : inp('', myName, ()=>{}, 'text', {background:'#e2e8f0'});
+    if(!isAdmin){ assignEl.disabled=true; d.assignedTo=myName; }
+    addPanel = h('div',{style:{background:'#ffffff',border:'1px solid #6366f1',borderRadius:'12px',padding:'16px',marginBottom:'14px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#4338ca',marginBottom:'10px'}},'📝 Yeni Görev'),
+      field('Başlık *', inp('Görev başlığı', d.title, v=>d.title=v)),
+      row(
+        field('Atanan', assignEl, true),
+        field('Bitiş Tarihi', inp('', d.dueDate, v=>d.dueDate=v, 'date'), true)
+      ),
+      row(
+        field('Öncelik', sel([{v:'dusuk',l:'Düşük'},{v:'orta',l:'Orta'},{v:'yuksek',l:'Yüksek'}], d.priority, v=>d.priority=v), true),
+        h('div',{style:{flex:1}})
+      ),
+      field('Açıklama', inp('Detay (opsiyonel)', d.desc, v=>d.desc=v)),
+      h('div',{style:{display:'flex',gap:'8px',marginTop:'6px'}},
+        btn('✓ Kaydet', async()=>{
+          if(!d.title || !d.assignedTo){ showToast('⚠ Başlık ve atanan zorunlu.','#dc2626'); return; }
+          const person = personelPeople().find(u=>u.displayName===d.assignedTo);
+          const rec = {
+            id: genId(), title:d.title.trim(), desc:d.desc||'',
+            assignedTo:d.assignedTo, department: person?person.department:'',
+            dueDate:d.dueDate||'', status:'acik', completedAt:null,
+            priority:d.priority||'orta', linkedType:'none', linkedId:'',
+            autoGenerated:false, createdBy:(state.currentUser&&state.currentUser.displayName)||'', createdAt:today()
+          };
+          await personelSaveDoc('tasks', rec);
+          PMOD.taskAdd=false; PMOD.draft=null; showToast('✅ Görev eklendi.');
+        },'linear-gradient(135deg,#10b981,#059669)','#fff','9px 16px',{flex:'1'}),
+        btn('İptal',()=>{PMOD.taskAdd=false;PMOD.draft=null;render();},'#e8eef7','#4a6080','9px 14px')
+      )
+    );
+  }
+
+  const PRIO = { dusuk:['Düşük','#64748b'], orta:['Orta','#d97706'], yuksek:['Yüksek','#dc2626'] };
+  const cards = filtered.length ? filtered.map(t=>{
+    const overdue = t.status!=='tamam' && t.dueDate && String(t.dueDate)<today();
+    const done = t.status==='tamam';
+    const canDel = isAdmin || t.createdBy===myName;
+    const pr = PRIO[t.priority]||PRIO.orta;
+    const cb = h('input',{type:'checkbox',style:{width:'20px',height:'20px',accentColor:'#10b981',cursor:'pointer',flexShrink:'0'}});
+    cb.checked = done;
+    cb.addEventListener('change', async()=>{
+      const rec = { ...t, status: done?'acik':'tamam', completedAt: done?null:today() };
+      await personelSaveDoc('tasks', rec);
+      showToast(done?'↩ Görev açıldı.':'✅ Görev tamamlandı.');
+    });
+    return h('div',{style:{background:'#ffffff',border:'1px solid '+(overdue?'#fca5a5':done?'#bbf7d0':'#d0daea'),borderRadius:'11px',padding:'12px 14px',marginBottom:'8px',display:'flex',alignItems:'flex-start',gap:'12px'}},
+      cb,
+      h('div',{style:{flex:'1',minWidth:'0'}},
+        h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
+          h('span',{style:{fontWeight:'700',fontSize:'14px',color:done?'#94a3b8':'#0f1f35',textDecoration:done?'line-through':'none'}},t.title),
+          h('span',{style:{background:pr[1]+'22',color:pr[1],fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},pr[0]),
+          t.autoGenerated?h('span',{style:{background:'#e0e7ff',color:'#4338ca',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'⚙ OTOMATİK'):h('span'),
+          overdue?h('span',{style:{background:'#fee2e2',color:'#dc2626',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'GECİKEN'):h('span')
+        ),
+        t.desc?h('div',{style:{fontSize:'12px',color:T3,marginTop:'4px'}},t.desc):h('span'),
+        h('div',{style:{fontSize:'11px',color:T4,marginTop:'5px'}},'👤 '+(t.assignedTo||'-')+(t.department?' · '+(DEPT_LABEL[t.department]||''):'')+(t.dueDate?' · 📅 '+_toTR(t.dueDate):''))
+      ),
+      canDel?btn('🗑️',()=>{ if(confirm('Görev silinsin mi?')) personelDeleteDoc('tasks',t.id).then(()=>showToast('✅ Silindi.')); },'#fef2f2','#dc2626','6px 10px',{fontSize:'12px',border:'1px solid #fecaca',flexShrink:'0'}):h('span')
+    );
+  }) : [h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.')];
+
+  return h('div',{}, addBtn, addPanel, filterBar, ...cards);
+}
+
+function renderPersonelPerformans(period, isAdmin){
+  const people = personelPeople();
+  if(!people.length){
+    return h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},
+      'Departman atanmış personel yok. Kullanıcı Yönetimi → ✏️ Düzenle içinden departman atayın.');
+  }
+  const pct = v => Math.round((v||0)*100)+'%';
+  const cards = people.map(u=>{
+    const sc = personelScore(u, period);
+    if(!sc) return h('span');
+    const open = !!PMOD.perfOpen[u.email];
+    const barColor = sc.skor>=1?'#16a34a':sc.skor>=0.7?'#d97706':'#dc2626';
+    const msSel = sel([{v:'',l:'Yönetici Puanı (1-5)'},{v:'1',l:'1 — Zayıf'},{v:'2',l:'2'},{v:'3',l:'3 — Orta'},{v:'4',l:'4'},{v:'5',l:'5 — Çok iyi'}], String(sc.managerScore||''), async v=>{
+      const ev = personelEvalFor(u.displayName, period);
+      const rec = ev ? { ...ev } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
+      rec.managerScore = Number(v)||0;
+      rec.updatedAt = today();
+      const sc2 = personelScore(u, period);
+      rec.totalScore = sc2 ? sc2.skor : 0;
+      await personelSaveDoc('evaluations', rec);
+      showToast('✅ Yönetici puanı kaydedildi.');
+    }, {maxWidth:'200px'});
+
+    // Yönetici nitel değerlendirme notu (personelle görüşmede kullanılır) — blur'da kaydedilir.
+    const evNow = personelEvalFor(u.displayName, period);
+    const ta = h('textarea',{
+      placeholder:'Yönetici değerlendirme notu — güçlü yönler, gelişim alanları, görüşülecek konular… (raporda görünür)',
+      style:{width:'100%',minHeight:'62px',resize:'vertical',border:'1px solid #cbd5e1',borderRadius:'8px',padding:'8px 10px',fontSize:'12px',fontFamily:'inherit',color:'#334155',boxSizing:'border-box'}
+    });
+    ta.value = (evNow && evNow.notes) || '';
+    ta.addEventListener('blur', async()=>{
+      const cur = personelEvalFor(u.displayName, period);
+      const prev = (cur && cur.notes) || '';
+      if(ta.value === prev) return;
+      const rec = cur ? { ...cur } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
+      rec.notes = ta.value;
+      rec.updatedAt = today();
+      const sc3 = personelScore(u, period);
+      rec.totalScore = sc3 ? sc3.skor : 0;
+      await personelSaveDoc('evaluations', rec);
+      showToast('✅ Değerlendirme notu kaydedildi.');
+    });
+    const notesEl = h('div',{style:{marginTop:'10px'}},
+      h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,marginBottom:'5px'}},'📝 Yönetici Değerlendirme Notu'),
+      ta
+    );
+
+    const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
+      ...sc.rows.map(r=>h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'4px 0',fontSize:'12px'}},
+        h('span',{style:{color: r.oran==null?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
+        h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, r.oran==null?'veri yok':pct(r.oran)+' ('+Math.round((r.weight/sc.wsum)*100)+'%)')
+      ))
+    ) : h('span');
+
+    return h('div',{style:{background:'#ffffff',border:'1px solid #d0daea',borderRadius:'12px',padding:'14px',marginBottom:'10px'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
+        h('div',{style:{width:'36px',height:'36px',borderRadius:'50%',background:'linear-gradient(135deg,#2563eb,#7c3aed)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:'700',color:'#fff'}},u.displayName.split(' ').map(n=>n[0]).join('').slice(0,2)),
+        h('div',{style:{flex:'1',minWidth:'120px'}},
+          h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#0f1f35'}},u.displayName),
+          h('div',{style:{fontSize:'11px',color:T3}},DEPT_LABEL[u.department]||u.department)
+        ),
+        h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontSize:'20px',fontWeight:'800',color:barColor}},pct(sc.skor)),
+          h('div',{style:{fontSize:'10px',color:T4}},'Toplam Skor')
+        )
+      ),
+      h('div',{style:{height:'7px',background:'#e2e8f0',borderRadius:'4px',overflow:'hidden',margin:'10px 0'}},
+        h('div',{style:{height:'100%',width:Math.min(100,(sc.skor||0)*100)+'%',background:barColor,borderRadius:'4px'}})
+      ),
+      h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
+        isAdmin?msSel:h('span',{style:{fontSize:'12px',color:T3}},'Yönetici Puanı: '+(sc.managerScore||'—')),
+        btn(open?'▲ Kriterleri gizle':'▼ Kriter detayı',()=>{PMOD.perfOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}),
+        btn('🖨️ Rapor',()=>printPersonelReport(u, period, isAdmin),'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe'})
+      ),
+      isAdmin?notesEl:h('span'),
+      detail
+    );
+  });
+  return h('div',{}, ...cards);
+}
+
+function renderPersonelPrim(period){
+  const people = personelPeople();
+  if(!people.length){
+    return h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},
+      'Departman atanmış personel yok.');
+  }
+  const note = h('div',{style:{background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'10px',padding:'10px 14px',marginBottom:'12px',fontSize:'12px',color:'#92400e'}},
+    '🔒 Prim verileri yalnızca yöneticiye görünür ve Firestore kurallarıyla sunucu tarafında kilitlidir. Prim tabanı/eşik/hızlandırıcı değerlerini ⚙ Ayarlar’dan düzenleyin.');
+
+  const cards = people.map(u=>{
+    const pr = personelPrim(u, period);
+    if(!pr) return h('span');
+    const open = !!PMOD.primOpen[u.email];
+    const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
+      ...pr.avail.map(r=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
+        h('span',{style:{color:'#334155'}},r.label),
+        h('span',{style:{fontWeight:'700',color:'#0f1f35'}},eur(pr.breakdown[r.kod]||0))
+      ))
+    ) : h('span');
+    return h('div',{style:{background:'#ffffff',border:'1px solid '+(pr.pass?'#bbf7d0':'#e2e8f0'),borderRadius:'12px',padding:'14px',marginBottom:'10px'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
+        h('div',{style:{flex:'1',minWidth:'120px'}},
+          h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#0f1f35'}},u.displayName),
+          h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[u.department]||u.department)+' · Skor '+Math.round((pr.skor||0)*100)+'% · Eşik '+Math.round((pr.cfg.threshold||0)*100)+'%'+(pr.accel>1?' · ⚡'+pr.accel+'x':''))
+        ),
+        h('div',{style:{textAlign:'right'}},
+          h('div',{style:{fontSize:'19px',fontWeight:'800',color:pr.pass?'#16a34a':'#94a3b8'}}, pr.pass?eur(pr.primAmount):'Prim yok'),
+          h('div',{style:{fontSize:'10px',color:T4}}, pr.pass?'Hesaplanan Prim':'Eşik altı')
+        )
+      ),
+      h('div',{style:{display:'flex',gap:'8px',marginTop:'10px',flexWrap:'wrap'}},
+        btn(open?'▲ Kırılımı gizle':'▼ Kırılım',()=>{PMOD.primOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}),
+        btn('💾 Primi Kaydet', async()=>{
+          const rec = {
+            id: u.email.replace(/[^a-z0-9]/gi,'_')+'_'+period,
+            personName:u.displayName, department:u.department, period,
+            primBase: pr.cfg.primBase||0, weights:{}, achievement:{},
+            primAmount: pr.primAmount, breakdown: pr.breakdown
+          };
+          pr.avail.forEach(r=>{ rec.weights[r.kod]=r.weight; rec.achievement[r.kod]=r.oran; });
+          await personelSaveDoc('prim', rec);
+        },'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe'})
+      ),
+      detail
+    );
+  });
+  return h('div',{}, note, ...cards);
+}
+
+function renderPersonelSettings(){
+  const cfg = state.evalConfig || JSON.parse(JSON.stringify(DEFAULT_EVAL_CONFIG));
+  const strat = state.strategy || { ...DEFAULT_STRATEGY };
+  const nInp = (get,setV,w) => inp('', String(get()), v=>setV(v), 'number', {maxWidth:w||'110px'});
+
+  const deptBlocks = DEPARTMENTS.map(d=>{
+    const c = cfg[d.v] || DEFAULT_EVAL_CONFIG[d.v];
+    return h('div',{style:{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'10px',padding:'12px',marginBottom:'8px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',marginBottom:'8px'}},d.l),
+      row(
+        field('Prim Tabanı (€)', nInp(()=>c.primBase||0, v=>c.primBase=Number(v)||0,'130px'), true),
+        field('Eşik (0-1)', nInp(()=>c.threshold||0, v=>c.threshold=Number(v)||0), true),
+        field('Hızlandırıcı', nInp(()=>c.accelerator||1, v=>c.accelerator=Number(v)||1), true)
+      )
+    );
+  });
+
+  const sectorList = [...new Set((state.opportunities||[]).map(o=>o.sector).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const stratSectors = Array.isArray(strat.targetSectors)?strat.targetSectors.slice():[];
+  const allSectors = [...new Set([...stratSectors, ...sectorList])];
+  const sectorChips = allSectors.length ? allSectors.map(s=>{
+    const on = stratSectors.indexOf(s)>=0;
+    return btn((on?'✓ ':'')+s, ()=>{
+      const i = strat.targetSectors.indexOf(s);
+      if(i>=0) strat.targetSectors.splice(i,1); else strat.targetSectors.push(s);
+      state.strategy = { ...strat };
+      render();
+    }, on?'#1e3a6e':'#e8eef7', on?'#fff':'#2a5080','6px 11px',{fontSize:'11px',border:'1px solid #b8c8de',marginBottom:'6px'});
+  }) : [h('span',{style:{fontSize:'12px',color:T4}},'Fırsatlarda sektör verisi yok.')];
+
+  return h('div',{style:{background:'#ffffff',border:'1px solid #6366f1',borderRadius:'12px',padding:'16px',marginBottom:'16px'}},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
+      h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#4338ca'}},'⚙ Personel Modülü Ayarları'),
+      btn('✕',()=>{PMOD.settingsOpen=false;render();},'#e8eef7','#4a6080','6px 11px',{fontSize:'13px'})
+    ),
+    h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',margin:'6px 0 8px'}},'💰 Departman Prim Parametreleri'),
+    ...deptBlocks,
+    h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',margin:'14px 0 8px'}},'🎯 Stratejik Hedef Sektörler'),
+    h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}}, ...sectorChips),
+    h('div',{style:{display:'flex',gap:'8px',marginTop:'16px'}},
+      btn('💾 Ayarları Kaydet', async()=>{
+        await saveEvalConfig(cfg);
+        await saveStrategy(strat);
+      },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','9px 16px',{flex:'1'}),
+      btn('Kapat',()=>{PMOD.settingsOpen=false;render();},'#e8eef7','#4a6080','9px 14px')
+    )
+  );
+}
+
+// ═══════════════════════════════════════════════════════
 // ANA RENDER
 // ═══════════════════════════════════════════════════════
 function render() {
@@ -5114,7 +5867,7 @@ function render() {
     return;
   }
 
-  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'}];
+  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'personel',l:'🧑‍💼 Personel'}];
   const cu = state.currentUser;
 
   // NAVBAR
@@ -5317,6 +6070,7 @@ function render() {
   else if(state.tab==='appointments') content=renderAppointments();
   else if(state.tab==='visits') content=renderVisits();
   else if(state.tab==='maintenance') content=renderMaintenances();
+  else if(state.tab==='personel') content=renderPersonel();
 
   const isMobMain = window.innerWidth <= 768;
   const main = h('div',{style:{maxWidth:'1400px',margin:'0 auto',padding:isMobMain?'12px':'20px'}},content);
@@ -5365,6 +6119,8 @@ function render() {
   const users = await loadUsers();
   state.users = users;
   state.targets = await loadTargets();
+  state.strategy = await loadStrategy();
+  state.evalConfig = await loadEvalConfig();
   state.geminiKey = await loadApiKey();
   state.loading = false;
   render();
