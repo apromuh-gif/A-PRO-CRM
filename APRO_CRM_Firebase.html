@@ -203,7 +203,56 @@ const TEKLIF_SYNC_URL = TEKLIF_APP_URL + '/api/v1/crm/customers';
 const TEKLIF_AUTH_URL = TEKLIF_APP_URL + '/api/v1/crm/auth';
 const TEKLIF_USERS_URL      = TEKLIF_APP_URL + '/api/v1/crm/users';
 const TEKLIF_STAFF_SYNC_URL = TEKLIF_APP_URL + '/api/v1/crm/staff-lists';
+const TEKLIF_BACKFILL_URL   = TEKLIF_APP_URL + '/api/v1/crm/backfill-salesrep';
 const TEKLIF_API_KEY  = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a83ef805af0';
+
+// Tek seferlik backfill: eski (salesRep boş) tekliflere, bağlı fırsatın sahibini (assignedTo) yaz.
+// quotationId -> {salesRep, preparedBy} eşlemesi CRM'de (fırsat/teklif talebi) mevcut; sunucu yalnızca
+// değeri null olanları doldurur, dolu olanı EZMEZ. Önce dryRun ile kaç kayıt etkilenecek gösterir.
+async function backfillTeklifSalesReps() {
+  const map = {};
+  for (const o of (state.opportunities || [])) {
+    if (!o.quotationId) continue;
+    const e = map[o.quotationId] = map[o.quotationId] || {};
+    if (!e.salesRep && o.assignedTo) e.salesRep = o.assignedTo;
+  }
+  for (const p of (state.proposals || [])) {
+    if (!p.quotationId) continue;
+    const e = map[p.quotationId] = map[p.quotationId] || {};
+    if (!e.salesRep) {
+      const opp = (state.opportunities || []).find(o => o.id === p.opportunityId);
+      if (opp && opp.assignedTo) e.salesRep = opp.assignedTo;
+    }
+    if (!e.preparedBy && p.preparedBy) e.preparedBy = p.preparedBy;
+  }
+  const items = Object.entries(map)
+    .map(([quotationId, v]) => ({ quotationId, salesRep: v.salesRep || '', preparedBy: v.preparedBy || '' }))
+    .filter(i => i.salesRep || i.preparedBy);
+  if (!items.length) { alert('Eşlenecek teklif bulunamadı (fırsat/teklif taleplerinde quotationId + sahip yok).'); return; }
+
+  async function call(dryRun) {
+    const res = await fetch(TEKLIF_BACKFILL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+      body: JSON.stringify({ dryRun, items }),
+    });
+    const b = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(b?.error?.message || ('HTTP ' + res.status));
+    return b.data;
+  }
+  try {
+    const dry = await call(true);
+    if (!dry.wouldUpdate) { alert('Güncellenecek boş teklif yok. (Eşlenen: ' + dry.matched + ', hepsi zaten dolu.)'); return; }
+    const lines = (dry.planned || []).slice(0, 20)
+      .map(p => '• ' + (p.projectName || p.id) + '  →  ' + (p.salesRep || '(temsilci yok)')).join('\n');
+    if (!confirm(dry.wouldUpdate + ' teklifin satış temsilcisi doldurulacak:\n\n' + lines + '\n\nDevam edilsin mi?')) return;
+    const done = await call(false);
+    alert('✅ Tamamlandı. ' + done.updated + ' teklif güncellendi.');
+  } catch (e) {
+    alert('Backfill hatası: ' + (e && e.message ? e.message : e));
+  }
+}
+window.backfillTeklifSalesReps = backfillTeklifSalesReps;
 
 // CRM kullanıcısı için teklif programında oturum açar, session token döndürür.
 async function getCrmSessionToken() {
@@ -6005,6 +6054,9 @@ function renderPersonelSettings(){
     ...deptBlocks,
     h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',margin:'14px 0 8px'}},'🎯 Stratejik Hedef Sektörler'),
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}}, ...sectorChips),
+    h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',margin:'14px 0 8px'}},'🔧 Bakım Araçları'),
+    h('div',{style:{fontSize:'11px',color:T4,marginBottom:'6px'}},'Eski (satış temsilcisi boş) tekliflere, bağlı fırsatın sahibini yazar. Yalnızca boş olanlar doldurulur; dolu olanlar korunur.'),
+    btn('🔁 Eski Tekliflerin Temsilcisini Eşle', ()=>backfillTeklifSalesReps(), '#ecfdf5','#15803d','8px 14px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'8px'}),
     h('div',{style:{display:'flex',gap:'8px',marginTop:'16px'}},
       btn('💾 Ayarları Kaydet', async()=>{
         await saveEvalConfig(cfg);
