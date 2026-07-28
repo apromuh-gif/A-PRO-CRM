@@ -5605,6 +5605,20 @@ function _prevPeriods(period, n){
   for(let i=0;i<n;i++){ out.unshift(y+'-'+String(m).padStart(2,'0')); m--; if(m<1){ m=12; y--; } }
   return out;
 }
+// Belirli bir ayda personelin sistemde aktivitesi (iş verisi) olup olmadığını döndürür.
+// Trend grafiğinde "veri yok" ile "%0 başarı" ayrımı için kullanılır.
+function _personelActivity(name, period){
+  const inM = s=>_pInPeriod(s,period);
+  const O=state.opportunities||[], P=state.proposals||[], T=state.tasks||[], V=state.visits||[], A=state.appointments||[];
+  const wonY = O.some(o=>o.assignedTo===name && o.stage==='KAZANILDI' && _pYtdInPeriod(_pOppDate(o),period));
+  const oppM = O.some(o=>o.assignedTo===name && inM(o.createdAt||o.updatedAt));
+  const propM = P.some(p=>p.preparedBy===name && inM(p.createdAt||p.sentDate||p.updatedAt));
+  const taskM = T.some(t=>t.assignedTo===name && (inM(t.dueDate)||inM(t.completedAt)||inM(t.createdAt)));
+  const visitM = V.some(x=>x.assignedTo===name && inM(x.date||x.visitDate||x.createdAt));
+  const apptM = A.some(x=>x.assignedTo===name && inM(x.date||x.datetime||x.createdAt));
+  const evalM = (state.evaluations||[]).some(e=>e.personName===name && e.period===period);
+  return wonY||oppM||propM||taskM||visitM||apptM||evalM;
+}
 // Tek personel performans raporu — yönetici-personel birebir görüşmesinde kullanılacak nitelikte çıktı.
 function printPersonelReport(person, period, isAdmin){
   const sc = personelScore(person, period);
@@ -5682,20 +5696,67 @@ function printPersonelReport(person, period, isAdmin){
     <div style="font-size:20px;font-weight:800;color:${primInfo.pass?'#16a34a':'#dc2626'}">${eur(primInfo.primAmount)}</div>
   </div>` : '';
 
-  // Skor trendi (son 6 ay) — sparkline benzeri bar grafiği.
-  const trendData = _prevPeriods(period,6).map(p=>{ const s=personelScore(person,p); return { p, skor: s? s.skor : null }; });
+  // Dönem hedefleri özeti (ana menü) — seçili ayın kümülatif (YTD) hedefleri tek bakışta.
+  const _mParts = String(period).split('-');
+  const _mName = (()=>{ try { return new Date(Number(_mParts[0]), Number(_mParts[1])-1, 1).toLocaleString('tr-TR',{month:'long'}); } catch(e){ return _mParts[1]; } })();
+  const _mYear = _mParts[0];
+  const bireyN = personelCritNumbers('birey_hedef', person.displayName, period);
+  const compN  = personelCritNumbers('sirket_hedef', person.displayName, period);
+  const karlN  = personelCritNumbers('karlilik', person.displayName, period);
+  const _mCard = (title, n) => n ? `
+    <div style="flex:1;min-width:150px;background:#fff;border:1px solid #dbeafe;border-radius:10px;padding:12px 14px">
+      <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">${title}</div>
+      <div style="font-size:19px;font-weight:800;color:#1e3a8a;line-height:1.2">${n.hedef}</div>
+      <div style="font-size:11px;color:#475569;margin-top:5px">Gerçekleşen: <b style="color:#0f172a">${n.gerc}</b> &nbsp;·&nbsp; Kalan: ${n.kalan}</div>
+    </div>` : '';
+  const _mCards = [ _mCard('Bireysel Satış Hedefi (YTD)', bireyN), _mCard('Şirket Satış Hedefi (YTD)', compN), _mCard('Karlılık Marj Hedefi', karlN) ].filter(Boolean).join('');
+  const monthTargetSection = _mCards ? `
+  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px 16px;margin-bottom:18px">
+    <div style="font-size:14px;font-weight:800;color:#1e3a8a;margin-bottom:10px">🎯 ${escapeHtml(_mName)} ${escapeHtml(_mYear)} — Toplam Hedef <span style="font-size:11px;font-weight:400;color:#64748b">(yıl başından bu aya kümülatif / YTD)</span></div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px">${_mCards}</div>
+  </div>` : '';
+
+  // Skor trendi (son 6 ay) — referans çizgili bar grafiği.
+  // Aktivitesi olmayan aylar "veri yok" (gri) gösterilir; %0 (başarısız) ile karıştırılmaz.
+  const trendData = _prevPeriods(period,6).map(p=>{
+    const has = _personelActivity(person.displayName, p);
+    const s = has ? personelScore(person, p) : null;
+    return { p, skor: s? s.skor : null };
+  });
+  const TREND_H = 120, TREND_MAX = 1.5;
+  const _yTop = v => Math.round(TREND_H*(1 - v/TREND_MAX)); // % değerini üstten px konumuna çevir
   const trendBars = trendData.map(d=>{
-    const hpct = d.skor==null?0:Math.min(100,(d.skor/1.5)*100);
-    const c = d.skor==null?'#e2e8f0':(d.skor>=1?'#16a34a':d.skor>=0.7?'#d97706':'#dc2626');
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px">
-      <div style="font-size:10px;font-weight:700;color:${c}">${d.skor==null?'—':Math.round(d.skor*100)+'%'}</div>
-      <div style="width:70%;height:64px;display:flex;align-items:flex-end"><div style="width:100%;height:${hpct}%;background:${c};border-radius:4px 4px 0 0;min-height:2px"></div></div>
+    if(d.skor==null){
+      return `<div style="flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%"><div style="width:60%;height:5px;background:repeating-linear-gradient(45deg,#e2e8f0,#e2e8f0 3px,#fff 3px,#fff 6px);border-radius:3px" title="veri yok"></div></div>`;
+    }
+    const hpx = Math.max(3, Math.min(TREND_H,(d.skor/TREND_MAX)*TREND_H));
+    const c = d.skor>=1?'#16a34a':d.skor>=0.7?'#d97706':'#dc2626';
+    return `<div style="flex:1;display:flex;align-items:flex-end;justify-content:center;height:100%"><div style="width:62%;height:${hpx}px;background:${c};border-radius:5px 5px 0 0"></div></div>`;
+  }).join('');
+  const trendLabels = trendData.map(d=>{
+    const c = d.skor==null?'#94a3b8':(d.skor>=1?'#16a34a':d.skor>=0.7?'#d97706':'#dc2626');
+    return `<div style="flex:1;text-align:center">
+      <div style="font-size:12px;font-weight:800;color:${c}">${d.skor==null?'—':Math.round(d.skor*100)+'%'}</div>
       <div style="font-size:9px;color:#64748b;white-space:nowrap">${d.p.slice(5)}.${d.p.slice(2,4)}</div>
     </div>`;
   }).join('');
   const trendSection = `
   <h2>📈 Skor Trendi <span style="font-size:11px;font-weight:400;color:#64748b">(son 6 ay)</span></h2>
-  <div style="display:flex;gap:6px;align-items:flex-end;border:1px solid #e2e8f0;border-radius:10px;padding:14px 12px;margin-bottom:20px">${trendBars}</div>`;
+  <div style="border:1px solid #e2e8f0;border-radius:10px;padding:16px 14px 12px;margin-bottom:20px">
+    <div style="position:relative;height:${TREND_H}px">
+      <div style="position:absolute;left:0;right:0;top:${_yTop(1)}px;border-top:1px dashed #94a3b8"><span style="position:absolute;right:0;top:-13px;font-size:9px;color:#64748b;background:#fff;padding:0 4px">%100 hedef</span></div>
+      <div style="position:absolute;left:0;right:0;top:${_yTop(0.7)}px;border-top:1px dashed #f59e0b"><span style="position:absolute;right:0;top:-13px;font-size:9px;color:#d97706;background:#fff;padding:0 4px">%70 prim eşiği</span></div>
+      <div style="position:absolute;inset:0;display:flex;gap:8px;align-items:flex-end">${trendBars}</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:6px">${trendLabels}</div>
+    <div style="font-size:11px;color:#64748b;line-height:1.5;margin-top:10px;border-top:1px solid #f1f5f9;padding-top:8px">
+      Turuncu kesikli çizgi <b>prim eşiği (%70)</b> — bu çizgiyi aşan aylarda prim hak edilir. Renkler:
+      <span style="color:#16a34a;font-weight:700">■ ≥%100</span> ·
+      <span style="color:#d97706;font-weight:700">■ %70–99</span> ·
+      <span style="color:#dc2626;font-weight:700">■ &lt;%70</span> ·
+      <span style="color:#94a3b8;font-weight:700">▨ veri yok</span>.
+    </div>
+  </div>`;
 
   // Güçlü yönler / gelişim alanları (otomatik türetim)
   const strong = sc.rows.filter(r=>r.oran!=null && r.oran>=1).map(r=>escapeHtml(r.label));
@@ -5758,6 +5819,7 @@ function printPersonelReport(person, period, isAdmin){
   <div class="verdict" style="background:${vBg};color:${vColor}">${verdict}</div>
   <div class="target-bar"><div class="target-fill" style="width:${Math.min(100,skorPct)}%;background:${col(sc.skor)}"></div></div>
   ${primBanner}
+  ${monthTargetSection}
   <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">
     <div class="kpi"><div class="kpi-val" style="color:${col(sc.skor)}">${skorPct}%</div><div class="kpi-label">Skor</div></div>
     <div class="kpi"><div class="kpi-val">${sc.managerScore||'—'}${sc.managerScore?'/5':''}</div><div class="kpi-label">Yön. Puanı</div></div>
