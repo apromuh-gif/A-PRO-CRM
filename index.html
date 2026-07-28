@@ -6054,9 +6054,6 @@ function renderPersonelSettings(){
     ...deptBlocks,
     h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',margin:'14px 0 8px'}},'🎯 Stratejik Hedef Sektörler'),
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}}, ...sectorChips),
-    h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',margin:'14px 0 8px'}},'🔧 Bakım Araçları'),
-    h('div',{style:{fontSize:'11px',color:T4,marginBottom:'6px'}},'Eski (satış temsilcisi boş) tekliflere, bağlı fırsatın sahibini yazar. Yalnızca boş olanlar doldurulur; dolu olanlar korunur.'),
-    btn('🔁 Eski Tekliflerin Temsilcisini Eşle', ()=>backfillTeklifSalesReps(), '#ecfdf5','#15803d','8px 14px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'8px'}),
     h('div',{style:{display:'flex',gap:'8px',marginTop:'16px'}},
       btn('💾 Ayarları Kaydet', async()=>{
         await saveEvalConfig(cfg);
@@ -6136,6 +6133,8 @@ function render() {
               {icon:'🔔', label:'Bildirim Testi',  color:'#6d28d9', action:()=>{ menu.remove(); testNotifications(); }},
               {icon:'✉️', label:'Mail Testi',      color:'#1d4ed8', action:()=>{ menu.remove(); testMailNotification(); }},
               {icon:'🔊', label:'Ses Testi',       color:'#059669', action:()=>{ menu.remove(); try{const ctx=window._audioCtx||(window._audioCtx=new(window.AudioContext||window.webkitAudioContext)());if(ctx.state==='suspended'){ctx.resume().then(()=>playBeep('win'));}else{playBeep('win');}}catch(e){} }},
+              {sep:true},
+              {icon:'🔁', label:'Teklif Temsilcisi Eşle', color:'#15803d', action:()=>{ menu.remove(); backfillTeklifSalesReps(); }},
             ];
             items.forEach(item=>{
               if(item.sep){
