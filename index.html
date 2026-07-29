@@ -662,7 +662,11 @@ let state = {
   tasks: [], evaluations: [], prim: [],
   strategy: null, evalConfig: null,
   personelTab: 'gorevler', personelPeriod: '',
-  targets: { company: 0, reps: {} },
+  targets: { company: 0, reps: {} },     // SEÇİLİ mali yılın hedefleri (targetsByYear[fiscalYear] işaretçisi)
+  targetsByYear: {},                     // { '2026': {company,reps,...}, '2027': {...} } — yıl bazlı hedefler
+  fiscalYear: new Date().getFullYear(),  // aktif mali yıl (prim/hedef bu yıla göre hesaplanır)
+  primLedger: {},                        // { yıl: { isim: { paid, quarters:{Q:{amount,earned,skor,date}} } } }
+  profitByRep: {}, revenueByRep: {},     // Teklif Programı'ndan ham kâr+ciro (YTD kümülatif blended marj için)
   geminiKey: '',
   suppliers: [],
   modal: null,
@@ -725,12 +729,53 @@ async function saveDoc(collection, id, data) {
   await db.collection(collection).doc(String(id)).set(data);
 }
 
+// Boş hedef iskeleti (tek yıl).
+function _emptyTargets(){ return { company:0, serviceCompany:0, reps:{}, serviceReps:{}, profitReps:{} }; }
+// Belirli mali yılın hedef objesi (yoksa boş iskelet). state.targetsByYear üzerinden okur.
+function targetsForYear(y){
+  const byY = state.targetsByYear || {};
+  return byY[String(y)] || byY[y] || _emptyTargets();
+}
+function _currentFY(){ return Number(state.fiscalYear) || new Date().getFullYear(); }
+// YIL BAZLI hedefleri döndürür: { '2026': {...}, ... }. Eski DÜZ yapıyı otomatik içinde bulunulan yıla sarar.
 async function loadTargets() {
   try {
     const snap = await db.collection('settings').doc('targets').get();
-    if(snap.exists) return snap.data();
-    return { company: 0, reps: {} };
-  } catch(e) { return { company: 0, reps: {} }; }
+    if(!snap.exists) return {};
+    const data = snap.data() || {};
+    const keys = Object.keys(data);
+    const looksYearly = keys.length>0 && keys.every(k=>/^\d{4}$/.test(k));
+    if(looksYearly) return data;                                  // zaten yıl bazlı
+    const legacyYear = String(new Date().getFullYear());           // eski düz yapı → bu yıla sar (geriye dönük uyum)
+    return { [legacyYear]: { ..._emptyTargets(), ...data } };
+  } catch(e) { return {}; }
+}
+// ── Prim defteri (ledger) — ödenen prim tutarları yıl+kişi+çeyrek bazında kalıcı tutulur ──
+async function loadPrimLedger(){
+  try {
+    const snap = await db.collection('settings').doc('primLedger').get();
+    if(snap.exists && snap.data()) return snap.data();
+    return {};
+  } catch(e){ return {}; }
+}
+async function savePrimLedger(ledger){
+  try {
+    if(state.testMode){ state.primLedger = ledger; showToast('🧪 Test modu — prim ödemesi kaydedilmedi'); return true; }
+    await db.collection('settings').doc('primLedger').set(ledger);
+    state.primLedger = ledger;
+    return true;
+  } catch(e){ showToast('❌ Prim defteri kaydedilemedi!','#dc2626'); return false; }
+}
+// Bir yıl+kişi için ledger kaydı (yoksa boş).
+function _ledgerRec(year, name){
+  const y = (state.primLedger||{})[String(year)] || {};
+  return y[name] || { paid:0, quarters:{} };
+}
+// O yıl içinde, verilen çeyrekten ÖNCEKİ çeyreklerde bu kişiye ödenen toplam prim.
+function _paidBeforeQuarter(year, name, q){
+  const rec=_ledgerRec(year,name); let s=0;
+  Object.keys(rec.quarters||{}).forEach(k=>{ if(Number(k)<Number(q)) s+=Number(rec.quarters[k].amount)||0; });
+  return s;
 }
 
 // Personel modülü (Faz 1) — strateji & eval config yükle/kaydet (settings altında, additive)
@@ -789,16 +834,35 @@ async function saveEvalConfig(cfg) {
 }
 
 async function loadProfitActuals() {
-  // Teklif Programı'ndan gerçekleşen kâr MARJI (%): { repName: { 'YYYY-MM': marjYuzde } }.
-  // karlilik prim kriteri bunu hedef %'siyle karşılaştırır. Erişilemezse boş obje → kriter hesap dışı.
+  // Teklif Programı'ndan gerçekleşen kâr verisi. Dönüş = marginByRep (aylık marj %, geriye dönük uyum).
+  // AYRICA state.profitByRep + state.revenueByRep doldurulur → karlilik kriteri YTD kümülatif
+  // blended marjı (ΣYTD kâr ÷ ΣYTD ciro) olarak DOĞRU hesaplar (aylık %'leri ortalamak yanlıştır).
   try {
     if (typeof TEKLIF_APP_URL === 'undefined' || typeof TEKLIF_API_KEY === 'undefined' || !TEKLIF_API_KEY) return {};
     const res = await fetch(`${TEKLIF_APP_URL}/api/v1/crm/profit`, { headers: { 'x-crm-key': TEKLIF_API_KEY } });
     if(!res.ok) return {};
     const body = await res.json().catch(()=>null);
     const data = body && body.data ? body.data : null;
-    return (data && data.marginByRep && typeof data.marginByRep==='object') ? data.marginByRep : {};
+    if(!data) return {};
+    state.profitByRep  = (data.profitByRep  && typeof data.profitByRep==='object')  ? data.profitByRep  : {};
+    state.revenueByRep = (data.revenueByRep && typeof data.revenueByRep==='object') ? data.revenueByRep : {};
+    return (data.marginByRep && typeof data.marginByRep==='object') ? data.marginByRep : {};
   } catch(e) { return {}; }
+}
+// YTD kümülatif blended kâr marjı (%) = ΣYTD kâr ÷ ΣYTD ciro × 100. Ham veri yoksa null.
+// Dönemler quotation.updatedAt ayına göre keylenir (takvim yılı); teklif fiscalYear devri Faz 2.
+function _cumMarginPct(name, period){
+  const pr = (state.profitByRep||{})[name];
+  const rv = (state.revenueByRep||{})[name];
+  if(!pr || !rv) return null;
+  const py=Number(String(period).slice(0,4))||0, pm=Number(String(period).slice(5,7))||0;
+  let profit=0, revenue=0, any=false;
+  Object.keys(rv).forEach(k=>{
+    const ky=Number(String(k).slice(0,4))||0, km=Number(String(k).slice(5,7))||0;
+    if(ky===py && km<=pm){ revenue += Number(rv[k])||0; profit += Number(pr[k])||0; any=true; }
+  });
+  if(!any || revenue<=0) return null;
+  return (profit/revenue)*100;
 }
 
 async function loadApiKey() {
@@ -829,11 +893,17 @@ async function saveTargets(targets) {
     Object.keys(targets.reps||{}).forEach(k=>{ clean.reps[k] = Number(targets.reps[k])||0; });
     Object.keys(targets.serviceReps||{}).forEach(k=>{ clean.serviceReps[k] = Number(targets.serviceReps[k])||0; });
     Object.keys(targets.profitReps||{}).forEach(k=>{ clean.profitReps[k] = Number(targets.profitReps[k])||0; });
-    targets = clean;
-    if(state.testMode){ state.targets = targets; showToast('🧪 Test modu — hedefler kaydedilmedi'); return; }
-    await db.collection('settings').doc('targets').set(targets);
-    state.targets = targets;
-    showToast('✅ Hedefler kaydedildi!');
+    // Yıl bazlı sakla: yalnızca AKTİF mali yılın hedefini güncelle, diğer yıllara dokunma.
+    const fy = String(_currentFY());
+    // Dashboard state.targets'ı içinde bulunulan TAKVİM yılı için okur; yalnızca o yıl düzenleniyorsa güncelle.
+    const isCurrentCalendarYear = fy === String(new Date().getFullYear());
+    const byYear = JSON.parse(JSON.stringify(state.targetsByYear||{}));
+    byYear[fy] = clean;
+    if(state.testMode){ state.targetsByYear = byYear; if(isCurrentCalendarYear) state.targets = clean; showToast('🧪 Test modu — hedefler kaydedilmedi'); return; }
+    await db.collection('settings').doc('targets').set(byYear);
+    state.targetsByYear = byYear;
+    if(isCurrentCalendarYear) state.targets = clean;
+    showToast('✅ '+fy+' hedefleri kaydedildi!');
   } catch(e) { showToast('❌ Hedef kaydedilemedi!','#dc2626'); }
 }
 
@@ -2628,17 +2698,21 @@ async function openTargetsModal() {
     ]);
     if(!usSnap.empty) state.users = usSnap.docs.map(d=>({...d.data(), email:d.id}));
     if(tSnap.exists) {
-      const td = tSnap.data();
-      if(!td.serviceReps) td.serviceReps = {};
-      if(!td.serviceCompany) td.serviceCompany = 0;
-      state.targets = td;
+      const raw = tSnap.data() || {};
+      const keys = Object.keys(raw);
+      const looksYearly = keys.length>0 && keys.every(k=>/^\d{4}$/.test(k));
+      // Yıl bazlı yapı → doğrudan; eski düz yapı → içinde bulunulan yıla sar (geriye dönük uyum).
+      state.targetsByYear = looksYearly ? raw : { [String(new Date().getFullYear())]: { ..._emptyTargets(), ...raw } };
     }
+    // NOT: state.targets'a dokunma — dashboard onu içinde bulunulan takvim yılı için okur.
+    // Hedef modalı düzenlenecek yılı targetsForYear() ile buildTargetsModal içinde taze alır.
   } catch(e) { /* bağlantı yoksa mevcut state kullanılır */ }
   setState({modal:{type:'targets', item:null}});
 }
 
 function buildTargetsModal() {
-  const targets = JSON.parse(JSON.stringify(state.targets || {company:0, serviceCompany:0, reps:{}, serviceReps:{}}));
+  // Düzenlenen yıl = aktif mali yıl. state.targets yerine targetsForYear() kullanılır (dashboard drift önlenir).
+  const targets = JSON.parse(JSON.stringify(targetsForYear(_currentFY()) || {company:0, serviceCompany:0, reps:{}, serviceReps:{}}));
   if(!targets.serviceReps) targets.serviceReps = {};
   if(!targets.serviceCompany) targets.serviceCompany = 0;
   if(!targets.profitReps) targets.profitReps = {};
@@ -2824,7 +2898,7 @@ function buildTargetsModal() {
   }
 
   rerender();
-  return modal('🎯 Hedef Yönetimi', container, ()=>setState({modal:null}), '620px');
+  return modal('🎯 '+_currentFY()+' Yılı Hedef Yönetimi', container, ()=>setState({modal:null}), '620px');
 }
 
 function buildAdminModal() {
@@ -5415,6 +5489,24 @@ function _pYtdInPeriod(s, period){
 // Dönemin ay numarası (1-12) — yıllık hedefi orantılamak için (pace = yıllık × ay/12).
 function _monthNum(period){ return Number(String(period).slice(5,7))||0; }
 function _pOppDate(o){ return o.wonAt||o.closedAt||o.updatedAt||o.dueDate||o.createdAt; }
+// ── Mali yıl (FY) atıf yardımcıları — prim/hedef yıl bazlı hesaplanır ──
+function _periodYear(period){ return Number(String(period).slice(0,4))||0; }
+function _quarterOfMonth(m){ return Math.floor(((Number(m)||1)-1)/3)+1; }   // 1..4
+function _periodQuarter(period){ return _quarterOfMonth(_monthNum(period)); }
+// Yılın geçen kısmı (0..1] — operasyonel/karlılık primini zamana orantılamak için.
+function _elapsedFrac(period){ return Math.min(1, Math.max(0, _monthNum(period)/12)); }
+// Bir fırsatın ait olduğu mali yıl: manuel devir varsa o (fiscalYear), yoksa kapanış tarihinin yılı.
+function _pOppFY(o){ return o && o.fiscalYear ? Number(o.fiscalYear) : (_periodYear(_pOppDate(o))||0); }
+// YTD ay konumu: manuel devirle başka yıldan taşındıysa yıl başından (1) sayılır, aksi halde kapanış ayı.
+function _pOppFYMonth(o){
+  const d=String(_pOppDate(o)||''); const cy=Number(d.slice(0,4))||0; const cm=Number(d.slice(5,7))||0;
+  if(o && o.fiscalYear && cy!==Number(o.fiscalYear)) return 1;
+  return cm;
+}
+// Fırsat, period'un mali yılında ve YTD penceresinde (yıl başı→dönem ayı) kazanıldı mı?
+function _pWonYtd(o, period){
+  return _pOppFY(o)===_periodYear(period) && _pOppFYMonth(o)>0 && _pOppFYMonth(o)<=_monthNum(period);
+}
 function _pIsDone(status){ return ['tamam','Tamamlandı','Yapıldı','Onaylandı','Kapandı','Çözüldü'].includes(status); }
 function _pIsOverdue(rec){
   const d = rec.dueDate; if(!d) return false;
@@ -5424,15 +5516,17 @@ function _pIsOverdue(rec){
 function personelPeople(){
   return (state.users||[]).filter(u=>u.active!==false && u.department);
 }
-function personelTaskStats(name, period){
-  const ts = (state.tasks||[]).filter(t=>t.assignedTo===name && (_pInPeriod(t.dueDate,period)||_pInPeriod(t.completedAt,period)));
+function personelTaskStats(name, period, ytd){
+  const win = ytd ? _pYtdInPeriod : _pInPeriod;   // ytd=true → yıl başından döneme kümülatif
+  const ts = (state.tasks||[]).filter(t=>t.assignedTo===name && (win(t.dueDate,period)||win(t.completedAt,period)));
   const total = ts.length;
   const done = ts.filter(t=>t.status==='tamam').length;
   return { total, done, ratio: total? done/total : 0 };
 }
 // Zamanında teslim oranı — tamamlanan görevlerin vadesinde kapatılma oranı (tamamlama ≠ zamanında)
-function personelTaskPunctual(name, period){
-  const ts = (state.tasks||[]).filter(t=>t.assignedTo===name && (_pInPeriod(t.dueDate,period)||_pInPeriod(t.completedAt,period)));
+function personelTaskPunctual(name, period, ytd){
+  const win = ytd ? _pYtdInPeriod : _pInPeriod;
+  const ts = (state.tasks||[]).filter(t=>t.assignedTo===name && (win(t.dueDate,period)||win(t.completedAt,period)));
   if(!ts.length) return null;
   const onTime = ts.filter(t=>{
     if(!_pIsDone(t.status)) return false;               // tamamlanmamış = zamanında değil
@@ -5442,103 +5536,121 @@ function personelTaskPunctual(name, period){
   }).length;
   return onTime/ts.length;
 }
+// ON-TRACK oranı döndürür (prim GEÇİŞ eşiği + performans göstergesi için).
+//  • Hedef kriterleri (birey/şirket): pace bazlı = YTD kazanılan ÷ (yıllık × geçen ay/12) → "ilerlemede miyim".
+//  • Karlılık: YTD kümülatif blended marj ÷ hedef marj (zaman-bağımsız oran).
+//  • Operasyonel kriterler: YTD penceresinde oran (tek ay değil — kümülatif istikrar).
+// NOT: Prim TUTARI bu oranı DEĞİL, yıllık kümülatif kazanımı kullanır (personelAnnualRatio + personelPrim).
 function personelAutoMetric(kod, name, period, dept){
-  const inP = s=>_pInPeriod(s,period);
-  const monthOf = a => (Number(a)||0)/12;
+  const ytd = s=>_pYtdInPeriod(s,period);              // yıl başından döneme kümülatif pencere
+  const mNum = _monthNum(period)||1;
+  const T = targetsForYear(_periodYear(period));        // dönemin mali yılının hedefleri (FY-aware)
   const O=(state.opportunities||[]), P=(state.proposals||[]), M=(state.maintenances||[]);
   const SO=(state.serviceOpps||[]), V=(state.visits||[]), A=(state.appointments||[]);
   switch(kod){
     case 'sirket_hedef': {
-      // YTD bazlı: yıl başından dönem sonuna kadar kazanılan ÷ (yıllık hedef × geçen ay / 12).
-      const annual = Number(state.targets && state.targets.company)||0;
+      const annual = Number(T.company)||0;
       if(!annual) return null;
-      const paceTarget = annual * _monthNum(period)/12;
+      const paceTarget = annual * mNum/12;               // pace = yıllığın geçen aya düşen kısmı (on-track)
       if(!paceTarget) return null;
-      const won = O.filter(o=>o.stage==='KAZANILDI'&&_pYtdInPeriod(_pOppDate(o),period)).reduce((a,o)=>a+(Number(o.value)||0),0);
+      const won = O.filter(o=>o.stage==='KAZANILDI'&&_pWonYtd(o,period)).reduce((a,o)=>a+(Number(o.value)||0),0);
       return Math.min(won/paceTarget,1.5);
     }
     case 'birey_hedef': {
-      // YTD bazlı: yıl başından dönem sonuna kadar kazanılan ÷ (yıllık hedef × geçen ay / 12).
-      const annual = Number(state.targets && state.targets.reps && state.targets.reps[name])||0;
+      const annual = Number(T.reps && T.reps[name])||0;
       if(!annual) return null;
-      const paceTarget = annual * _monthNum(period)/12;
+      const paceTarget = annual * mNum/12;
       if(!paceTarget) return null;
-      const won = O.filter(o=>o.assignedTo===name&&o.stage==='KAZANILDI'&&_pYtdInPeriod(_pOppDate(o),period)).reduce((a,o)=>a+(Number(o.value)||0),0);
+      const won = O.filter(o=>o.assignedTo===name&&o.stage==='KAZANILDI'&&_pWonYtd(o,period)).reduce((a,o)=>a+(Number(o.value)||0),0);
       return Math.min(won/paceTarget,1.5);
     }
     case 'karlilik': {
-      // Gerçekleşen kâr MARJI (%) Teklif Programı'ndan state.profitActuals[name][period] olarak yüklenir.
-      // Hedef: targets.profitReps[name] (% marj, örn. 20). Gerçekleşme = gerçekleşen% / hedef%.
-      const pa = state.profitActuals && state.profitActuals[name];
-      const realizedPct = pa && typeof pa==='object' ? pa[period] : pa;
-      const targetPct = Number(state.targets && state.targets.profitReps && state.targets.profitReps[name]) || 0;
-      if(realizedPct==null || !targetPct) return null;
-      return Math.min((Number(realizedPct)||0)/targetPct, 1.5);
+      // YTD kümülatif blended marj (ΣYTD kâr ÷ ΣYTD ciro) ÷ hedef marj %. Aylık %'leri ORTALAMAK yanlıştır.
+      const cum = _cumMarginPct(name, period);
+      const targetPct = Number(T.profitReps && T.profitReps[name]) || 0;
+      if(cum==null || !targetPct) return null;
+      return Math.min(cum/targetPct, 1.5);
     }
     case 'teklif_takip': {
       // Teklif kayıtlarında sahibi 'preparedBy', vadesi 'validUntil'dır (assignedTo/dueDate yok).
-      // Bu kişinin dönemde oluşturduğu VEYA hâlâ açık (takipteki) teklifleri değerlendir.
       const isFinal = s => s==='Onaylandı' || s==='Reddedildi';
-      const ps = P.filter(p=>p.preparedBy===name && (inP(p.createdAt||p.sentDate||p.updatedAt) || !isFinal(p.status)));
+      const ps = P.filter(p=>p.preparedBy===name && (ytd(p.createdAt||p.sentDate||p.updatedAt) || !isFinal(p.status)));
       if(!ps.length) return null;
-      // Vadesi (validUntil) geçmiş ve hâlâ kapatılmamış teklifler "takip edilmemiş" sayılır.
       const overdue = ps.filter(p=>!isFinal(p.status) && p.validUntil && String(p.validUntil).slice(0,10) < today()).length;
       return Math.max(0, 1 - overdue/ps.length);
     }
     case 'aktivite': {
-      const v = V.filter(x=>x.assignedTo===name&&inP(x.date||x.visitDate||x.createdAt)).length;
-      const a = A.filter(x=>x.assignedTo===name&&inP(x.date||x.datetime||x.createdAt)).length;
-      const no = O.filter(o=>o.assignedTo===name&&inP(o.createdAt)).length;
-      return Math.min((v+a+no)/20,1.5);
+      // YTD toplam aktivite ÷ (aylık 20 hedef × geçen ay) = aylık ortalama aktivite oranı.
+      const v = V.filter(x=>x.assignedTo===name&&ytd(x.date||x.visitDate||x.createdAt)).length;
+      const a = A.filter(x=>x.assignedTo===name&&ytd(x.date||x.datetime||x.createdAt)).length;
+      const no = O.filter(o=>o.assignedTo===name&&ytd(o.createdAt)).length;
+      return Math.min((v+a+no)/(20*mNum),1.5);
     }
     case 'hedefe_yonelim': {
-      const os = O.filter(o=>o.assignedTo===name&&inP(o.createdAt));
+      const os = O.filter(o=>o.assignedTo===name&&ytd(o.createdAt));
       if(!os.length) return null;
       const secs = (state.strategy && state.strategy.targetSectors) || DEFAULT_STRATEGY.targetSectors;
       const good = os.filter(o=>secs.indexOf(o.sector)>=0).length;
       return good/os.length;
     }
     case 'periyodik_bakim': {
-      const ms = M.filter(m=>m.assignedTo===name&&inP(m.dueDate||m.nextDate||m.date));
+      const ms = M.filter(m=>m.assignedTo===name&&ytd(m.dueDate||m.nextDate||m.date));
       if(!ms.length) return null;
       return ms.filter(m=>_pIsDone(m.status)).length/ms.length;
     }
     case 'acik_servis': {
-      const ss = SO.filter(s=>s.assignedTo===name&&inP(s.dueDate||s.createdAt||s.date));
+      const ss = SO.filter(s=>s.assignedTo===name&&ytd(s.dueDate||s.createdAt||s.date));
       if(!ss.length) return null;
       const over = ss.filter(s=>_pIsOverdue(s)).length;
       return Math.max(0, 1 - over/ss.length);
     }
     case 'cozum_suresi': {
-      const ss = SO.filter(s=>s.assignedTo===name&&inP(s.dueDate||s.createdAt||s.date));
+      const ss = SO.filter(s=>s.assignedTo===name&&ytd(s.dueDate||s.createdAt||s.date));
       if(!ss.length) return null;
       return ss.filter(s=>_pIsDone(s.status)).length/ss.length;
     }
-    // Görev tamamlama oranı (tamamlanan/toplam) — genel iş disiplini ve iş emri kapatma
+    // Görev tamamlama oranı (tamamlanan/toplam) — YTD kümülatif
     case 'gorev':
     case 'is_emri': {
-      const st = personelTaskStats(name,period);
+      const st = personelTaskStats(name,period,true);
       return st.total? st.ratio : null;
     }
-    // Zamanında teslim / kilometre taşı / raporlama — vadesinde kapatma oranı (tamamlamadan farklı)
+    // Zamanında teslim / kilometre taşı / raporlama — vadesinde kapatma oranı (YTD kümülatif)
     case 'zamaninda_teslim':
     case 'km_tasi':
     case 'raporlama':
-      return personelTaskPunctual(name, period);
+      return personelTaskPunctual(name, period, true);
     // Keşif/teklif hazırlama süresi — bu kişiye ait tekliflerin zamanında (gecikmesiz) hazırlanma oranı
     case 'kesif_sure': {
-      // Teklif kayıtlarında sahibi 'preparedBy', vadesi 'validUntil'dır.
       const isFinal = s => s==='Onaylandı' || s==='Reddedildi';
-      const ps = P.filter(p=>p.preparedBy===name && (inP(p.createdAt||p.sentDate||p.updatedAt) || !isFinal(p.status)));
+      const ps = P.filter(p=>p.preparedBy===name && (ytd(p.createdAt||p.sentDate||p.updatedAt) || !isFinal(p.status)));
       if(!ps.length) return null;
       const overdue = ps.filter(p=>!isFinal(p.status) && p.validUntil && String(p.validUntil).slice(0,10) < today()).length;
       return Math.max(0, 1 - overdue/ps.length);
     }
     default: {
-      const st = personelTaskStats(name,period);
+      const st = personelTaskStats(name,period,true);
       return st.total? st.ratio : null;
     }
   }
+}
+// YILLIK hedefe göre HAM (tavansız) gerçekleşme oranı — prim KAZANIMI ve AŞIMI bunu kullanır.
+// Yalnızca hedef (birey/şirket) ve karlılık için anlamlı; diğerlerinde null (bunlar oran×elapsed ile hesaplanır).
+function personelAnnualRatio(kod, name, period){
+  const T = targetsForYear(_periodYear(period));
+  if(kod==='birey_hedef' || kod==='sirket_hedef'){
+    const annual = kod==='birey_hedef' ? (Number(T.reps&&T.reps[name])||0) : (Number(T.company)||0);
+    if(!annual) return null;
+    const won = (state.opportunities||[]).filter(o=>(kod==='sirket_hedef'||o.assignedTo===name)&&o.stage==='KAZANILDI'&&_pWonYtd(o,period)).reduce((a,o)=>a+(Number(o.value)||0),0);
+    return won/annual;
+  }
+  if(kod==='karlilik'){
+    const targetPct = Number(T.profitReps&&T.profitReps[name])||0;
+    const cum = _cumMarginPct(name, period);
+    if(!targetPct || cum==null) return null;
+    return cum/targetPct;
+  }
+  return null;
 }
 function personelEvalFor(name, period){
   return (state.evaluations||[]).find(e=>e.personName===name && e.period===period) || null;
@@ -5562,62 +5674,91 @@ function personelScore(person, period){
   const skor = avail.reduce((a,r)=>a+(r.weight/wsum)*r.oran, 0);
   return { dept, cfg, ev, rows, avail, wsum, skor, managerScore: (ev&&ev.managerScore)||0 };
 }
+// ÇEYREKLİK PRİM MOTORU — yıllık hedefe göre kümülatif hak ediş, çeyreklik ödeme.
+//  • Geçiş kapısı (pass): PACE skoru (sc.skor) ≥ eşik → dönem sonunda hedefe gidişat yeterli mi?
+//  • Hak ediş TUTARI: YILLIK kümülatif orana göre (pace DEĞİL). Yıl ilerledikçe birikir.
+//      - hedef (birey/şirket): kazanım = min(yıllıkOran, 1)                → yıllık gerçekleşmenin doğrudan payı
+//      - karlılık            : kazanım = min(marjOran, 1) × geçenSüre       → oran birikmez, süreye yayılır
+//      - operasyonel/manuel  : kazanım = min(oran, 1) × geçenSüre           → aynı mantık
+//  • Aşım (over): YALNIZCA Q4'te (yıl kapanışında) ve yalnızca yıllık hedefi AŞAN (oran>1) birey/karlılıkta.
+//  • Bu çeyrek ödenecek = max(0, yılBaşındanHakEdilen − buÇeyrektenÖnceÖdenen)  → NEGATİF ödeme yok, fazlası devreder.
 function personelPrim(person, period){
   const sc = personelScore(person, period);
   if(!sc) return null;
+  const name = person.displayName;
   const cfg = sc.cfg;
-  const base = cfg.primBase||0;               // Tüm kriterler %100 karşılandığında hak edilen TOPLAM taban prim.
-  const pass = sc.skor >= (cfg.threshold||0); // Eşik altında prim oluşmaz.
+  const base = cfg.primBase||0;               // Tüm kriterler %100 karşılandığında hak edilen TOPLAM yıllık taban prim.
+  const pass = sc.skor >= (cfg.threshold||0); // Eşik altında prim oluşmaz (PACE skoru — hedefe gidişat).
   const overCap = Number(cfg.overCap)||1.5;   // Aşım tavanı: oran en çok bu kadar sayılır (örn. 1.5 = %150).
   const overAccel = (cfg.overAccel!=null?Number(cfg.overAccel):1); // İvme: aşımın ödüllendirme çarpanı.
   const OVER_KODS = ['birey_hedef','karlilik']; // Aşım primi YALNIZCA bireysel hedef ve karlılıkta çalışır.
-  // TABAN prim = Tam Prim × Σ(ağırlık payı × min(gerçekleşme,%100)). Her kriter EN ÇOK kendi payı kadar
-  // katkı verir; karşılanmayan kriterin payı taban primden düşülür.
-  // AŞIM primi = Tam Prim × Σ(birey,karlılık) ağırlık × (min(oran,tavan)−1) × ivme. Tavan aşırı primi sınırlar.
+  const GOAL_KODS = ['birey_hedef','sirket_hedef']; // Yıllık kümülatif hedef kriterleri (elapsed uygulanmaz).
+  const year = _periodYear(period);
+  const quarter = _periodQuarter(period);
+  const elapsed = _elapsedFrac(period);       // geçenSüre = ay/12
+  const isQ4 = quarter === 4;
+
   const breakdown = {};
   let primRatio = 0, overRatio = 0;
   sc.avail.forEach(r=>{
-    const oran = Number(r.oran)||0;
     const wshare = r.weight/sc.wsum;
-    const share = wshare * Math.min(oran, 1);   // kriter başına %100 tavan
-    primRatio += share;
-    breakdown[r.kod] = pass ? base*share : 0;
-    if(OVER_KODS.indexOf(r.kod)>=0 && oran>1){  // yalnız hedefi aşan birey/karlılık
-      overRatio += wshare * (Math.min(oran, overCap) - 1) * overAccel;
+    let kazanim;
+    if(GOAL_KODS.indexOf(r.kod)>=0){
+      const ar = personelAnnualRatio(r.kod, name, period);
+      kazanim = Math.min(ar!=null?ar:(Number(r.oran)||0), 1);      // hedef: yıllık kümülatif, elapsed YOK
+    } else if(r.kod==='karlilik'){
+      const ar = personelAnnualRatio('karlilik', name, period);
+      kazanim = Math.min(ar!=null?ar:(Number(r.oran)||0), 1) * elapsed; // marj: oran×süre
+    } else {
+      kazanim = Math.min(Number(r.oran)||0, 1) * elapsed;          // operasyonel/manuel: oran×süre
+    }
+    primRatio += wshare * kazanim;
+    breakdown[r.kod] = pass ? base * wshare * kazanim : 0;
+    // AŞIM: yalnız Q4 + yıllık hedefi aşan birey/karlılık
+    if(isQ4 && OVER_KODS.indexOf(r.kod)>=0){
+      const ar = personelAnnualRatio(r.kod, name, period);
+      if(ar!=null && ar>1){
+        overRatio += wshare * (Math.min(ar, overCap) - 1) * overAccel;
+      }
     }
   });
-  const baseAmount = pass ? base*primRatio : 0;
-  const overAmount = pass ? base*overRatio : 0;
-  const primAmount = baseAmount + overAmount;
-  return { ...sc, pass, accel:1, primRatio, overRatio, baseAmount, overAmount, primAmount, breakdown };
+
+  const baseAmount = pass ? base*primRatio : 0;   // yıl başından hak edilen TABAN (kümülatif)
+  const overAmount = pass ? base*overRatio : 0;   // yıl kapanışı aşım primi
+  const earnedToDate = baseAmount + overAmount;   // yıl başından bu döneme kadar TOPLAM hak ediş
+  const paidBefore = _paidBeforeQuarter(year, name, quarter); // bu çeyrekten önce ödenen (ledger)
+  const thisQuarterPayable = Math.max(0, earnedToDate - paidBefore); // NEGATİF ödeme yok
+  const carry = paidBefore > earnedToDate ? (paidBefore - earnedToDate) : 0; // fazla avans → sonraki çeyreğe devir
+  const primAmount = earnedToDate;                // geriye dönük uyum: primAmount = toplam hak ediş
+  return { ...sc, pass, accel:1, name, year, quarter, elapsed, isQ4,
+    primRatio, overRatio, baseAmount, overAmount, breakdown,
+    earnedToDate, paidBefore, thisQuarterPayable, carry, primAmount };
 }
 // Rapor için rakamsal Hedef/Gerçekleşen değerleri (YTD) — yalnızca satış/karlılık kriterleri.
 // Diğer kriterlerde null döner → tablo '—' gösterir.
 function personelCritNumbers(kod, name, period){
   const O=(state.opportunities||[]);
-  const mNum=_monthNum(period);
+  const T=targetsForYear(_periodYear(period));  // dönemin YILINA ait hedefler
   if(kod==='birey_hedef' || kod==='sirket_hedef'){
     const annual = kod==='birey_hedef'
-      ? Number(state.targets && state.targets.reps && state.targets.reps[name])||0
-      : Number(state.targets && state.targets.company)||0;
+      ? Number(T.reps && T.reps[name])||0
+      : Number(T.company)||0;
     if(!annual) return null;
-    const pace = annual*mNum/12;
-    const won = O.filter(o=>(kod==='sirket_hedef'||o.assignedTo===name)&&o.stage==='KAZANILDI'&&_pYtdInPeriod(_pOppDate(o),period)).reduce((a,o)=>a+(Number(o.value)||0),0);
-    const kalanVal = pace - won;
+    // Kümülatif model: hedef = YILLIK, gerçekleşen = yıl başından bugüne (YTD).
+    const won = O.filter(o=>(kod==='sirket_hedef'||o.assignedTo===name)&&o.stage==='KAZANILDI'&&_pWonYtd(o,period)).reduce((a,o)=>a+(Number(o.value)||0),0);
+    const kalanVal = annual - won;
     return {
-      hedef: eur(pace)+' <span style="color:#94a3b8;font-size:10px">('+eur(annual)+'/yıl)</span>', // üst kart (YTD)
-      hedefTable: eur(annual)+' <span style="color:#94a3b8;font-size:10px">/yıl</span>',           // kriter tablosu (yıllık)
-      gerc: eur(won),
-      kalan: kalanVal>0 ? eur(kalanVal) : '<span style="color:#16a34a;font-weight:700">✓ Aşıldı</span>' };
+      hedef: eur(annual)+' <span style="color:#94a3b8;font-size:10px">/yıl</span>',
+      hedefTable: eur(annual)+' <span style="color:#94a3b8;font-size:10px">/yıl</span>',
+      gerc: eur(won)+' <span style="color:#94a3b8;font-size:10px">YTD</span>',
+      kalan: kalanVal>0 ? eur(kalanVal) : '<span style="color:#16a34a;font-weight:700">✓ Tamamlandı</span>' };
   }
   if(kod==='karlilik'){
-    const pa = state.profitActuals && state.profitActuals[name];
-    const realizedPct = pa && typeof pa==='object' ? pa[period] : pa;
-    const targetPct = Number(state.targets && state.targets.profitReps && state.targets.profitReps[name]) || 0;
+    const cum = _cumMarginPct(name, period);   // yıl başından kümülatif harmanlanmış marj (%)
+    const targetPct = Number(T.profitReps && T.profitReps[name]) || 0;
     if(!targetPct) return null;
-    const realN = realizedPct==null ? null : (Number(realizedPct)||0);
-    const kalan = realN==null ? '—' : (realN>=targetPct ? '<span style="color:#16a34a;font-weight:700">✓ Aşıldı</span>' : '%'+(Math.round((targetPct-realN)*10)/10));
-    return { hedef: '%'+targetPct+' marj', hedefTable: '%'+targetPct+' marj', gerc: realizedPct==null?'—':'%'+(Math.round((Number(realizedPct)||0)*10)/10)+' marj', kalan };
+    const kalan = cum==null ? '—' : (cum>=targetPct ? '<span style="color:#16a34a;font-weight:700">✓ Tamamlandı</span>' : '%'+(Math.round((targetPct-cum)*10)/10));
+    return { hedef: '%'+targetPct+' marj', hedefTable: '%'+targetPct+' marj', gerc: cum==null?'—':'%'+(Math.round(cum*10)/10)+' marj <span style="color:#94a3b8;font-size:10px">YTD</span>', kalan };
   }
   return null;
 }
@@ -5710,15 +5851,15 @@ function printPersonelReport(person, period, isAdmin){
     <tbody>${taskRows||'<tr><td colspan="3" style="text-align:center;color:#94a3b8">Bu dönemde görev yok.</td></tr>'}</tbody>
   </table>`;
 
-  // Öngörülen prim (eşik + hızlandırıcı dahil) — yalnızca yöneticiye gösterilir.
+  // Öngörülen çeyreklik prim (yıllık kümülatif hak ediş − önceki ödenen) — yalnızca yöneticiye gösterilir.
   const primInfo = personelPrim(person, period);
-  const _primSub = (primInfo && primInfo.pass && primInfo.overAmount>0)
-    ? ' <span style="font-weight:400;font-size:11px;color:#065f46">(Taban '+eur(primInfo.baseAmount)+' + Aşım '+eur(primInfo.overAmount)+')</span>'
+  const _primSub = (primInfo && primInfo.pass)
+    ? ' <span style="font-weight:400;font-size:11px;color:#065f46">('+primInfo.year+'-Q'+primInfo.quarter+' · Yıl başından hak edilen '+eur(primInfo.earnedToDate)+(primInfo.overAmount>0?' · ⚡Aşım '+eur(primInfo.overAmount):'')+' · Önceki ödenen '+eur(primInfo.paidBefore)+(primInfo.carry>0?' · Devir '+eur(primInfo.carry):'')+')</span>'
     : (primInfo && !primInfo.pass ? ' <span style="font-weight:400;font-size:11px">(eşik altı — prim oluşmadı)</span>' : '');
   const primBanner = (isAdmin && primInfo) ? `
   <div style="background:${primInfo.pass?'#ecfdf5':'#fef2f2'};border:1px solid ${primInfo.pass?'#a7f3d0':'#fecaca'};border-radius:10px;padding:12px 16px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center">
-    <div style="font-size:13px;font-weight:700;color:${primInfo.pass?'#065f46':'#991b1b'}">💰 Öngörülen Prim${_primSub}</div>
-    <div style="font-size:20px;font-weight:800;color:${primInfo.pass?'#16a34a':'#dc2626'}">${eur(primInfo.primAmount)}</div>
+    <div style="font-size:13px;font-weight:700;color:${primInfo.pass?'#065f46':'#991b1b'}">💰 Q${primInfo.quarter} Ödenecek Prim${_primSub}</div>
+    <div style="font-size:20px;font-weight:800;color:${primInfo.pass?'#16a34a':'#dc2626'}">${eur(primInfo.pass?primInfo.thisQuarterPayable:0)}</div>
   </div>` : '';
 
   // Dönem hedefleri özeti (ana menü) — seçili ayın kümülatif (YTD) hedefleri tek bakışta.
@@ -5734,10 +5875,10 @@ function printPersonelReport(person, period, isAdmin){
       <div style="font-size:19px;font-weight:800;color:#1e3a8a;line-height:1.2">${n.hedef}</div>
       <div style="font-size:11px;color:#475569;margin-top:5px">Gerçekleşen: <b style="color:#0f172a">${n.gerc}</b> &nbsp;·&nbsp; Kalan: ${n.kalan}</div>
     </div>` : '';
-  const _mCards = [ _mCard('Bireysel Satış Hedefi (YTD)', bireyN), _mCard('Şirket Satış Hedefi (YTD)', compN), _mCard('Karlılık Marj Hedefi', karlN) ].filter(Boolean).join('');
+  const _mCards = [ _mCard('Bireysel Satış Hedefi (Yıllık)', bireyN), _mCard('Şirket Satış Hedefi (Yıllık)', compN), _mCard('Karlılık Marj Hedefi', karlN) ].filter(Boolean).join('');
   const monthTargetSection = _mCards ? `
   <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px 16px;margin-bottom:18px">
-    <div style="font-size:14px;font-weight:800;color:#1e3a8a;margin-bottom:10px">🎯 ${escapeHtml(_mName)} ${escapeHtml(_mYear)} — Toplam Hedef <span style="font-size:11px;font-weight:400;color:#64748b">(yıl başından bu aya kümülatif / YTD)</span></div>
+    <div style="font-size:14px;font-weight:800;color:#1e3a8a;margin-bottom:10px">🎯 ${escapeHtml(_mYear)} Mali Yılı — Yıllık Hedef <span style="font-size:11px;font-weight:400;color:#64748b">(gerçekleşen: yıl başından ${escapeHtml(_mName)} sonuna kümülatif / YTD)</span></div>
     <div style="display:flex;flex-wrap:wrap;gap:10px">${_mCards}</div>
   </div>` : '';
 
@@ -5898,26 +6039,36 @@ function printPersonelReport(person, period, isAdmin){
 // ═══ TEST MODU — örnek verilerle performans/prim hesabını dener, DB'ye HİÇ yazmaz ═══
 function personelTestModeToggle(period){
   if(state.testMode){ personelTestModeExit(); return; }
-  // Mevcut veriyi yedekle (çıkışta geri yüklenir)
+  // Mevcut veriyi yedekle (çıkışta geri yüklenir) — yıl bazlı hedefler + kümülatif kâr/ciro dahil
   state._testBackup = {
     evaluations: JSON.parse(JSON.stringify(state.evaluations||[])),
-    targets: JSON.parse(JSON.stringify(state.targets||{})),
-    profitActuals: JSON.parse(JSON.stringify(state.profitActuals||{})),
+    targetsByYear: JSON.parse(JSON.stringify(state.targetsByYear||{})),
+    profitByRep: JSON.parse(JSON.stringify(state.profitByRep||{})),
+    revenueByRep: JSON.parse(JSON.stringify(state.revenueByRep||{})),
   };
   const P = period || (state.personelPeriod || today().slice(0,7));
+  const year = _periodYear(P) || new Date().getFullYear();
   const people = personelPeople();
-  if(!state.targets.reps) state.targets.reps = {};
-  if(!state.targets.serviceReps) state.targets.serviceReps = {};
-  if(!state.targets.profitReps) state.targets.profitReps = {};
-  if(!state.profitActuals) state.profitActuals = {};
+  // Seçili yılın hedef objesini garanti et ve state.targets'ı ona işaretle (personelAnnualRatio aynı objeyi okur)
+  if(!state.targetsByYear) state.targetsByYear = {};
+  if(!state.targetsByYear[year]) state.targetsByYear[year] = _emptyTargets();
+  const T = state.targetsByYear[year];
+  if(!T.reps) T.reps = {}; if(!T.serviceReps) T.serviceReps = {}; if(!T.profitReps) T.profitReps = {};
+  state.targets = T;
+  if(!state.profitByRep) state.profitByRep = {};
+  if(!state.revenueByRep) state.revenueByRep = {};
   const evals = (state.evaluations||[]).slice();
   people.forEach((u,idx)=>{
     const n = u.displayName;
-    // Örnek hedefler + gerçekleşmeler (dönüşümlü değerler → farklı skorlar görünsün)
-    state.targets.reps[n]        = state.targets.reps[n]        || 1200000;
-    state.targets.serviceReps[n] = state.targets.serviceReps[n] || 300000;
-    state.targets.profitReps[n]  = state.targets.profitReps[n]  || 20;              // hedef %20 marj
-    state.profitActuals[n] = { [P]: [27.7, 18.5, 22.0, 15.0][idx%4] };             // gerçekleşen marj %
+    // Örnek yıllık hedefler (dönüşümlü değerler → farklı skorlar görünsün)
+    T.reps[n]        = T.reps[n]        || 1200000;
+    T.serviceReps[n] = T.serviceReps[n] || 300000;
+    T.profitReps[n]  = T.profitReps[n]  || 20;                                     // hedef %20 marj
+    // Kümülatif blended marj için örnek kâr+ciro (tek dönem yeter; _cumMarginPct aynı yıl aylarını toplar)
+    const marginPct = [27.7, 18.5, 22.0, 15.0][idx%4];
+    const rev = 400000;
+    state.revenueByRep[n] = { [P]: rev };
+    state.profitByRep[n]  = { [P]: rev*marginPct/100 };
     // Örnek yönetici puanı + manuel kriterler
     const ex = evals.find(e=>e.personName===n && e.period===P);
     const rec = ex ? {...ex, criteria:{...(ex.criteria||{})}} : { id:'test_'+idx, personName:n, department:u.department, period:P, criteria:{}, managerScore:0 };
@@ -5935,7 +6086,8 @@ function personelTestModeToggle(period){
 }
 function personelTestModeExit(){
   const b = state._testBackup;
-  if(b){ state.evaluations=b.evaluations; state.targets=b.targets; state.profitActuals=b.profitActuals; }
+  if(b){ state.evaluations=b.evaluations; state.targetsByYear=b.targetsByYear; state.profitByRep=b.profitByRep; state.revenueByRep=b.revenueByRep;
+    state.targets = targetsForYear(_currentFY()); }
   state._testBackup = null;
   state.testMode = false;
   showToast('✅ Test modu kapatıldı — gerçek veriler geri yüklendi');
@@ -5989,9 +6141,59 @@ async function personelAutoGenerateTasks(){
   }catch(e){ /* sessiz — otomatik görev üretimi ana CRM akışını etkilemez */ }
 }
 
+// ── MANUEL DEVİR (carry-over) ──
+// Hiçbir fırsat otomatik taşınmaz. Yönetici, devam eden AÇIK fırsatlardan bir sonraki mali yıla
+// sayılmasını istediklerini elle işaretler → o.fiscalYear = sonrakiYıl. İşaret kaldırılırsa kapanış yılına döner.
+const _CARRY_OPEN_STAGES = ['TEKLİF','SICAK-1','SICAK-2','ERTELENDİ'];
+function openCarryoverModal(fromYear){ setState({modal:{type:'carryover', fromYear:Number(fromYear)}}); }
+function buildCarryoverModal(fromYear){
+  fromYear = Number(fromYear); const toYear = fromYear+1;
+  const cands = (state.opportunities||[])
+    .filter(o=>_CARRY_OPEN_STAGES.indexOf(o.stage)>=0 && (_pOppFY(o)===fromYear || Number(o.fiscalYear)===toYear))
+    .sort((a,b)=>String(a.title||'').localeCompare(String(b.title||''),'tr'));
+  const boxes = [];
+  const container = h('div',{});
+  container.appendChild(h('div',{style:{fontSize:'12px',color:'#92400e',lineHeight:'1.6',marginBottom:'12px',background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'10px',padding:'10px 12px'}},
+    'Devam eden (açık) fırsatlardan '+fromYear+' → '+toYear+' mali yılına TAŞINACAK olanları işaretleyin. İşaretliler '+toYear+' hedefine (1. aydan itibaren) sayılır. Hiçbir şey otomatik taşınmaz; yalnızca seçtikleriniz.'));
+  if(!cands.length){
+    container.appendChild(h('div',{style:{padding:'20px',textAlign:'center',color:T4}},'Taşınabilecek açık fırsat yok.'));
+  } else {
+    cands.forEach(o=>{
+      const cb = h('input',{type:'checkbox',style:{width:'18px',height:'18px',cursor:'pointer',flexShrink:'0'}});
+      cb.checked = Number(o.fiscalYear)===toYear;
+      boxes.push({o,cb});
+      container.appendChild(h('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',borderBottom:'1px solid #eef2f7'}},
+        cb,
+        h('div',{style:{flex:'1',minWidth:'0'}},
+          h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35'}},o.title||'(başlıksız)'),
+          h('div',{style:{fontSize:'11px',color:T4}},(o.customer||o.customerName||'-')+' · '+o.stage+' · '+eur(Number(o.value)||0)+' · '+(o.assignedTo||'-')+' · Kapanış: '+(_pOppDate(o)||'-')+(Number(o.fiscalYear)?(' · ⤳ '+o.fiscalYear):''))
+        )
+      ));
+    });
+  }
+  const saveBtn = btn('💾 Devri Kaydet', async()=>{
+    let n=0;
+    for(const {o,cb} of boxes){
+      const want = cb.checked;
+      const isCarried = Number(o.fiscalYear)===toYear;
+      if(want && !isCarried){ await personelSaveDoc('opportunities', {...o, fiscalYear:toYear}); n++; }
+      else if(!want && Number(o.fiscalYear)){ const r={...o}; delete r.fiscalYear; await personelSaveDoc('opportunities', r); n++; }
+    }
+    showToast(n?('✅ '+n+' fırsat güncellendi.'):'Değişiklik yok.');
+    setState({modal:null});
+  },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','9px 16px',{flex:'1'});
+  container.appendChild(h('div',{style:{display:'flex',gap:'8px',marginTop:'14px'}}, saveBtn, btn('Kapat',()=>setState({modal:null}),'#e8eef7','#4a6080','9px 14px')));
+  return modal('🔄 '+fromYear+' → '+toYear+' Fırsat Devri', container, ()=>setState({modal:null}), '640px');
+}
+
 function renderPersonel(){
   const cu = state.currentUser; const isAdmin = !!(cu && cu.isAdmin);
   const period = state.personelPeriod || today().slice(0,7);
+  // Seçili dönemin YILI = aktif mali yıl → hedef modalı ve saveTargets bu yıla göre çalışır.
+  // NOT: state.targets'a DOKUNULMAZ (dashboard onu içinde bulunulan yıl için okur); prim hesapları
+  // zaten targetsForYear(period yılı) ile doğrudan çalışır → dashboard hedefleri kaymaz.
+  const fy = _periodYear(period) || new Date().getFullYear();
+  if(Number(state.fiscalYear)!==fy) state.fiscalYear = fy;
   const subTabs=[{id:'gorevler',l:'✅ Görevler'},{id:'performans',l:'📊 Performans'}];
   if(isAdmin) subTabs.push({id:'prim',l:'💰 Prim'});
   let active = state.personelTab || 'gorevler';
@@ -6008,6 +6210,9 @@ function renderPersonel(){
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
       h('span',{style:{fontSize:'12px',color:T3,fontWeight:'600'}},'Dönem:'),
       periodInp,
+      h('span',{style:{fontSize:'11px',fontWeight:'700',color:'#1e3a6e',background:'#dbeafe',padding:'4px 9px',borderRadius:'8px'}},'Mali Yıl '+fy),
+      isAdmin?btn('🎯 '+fy+' Hedefleri',()=>openTargetsModal(),'#e8eef7','#2a5080','9px 14px',{fontSize:'12px',border:'1px solid #b8c8de'}):h('span'),
+      isAdmin?btn('🔄 Devir',()=>openCarryoverModal(fy),'#fef3c7','#92400e','9px 14px',{fontSize:'12px',border:'1px solid #fcd34d'}):h('span'),
       isAdmin?btn('⚙ Ayarlar',()=>{PMOD.settingsOpen=!PMOD.settingsOpen;render();},'#e8eef7','#2a5080','9px 14px',{fontSize:'12px',border:'1px solid #b8c8de'}):h('span')
     )
   );
@@ -6242,40 +6447,60 @@ function renderPersonelPrim(period){
       'Departman atanmış personel yok.');
   }
   const note = h('div',{style:{background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'10px',padding:'10px 14px',marginBottom:'12px',fontSize:'12px',color:'#92400e'}},
-    '🔒 Prim verileri yalnızca yöneticiye görünür ve Firestore kurallarıyla sunucu tarafında kilitlidir. Prim tabanı/eşik/hızlandırıcı değerlerini ⚙ Ayarlar’dan düzenleyin.');
+    '🔒 Prim verileri yalnızca yöneticiye görünür. Primler ÇEYREKLİK ödenir; hak ediş YILLIK hedefe göre kümülatiftir. '
+    + '“Bu çeyrek ödenecek” = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz, fazlası sonraki çeyreğe devreder). '
+    + 'Aşım primi yalnızca yıl kapanışında (Q4) yıllık hedefi aşanlara verilir.');
 
   const cards = people.map(u=>{
     const pr = personelPrim(u, period);
     if(!pr) return h('span');
     const open = !!PMOD.primOpen[u.email];
+    const nm = u.displayName;
+    const rec = _ledgerRec(pr.year, nm);
+    const qPaidRec = rec.quarters && rec.quarters[pr.quarter];
+    const alreadyPaid = qPaidRec && Number(qPaidRec.amount)>=0 && qPaidRec.date;
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
+      h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,marginBottom:'6px'}},'Kriter kırılımı (yıl başından hak edilen €)'),
       ...pr.avail.map(r=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
-        h('span',{style:{color:'#334155'}},r.label),
+        h('span',{style:{color:'#334155'}},r.label+' <span style="color:#94a3b8">'+Math.round((r.weight/pr.wsum)*100)+'%</span>'),
         h('span',{style:{fontWeight:'700',color:'#0f1f35'}},eur(pr.breakdown[r.kod]||0))
-      ))
+      )),
+      h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'6px 0 0',marginTop:'4px',borderTop:'1px dashed #e2e8f0',fontSize:'12px'}},
+        h('span',{style:{color:'#334155'}},'Taban (kümülatif)'), h('span',{style:{fontWeight:'700'}},eur(pr.baseAmount))),
+      pr.overAmount>0 ? h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
+        h('span',{style:{color:'#7c3aed'}},'⚡ Aşım (Q4)'), h('span',{style:{fontWeight:'700',color:'#7c3aed'}},eur(pr.overAmount))) : h('span'),
+      h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
+        h('span',{style:{color:'#334155'}},'Yıl başından hak edilen'), h('span',{style:{fontWeight:'700'}},eur(pr.earnedToDate))),
+      h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
+        h('span',{style:{color:'#334155'}},'Önceki çeyreklerde ödenen'), h('span',{style:{fontWeight:'700'}},eur(pr.paidBefore))),
+      pr.carry>0 ? h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
+        h('span',{style:{color:'#dc2626'}},'Fazla avans → devir'), h('span',{style:{fontWeight:'700',color:'#dc2626'}},eur(pr.carry))) : h('span')
     ) : h('span');
     return h('div',{style:{background:'#ffffff',border:'1px solid '+(pr.pass?'#bbf7d0':'#e2e8f0'),borderRadius:'12px',padding:'14px',marginBottom:'10px'}},
       h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
         h('div',{style:{flex:'1',minWidth:'120px'}},
-          h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#0f1f35'}},u.displayName),
-          h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[u.department]||u.department)+' · Skor '+Math.round((pr.skor||0)*100)+'% · Eşik '+Math.round((pr.cfg.threshold||0)*100)+'%'+(pr.accel>1?' · ⚡'+pr.accel+'x':''))
+          h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#0f1f35'}},nm),
+          h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[u.department]||u.department)+' · '+pr.year+'-Q'+pr.quarter+' · Skor '+Math.round((pr.skor||0)*100)+'% · Eşik '+Math.round((pr.cfg.threshold||0)*100)+'%')
         ),
         h('div',{style:{textAlign:'right'}},
-          h('div',{style:{fontSize:'19px',fontWeight:'800',color:pr.pass?'#16a34a':'#94a3b8'}}, pr.pass?eur(pr.primAmount):'Prim yok'),
-          h('div',{style:{fontSize:'10px',color:T4}}, pr.pass?'Hesaplanan Prim':'Eşik altı')
+          h('div',{style:{fontSize:'19px',fontWeight:'800',color:pr.pass?(pr.thisQuarterPayable>0?'#16a34a':'#94a3b8'):'#94a3b8'}}, pr.pass?eur(pr.thisQuarterPayable):'Prim yok'),
+          h('div',{style:{fontSize:'10px',color:T4}}, pr.pass?('Q'+pr.quarter+' Ödenecek'):'Eşik altı')
+            ,alreadyPaid?h('div',{style:{fontSize:'10px',color:'#16a34a',fontWeight:'700',marginTop:'2px'}},'✓ Kaydedildi ('+_toTR(qPaidRec.date)+')'):h('span')
         )
       ),
       h('div',{style:{display:'flex',gap:'8px',marginTop:'10px',flexWrap:'wrap'}},
         btn(open?'▲ Kırılımı gizle':'▼ Kırılım',()=>{PMOD.primOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}),
-        btn('💾 Primi Kaydet', async()=>{
-          const rec = {
-            id: u.email.replace(/[^a-z0-9]/gi,'_')+'_'+period,
-            personName:u.displayName, department:u.department, period,
-            primBase: pr.cfg.primBase||0, weights:{}, achievement:{},
-            primAmount: pr.primAmount, breakdown: pr.breakdown
-          };
-          pr.avail.forEach(r=>{ rec.weights[r.kod]=r.weight; rec.achievement[r.kod]=r.oran; });
-          await personelSaveDoc('prim', rec);
+        btn('💾 Çeyrek Primini Kaydet', async()=>{
+          const year=pr.year, q=pr.quarter;
+          const ledger = JSON.parse(JSON.stringify(state.primLedger||{}));
+          if(!ledger[year]) ledger[year]={};
+          if(!ledger[year][nm]) ledger[year][nm]={paid:0,quarters:{}};
+          ledger[year][nm].quarters[q] = { amount: pr.thisQuarterPayable, earned: pr.earnedToDate, skor: pr.skor, date: today() };
+          ledger[year][nm].paid = Object.values(ledger[year][nm].quarters).reduce((a,x)=>a+(Number(x.amount)||0),0);
+          state.primLedger = ledger;
+          await savePrimLedger(ledger);
+          showToast(state.testMode?'🧪 Test — kaydedilmedi':'✅ '+year+'-Q'+q+' primi kaydedildi.');
+          render();
         },'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe'})
       ),
       detail
@@ -6302,9 +6527,12 @@ function renderPersonelSettings(){
         field('Aşım ivmesi', nInp(()=>c.overAccel==null?1:c.overAccel, v=>c.overAccel=Number(v)||0), true)
       ),
       h('div',{style:{fontSize:'11px',color:'#64748b',marginTop:'6px',lineHeight:'1.5'}},
-        'Tam Prim: tüm kriterler %100 karşılandığında hak edilen toplam taban prim. Her kriter en çok kendi ağırlık payı kadar taban prim getirir; karşılanmayan kriterin payı toplamdan düşülür. Taban = Tam Prim × Σ(ağırlık × gerçekleşme, kriter başına %100 tavan). '
-        + 'Aşım Primi: yalnızca bireysel hedef ve karlılık %100&#39;ü aşarsa çalışır. Aşım = Tam Prim × Σ(ağırlık × (min(oran, aşım tavanı) − 1) × ivme). '
-        + 'Aşım tavanı: oran en çok bu kadar sayılır (1.5 = %150) — %300 aşsa bile aşım primi sınırlı kalır. İvme: aşımın ödül çarpanı (1 = normal). Skor eşiğin altındaysa hiç prim oluşmaz.')
+        'Tam Prim: tüm kriterler %100 karşılandığında hak edilen TOPLAM YILLIK taban prim. Primler ÇEYREKLİK ödenir; hak ediş YILLIK hedefe göre kümülatiftir. '
+        + 'Geçiş kapısı: dönem PACE skoru ≥ eşik ise prim oluşur (hedefe gidişat yeterli mi?). '
+        + 'Hak ediş = Tam Prim × Σ(ağırlık × kazanım). Hedef kriterleri yıllık orana göre; karlılık ve operasyonel kriterler oran × geçen süre (ay/12) ile birikir. '
+        + 'Bu çeyrek ödenecek = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz; fazla avans sonraki çeyreğe devreder). '
+        + 'Aşım Primi: YALNIZCA yıl kapanışında (Q4) ve yalnızca YILLIK hedefi aşan bireysel hedef/karlılıkta verilir. Aşım = Tam Prim × Σ(ağırlık × (min(yıllıkOran, aşım tavanı) − 1) × ivme). '
+        + 'Aşım tavanı: oran en çok bu kadar sayılır (1.5 = %150). İvme: aşımın ödül çarpanı (1 = normal). Skor eşiğin altındaysa hiç prim oluşmaz.')
     );
   });
 
@@ -6601,6 +6829,7 @@ function render() {
     else if(type==='admin') m=buildAdminModal();
     else if(type==='supplier') m=buildSupplierModal(state.modal.data||null);
     else if(type==='targets') m=buildTargetsModal();
+    else if(type==='carryover') m=buildCarryoverModal(state.modal.fromYear);
     else if(type==='proplist') m=buildPropListModal(state.modal.title, state.modal.items);
     else if(type==='reports') { buildReportsModal().then(function(el){if(el&&root)root.appendChild(el);}); }
     if(m) root.appendChild(m);
@@ -6613,7 +6842,10 @@ function render() {
 (async function init() {
   const users = await loadUsers();
   state.users = users;
-  state.targets = await loadTargets();
+  state.targetsByYear = await loadTargets();          // { '2026': {...}, ... } yıl bazlı
+  state.fiscalYear = new Date().getFullYear();         // aktif mali yıl = içinde bulunulan yıl
+  state.targets = targetsForYear(state.fiscalYear);    // seçili yılın hedef işaretçisi (mevcut okuyucular bozulmaz)
+  state.primLedger = await loadPrimLedger();
   state.strategy = await loadStrategy();
   state.evalConfig = await loadEvalConfig();
   state.profitActuals = await loadProfitActuals();
