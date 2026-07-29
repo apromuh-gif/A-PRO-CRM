@@ -6106,6 +6106,21 @@ async function personelDeleteDoc(coll, id){
   await deleteDoc(coll, id);
   setState({ [coll]: (state[coll]||[]).filter(x=>x.id!==id) });
 }
+// Fırsat devriyle bağlı teklifin kâr mali yılını Teklif Programı'nda senkronla (karlılık YTD marjı hizalanır).
+//   fy = sayı → devret, null → devri geri al. Bağlantı/anahtar yoksa veya test modundaysa sessizce atlar.
+//   Devir Firebase'de her hâlükârda kaydedilir; bu yalnızca kâr atfını hizalayan additive bir yan etkidir.
+async function _syncQuotationFiscalYear(quotationId, fy){
+  try{
+    if(!quotationId || state.testMode) return { ok:true, skipped:true };
+    if(typeof TEKLIF_APP_URL==='undefined' || typeof TEKLIF_API_KEY==='undefined' || !TEKLIF_API_KEY) return { ok:false };
+    const res = await fetch(`${TEKLIF_APP_URL}/api/v1/crm/set-fiscal-year`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-crm-key':TEKLIF_API_KEY },
+      body: JSON.stringify({ quotationId, fiscalYear: fy==null ? null : Number(fy) }),
+    });
+    return { ok: res.ok };
+  } catch(e){ return { ok:false }; }
+}
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
 async function personelAutoGenerateTasks(){
   try{
@@ -6172,14 +6187,20 @@ function buildCarryoverModal(fromYear){
     });
   }
   const saveBtn = btn('💾 Devri Kaydet', async()=>{
-    let n=0;
+    let n=0, qWarn=0;
     for(const {o,cb} of boxes){
       const want = cb.checked;
       const isCarried = Number(o.fiscalYear)===toYear;
-      if(want && !isCarried){ await personelSaveDoc('opportunities', {...o, fiscalYear:toYear}); n++; }
-      else if(!want && Number(o.fiscalYear)){ const r={...o}; delete r.fiscalYear; await personelSaveDoc('opportunities', r); n++; }
+      if(want && !isCarried){
+        await personelSaveDoc('opportunities', {...o, fiscalYear:toYear}); n++;
+        // Bağlı teklif varsa kârı da toYear'a hizala (karlılık YTD marjı fırsat devriyle örtüşür).
+        if(o.quotationId){ const r=await _syncQuotationFiscalYear(o.quotationId, toYear); if(!r.ok) qWarn++; }
+      } else if(!want && Number(o.fiscalYear)){
+        const r={...o}; delete r.fiscalYear; await personelSaveDoc('opportunities', r); n++;
+        if(o.quotationId){ const rr=await _syncQuotationFiscalYear(o.quotationId, null); if(!rr.ok) qWarn++; }
+      }
     }
-    showToast(n?('✅ '+n+' fırsat güncellendi.'):'Değişiklik yok.');
+    showToast((n?('✅ '+n+' fırsat güncellendi.'):'Değişiklik yok.') + (qWarn?(' ⚠ '+qWarn+' teklif kârı senkronlanamadı'):''), qWarn?'#d97706':'#16a34a');
     setState({modal:null});
   },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','9px 16px',{flex:'1'});
   container.appendChild(h('div',{style:{display:'flex',gap:'8px',marginTop:'14px'}}, saveBtn, btn('Kapat',()=>setState({modal:null}),'#e8eef7','#4a6080','9px 14px')));
