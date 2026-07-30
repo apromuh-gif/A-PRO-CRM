@@ -132,7 +132,8 @@ const DEFAULT_EVAL_CONFIG = {
       {kod:'sirket_hedef',   label:'Şirket hedefi gerçekleşme',   auto:true,  weight:0.10},
       {kod:'teklif_takip',   label:'Teklif takip oranı',          auto:true,  weight:0.05},
       {kod:'aktivite',       label:'Aktivite (ziyaret/randevu/fırsat)',auto:true,weight:0.05},
-      {kod:'gorev',          label:'Görev tamamlama',             auto:true,  weight:0.05},
+      {kod:'gorev',          label:'Görev tamamlama',             auto:true,  weight:0.03},
+      {kod:'gorev_dogruluk', label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.02},
       {kod:'hedefe_yonelim', label:'Hedefe yönelim (strateji)',   auto:true,  weight:0.05},
       {kod:'yonetici',       label:'Kalite / müşteri / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.10},
     ],
@@ -142,7 +143,8 @@ const DEFAULT_EVAL_CONFIG = {
     criteria:[
       {kod:'zamaninda_teslim',label:'Zamanında teslim oranı',      auto:true,  weight:0.20},
       {kod:'proje_butce',     label:'Proje bütçe hedefi',           auto:false, weight:0.30},
-      {kod:'is_emri',         label:'İş emri tamamlama',            auto:true,  weight:0.05},
+      {kod:'is_emri',         label:'İş emri tamamlama',            auto:true,  weight:0.03},
+      {kod:'gorev_dogruluk',  label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.02},
       {kod:'is_guvenligi',    label:'İş güvenliği — uygunsuzluk',   auto:false, weight:0.15},
       {kod:'iscilik_kalite',  label:'İşçilik kalitesi & yeniden-iş',auto:false, weight:0.10},
       {kod:'saha_rapor',      label:'Saha raporu disiplini',        auto:false, weight:0.05},
@@ -158,7 +160,8 @@ const DEFAULT_EVAL_CONFIG = {
       {kod:'periyodik_bakim', label:'Periyodik bakım zamanında',     auto:true, weight:0.20},
       {kod:'acik_servis',     label:'Açık/geciken servis sayısı',    auto:true, weight:0.10},
       {kod:'ilk_cozum',       label:'İlk seferde çözüm oranı',       auto:false,weight:0.15},
-      {kod:'gorev',           label:'Görev tamamlama',               auto:true, weight:0.05},
+      {kod:'gorev',           label:'Görev tamamlama',               auto:true, weight:0.03},
+      {kod:'gorev_dogruluk',  label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.02},
       {kod:'yonetici',        label:'Kalite / müşteri / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.10},
     ],
   },
@@ -169,7 +172,8 @@ const DEFAULT_EVAL_CONFIG = {
       {kod:'km_tasi',         label:'Kilometre taşı zamanında teslim',auto:true, weight:0.20},
       {kod:'kesif_sure',      label:'Keşif/teklif hazırlama süresi',  auto:true, weight:0.15},
       {kod:'teknik_dogruluk', label:'Teknik doğruluk / revizyon',     auto:false,weight:0.25},
-      {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.10},
+      {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.06},
+      {kod:'gorev_dogruluk',  label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.04},
       {kod:'yonetici',        label:'Kalite / müşteri / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.10},
     ],
   },
@@ -181,7 +185,8 @@ const DEFAULT_EVAL_CONFIG = {
       {kod:'yasal_uyum',      label:'Yasal-mali yükümlülük uyumu',    auto:false,weight:0.15},
       {kod:'evrak_duzen',     label:'Evrak & arşiv düzeni',           auto:false,weight:0.15},
       {kod:'raporlama',       label:'Raporlama zamanında hazırlama',  auto:true, weight:0.10},
-      {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.10},
+      {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.06},
+      {kod:'gorev_dogruluk',  label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.04},
       {kod:'yonetici',        label:'Kalite / iç-dış ilişki / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.15},
     ],
   },
@@ -5650,24 +5655,50 @@ function personelPeople(){
   return (state.users||[]).filter(u=>u.active!==false && u.department);
 }
 function personelTaskStats(name, period, ytd){
-  const win = ytd ? _pYtdInPeriod : _pInPeriod;   // ytd=true → yıl başından döneme kümülatif
-  const ts = (state.tasks||[]).filter(t=>t.assignedTo===name && (win(t.dueDate,period)||win(t.completedAt,period)));
+  const win = ytd ? _pYtdInPeriod : _pInPeriod;
+  const fy = _periodYear(period);
+  const ts = (state.tasks||[]).map(normTask)
+    .filter(t=>recFY(t)===fy && t.assignedTo===name && (win(t.dueDate,period)||win(t.completedAt,period)));
   const total = ts.length;
-  const done = ts.filter(t=>t.status==='tamam').length;
-  return { total, done, ratio: total? done/total : 0 };
+  const done = ts.filter(t=>taskIsClosed(t)).length;
+  // Performans sebebiyle bu kişinin elinden alınmış görevler → negatif sinyal
+  const takenAway = (state.tasks||[]).map(normTask).filter(t=>recFY(t)===fy &&
+    (t.assignmentHistory||[]).some(h=>h.from===name && h.reason==='performans')).length;
+  const denom = total + takenAway;
+  return { total, done, takenAway, ratio: denom? done/denom : 0 };
 }
 // Zamanında teslim oranı — tamamlanan görevlerin vadesinde kapatılma oranı (tamamlama ≠ zamanında)
 function personelTaskPunctual(name, period, ytd){
   const win = ytd ? _pYtdInPeriod : _pInPeriod;
-  const ts = (state.tasks||[]).filter(t=>t.assignedTo===name && (win(t.dueDate,period)||win(t.completedAt,period)));
+  const fy = _periodYear(period);
+  const ts = (state.tasks||[]).map(normTask)
+    .filter(t=>recFY(t)===fy && t.assignedTo===name && (win(t.dueDate,period)||win(t.completedAt,period)));
   if(!ts.length) return null;
   const onTime = ts.filter(t=>{
-    if(!_pIsDone(t.status)) return false;               // tamamlanmamış = zamanında değil
-    if(!t.dueDate) return true;                          // vade yoksa zamanında say
-    const done = String(t.completedAt||today()).slice(0,10);
-    return done <= String(t.dueDate).slice(0,10);
+    if(!taskIsClosed(t)) return false;
+    if(!t.dueDate) return true;
+    const doneD = String(t.completedAt||today()).slice(0,10);
+    const dueD = String(t.dueDate).slice(0,10);
+    if(doneD!==dueD) return doneD < dueD ? true : doneD===dueD;
+    if(t.dueTime && t.completedAt && String(t.completedAt).length>10){
+      return String(t.completedAt).slice(11,16) <= t.dueTime;
+    }
+    return true;
   }).length;
   return onTime/ts.length;
+}
+// Doğruluk = ilk seferde onaylanan / (onaylanan + revizyona düşen), yalnız onay gerektiren görevler.
+// Performans sebebiyle elinden alınanlar da payda tarafına eklenir (kalite düşürücü).
+function personelTaskDogruluk(name, period){
+  const fy = _periodYear(period);
+  const ts = (state.tasks||[]).map(normTask).filter(t=>recFY(t)===fy && t.assignedTo===name && t.needsApproval);
+  const approvedClean = ts.filter(t=>t.status==='onaylandi' && (t.revisionCount||0)===0).length;
+  const reviseCount = ts.reduce((a,t)=>a+(t.revisionCount||0),0);
+  const takenAway = (state.tasks||[]).map(normTask).filter(t=>recFY(t)===fy &&
+    (t.assignmentHistory||[]).some(h=>h.from===name && h.reason==='performans')).length;
+  const denom = approvedClean + reviseCount + takenAway;
+  if(denom===0) return null;
+  return approvedClean/denom;
 }
 // ON-TRACK oranı döndürür (prim GEÇİŞ eşiği + performans göstergesi için).
 //  • Hedef kriterleri (birey/şirket): pace bazlı = YTD kazanılan ÷ (yıllık × geçen ay/12) → "ilerlemede miyim".
@@ -5742,6 +5773,8 @@ function personelAutoMetric(kod, name, period, dept){
       if(!ss.length) return null;
       return ss.filter(s=>_pIsDone(s.status)).length/ss.length;
     }
+    case 'gorev_dogruluk':
+      return personelTaskDogruluk(name, period);
     // Görev tamamlama oranı (tamamlanan/toplam) — YTD kümülatif
     case 'gorev':
     case 'is_emri': {
