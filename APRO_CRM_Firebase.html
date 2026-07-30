@@ -6179,6 +6179,106 @@ function _personelActivity(name, period){
   return wonY||oppM||propM||taskM||visitM||apptM||evalM;
 }
 // Tek personel performans raporu — yönetici-personel birebir görüşmesinde kullanılacak nitelikte çıktı.
+// ═══ PRİM BORDROSU — çeyreklik prim kırılımı, çıktı alınabilir temiz format ═══
+function printPrimBordro(person, period){
+  const pr = personelPrim(person, period);
+  if(!pr){ showToast('⚠ Bu personel için prim verisi yok.','#dc2626'); return; }
+  const nm = person.displayName;
+  const dept = DEPT_LABEL[person.department]||person.department||'-';
+  const skorPct = Math.round((pr.skor||0)*100);
+  const thrPct = Math.round((pr.cfg.threshold||0)*100);
+
+  const critRows = (pr.avail||[]).map(r=>{
+    const wPct = Math.round((r.weight/pr.wsum)*100);
+    const amt = pr.breakdown[r.kod]||0;
+    return `<tr>
+      <td>${escapeHtml(r.label)}</td>
+      <td style="text-align:center;color:#64748b">%${wPct}</td>
+      <td style="text-align:right;font-weight:700">${eur(amt)}</td>
+    </tr>`;
+  }).join('');
+
+  const sumRow = (lbl,val,opt) => `<tr style="${opt&&opt.bg?'background:'+opt.bg+';':''}">
+    <td colspan="2" style="text-align:right;font-weight:${opt&&opt.bold?'800':'700'};color:${opt&&opt.color||'#334155'}">${lbl}</td>
+    <td style="text-align:right;font-weight:${opt&&opt.bold?'800':'700'};color:${opt&&opt.color||'#0f1f35'}">${eur(val)}</td>
+  </tr>`;
+
+  const passBadge = pr.pass
+    ? `<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">✔ Eşik aşıldı — prim hak edildi</span>`
+    : `<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">✕ Eşik altı — prim oluşmadı</span>`;
+
+  const printHTML = `<!DOCTYPE html>
+<html lang="tr"><head><meta charset="UTF-8"/>
+<title>A-PRO CRM — Prim Bordrosu</title>
+<style>
+  body{font-family:Arial,sans-serif;padding:28px;color:#1e293b;font-size:13px;max-width:760px;margin:0 auto}
+  h1{color:#1e2d4a;font-size:19px;margin:0 0 4px}
+  .meta{font-size:11px;color:#64748b;margin-bottom:18px}
+  .hdr{display:flex;align-items:center;gap:14px;background:#f0f5fc;border:1px solid #b0c8e0;border-radius:10px;padding:16px;margin-bottom:16px}
+  .avatar{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#0891b2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0}
+  .big{text-align:right}
+  .big .val{font-size:26px;font-weight:800;color:${pr.pass&&pr.thisQuarterPayable>0?'#16a34a':'#94a3b8'}}
+  .big .lbl{font-size:10px;color:#64748b;text-transform:uppercase}
+  h2{color:#1e2d4a;font-size:14px;margin:20px 0 10px;border-bottom:2px solid #1e2d4a;padding-bottom:6px}
+  table{width:100%;border-collapse:collapse;margin-bottom:16px}
+  th{background:#1e2d4a;color:#fff;padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase}
+  th.c{text-align:center}th.r{text-align:right}
+  td{padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px}
+  tbody tr:nth-child(even){background:#f8fafc}
+  .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:34px}
+  .sign .box{border-top:1px solid #334155;padding-top:6px;font-size:11px;color:#475569;text-align:center}
+  @media print{body{padding:10px}.no-print{display:none}}
+</style></head>
+<body>
+  <h1>⚡ A-PRO İş Takip CRM — Çeyreklik Prim Bordrosu</h1>
+  <div class="meta">Dönem: ${escapeHtml(period)} (${pr.year}-Q${pr.quarter}) · Yazdırma tarihi: ${new Date().toLocaleString('tr-TR')} · Hazırlayan: ${escapeHtml((state.currentUser&&state.currentUser.displayName)||'-')}</div>
+  <div class="hdr">
+    <div class="avatar">${escapeHtml(nm.split(' ').map(n=>n[0]).join('').slice(0,2))}</div>
+    <div style="flex:1">
+      <div style="font-size:17px;font-weight:800;color:#0f1f35">${escapeHtml(nm)}</div>
+      <div style="font-size:12px;color:#64748b">${escapeHtml(dept)}${person.email?' · '+escapeHtml(person.email):''}</div>
+      <div style="font-size:12px;color:#475569;margin-top:4px">Skor: <b>${skorPct}%</b> · Eşik: %${thrPct} &nbsp; ${passBadge}</div>
+    </div>
+    <div class="big">
+      <div class="val">${eur(pr.pass?pr.thisQuarterPayable:0)}</div>
+      <div class="lbl">Q${pr.quarter} Ödenecek</div>
+    </div>
+  </div>
+  <h2>📋 Kriter Kırılımı <span style="font-size:11px;font-weight:400;color:#64748b">(yıl başından hak edilen €)</span></h2>
+  <table>
+    <thead><tr><th>Kriter</th><th class="c">Ağırlık</th><th class="r">Hak Edilen</th></tr></thead>
+    <tbody>${critRows||'<tr><td colspan="3" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
+    <tfoot>
+      ${sumRow('Taban (kümülatif)', pr.baseAmount)}
+      ${pr.overAmount>0?sumRow('⚡ Aşım (Q4)', pr.overAmount, {color:'#7c3aed'}):''}
+      ${sumRow('Yıl başından hak edilen', pr.earnedToDate, {bg:'#f0fdf4', bold:true})}
+      ${sumRow('Önceki çeyreklerde ödenen', pr.paidBefore)}
+      ${pr.carry>0?sumRow('Fazla avans → devir', pr.carry, {color:'#dc2626'}):''}
+      ${sumRow('Bu çeyrek ödenecek', pr.pass?pr.thisQuarterPayable:0, {bg:'#ecfdf5', bold:true, color:'#16a34a'})}
+    </tfoot>
+  </table>
+  <div style="font-size:11px;color:#64748b;line-height:1.6;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px">
+    Primler <b>çeyreklik</b> ödenir; hak ediş <b>yıllık</b> hedefe göre kümülatiftir. “Bu çeyrek ödenecek” = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz, fazlası sonraki çeyreğe devreder). Aşım primi yalnızca yıl kapanışında (Q4) yıllık hedefi aşanlara verilir.
+  </div>
+  <div class="sign">
+    <div class="box">Personel — Ad Soyad / İmza / Tarih</div>
+    <div class="box">Yönetici — Ad Soyad / İmza / Tarih</div>
+  </div>
+  <div style="margin-top:24px;font-size:10px;color:#94a3b8;text-align:center">A-PRO Mühendislik · CRM Sistemi · Gizlidir</div>
+</body></html>`;
+
+  var ep=document.getElementById('print-overlay'); if(ep) ep.remove();
+  var po=document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
+  var ptb=document.createElement('div'); ptb.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#1e2d4a;color:#fff;flex-shrink:0;';
+  var ptbT=document.createElement('div'); ptbT.style.cssText='font-weight:800;font-size:15px;'; ptbT.textContent='🖨️ Prim Bordrosu — '+nm;
+  var ptbB=document.createElement('div'); ptbB.style.cssText='display:flex;gap:10px;';
+  var ppBtn=document.createElement('button'); ppBtn.textContent='🖨️ Yazdır'; ppBtn.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; ppBtn.onclick=function(){window.print();};
+  var pcBtn=document.createElement('button'); pcBtn.textContent='✕ Kapat'; pcBtn.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; pcBtn.onclick=function(){var el=document.getElementById('print-overlay');if(el)el.remove();};
+  ptbB.appendChild(ppBtn); ptbB.appendChild(pcBtn); ptb.appendChild(ptbT); ptb.appendChild(ptbB); po.appendChild(ptb);
+  var pc=document.createElement('div'); pc.style.cssText='flex:1;overflow-y:auto;'; pc.innerHTML=printHTML; po.appendChild(pc);
+  document.body.appendChild(po);
+}
+
 function printPersonelReport(person, period, isAdmin){
   const sc = personelScore(person, period);
   if(!sc){ showToast('⚠ Bu personel için değerlendirme verisi yok.','#dc2626'); return; }
@@ -7667,7 +7767,7 @@ function renderPersonelPrim(period){
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
       h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,marginBottom:'6px'}},'Kriter kırılımı (yıl başından hak edilen €)'),
       ...pr.avail.map(r=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
-        h('span',{style:{color:'#334155'}},r.label+' <span style="color:#94a3b8">'+Math.round((r.weight/pr.wsum)*100)+'%</span>'),
+        h('span',{style:{color:'#334155'}},r.label+' ',h('span',{style:{color:'#94a3b8'}},'%'+Math.round((r.weight/pr.wsum)*100))),
         h('span',{style:{fontWeight:'700',color:'#0f1f35'}},eur(pr.breakdown[r.kod]||0))
       )),
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'6px 0 0',marginTop:'4px',borderTop:'1px dashed #e2e8f0',fontSize:'12px'}},
@@ -7706,7 +7806,8 @@ function renderPersonelPrim(period){
           await savePrimLedger(ledger);
           showToast(state.testMode?'🧪 Test — kaydedilmedi':'✅ '+year+'-Q'+q+' primi kaydedildi.');
           render();
-        },'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe'})
+        },'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe'}),
+        btn('🖨️ Prim Bordrosu',()=>printPrimBordro(u, period),'#ecfdf5','#065f46','7px 12px',{fontSize:'12px',border:'1px solid #a7f3d0'})
       ),
       detail
     );
@@ -7894,8 +7995,8 @@ function render() {
 
   // TABS
   const SERVICE_TABS = [
-    {id:'services',   l:'🔧 Teknik Servis'},
-    {id:'serviceopps',l:'🔧 T.Servis İş Takip'},
+    {id:'services',   l:'🔧 T. Servis Hizmet Takibi'},
+    {id:'serviceopps',l:'🔧 T. Servis Teklif Takip'},
     {id:'maintenance',l:'⚙️ Periyodik Bakım Takip'},
   ];
   const isServiceTab = ['services','serviceopps','maintenance'].includes(state.tab);
