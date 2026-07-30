@@ -821,7 +821,7 @@ function normTask(t){
   });
 }
 // ---- Faz 2: Proje icra erişimcileri (okuma-anında varsayılan, migration yok) ----
-function projStage(o){ return (o && o.execStage) || 'teknik'; }
+function projStage(o){ return (o && typeof PROJECT_STAGES!=='undefined' && PROJECT_STAGES.includes(o.execStage)) ? o.execStage : 'teknik'; }
 function projIsActive(o){ return !!(o && o.execActive===true && !o.execClosedAt); }
 function projIsAwaiting(o){ return !!(o && o.stage==='KAZANILDI' && o.execActive!==true); }
 function projIsClosed(o){ return !!(o && o.execActive===true && o.execClosedAt); }
@@ -7083,7 +7083,7 @@ function buildProjeModal(oppId){
   const tasksBox = groups.length? h('div',{}, ...groups)
     : h('div',{style:{padding:'16px',textAlign:'center',color:T4}},'Bu projeye bağlı görev yok. "Bu aşamaya görev öner" ile başlayın.');
 
-  const cust=state.customers.find(c=>c.id===o.customerId)||null;
+  const cust=(state.customers||[]).find(c=>c.id===o.customerId)||null;
   const content=h('div',{},
     cust?h('div',{style:{fontSize:'13px',color:T3,marginBottom:'10px'}},'👤 '+(cust.firmName||cust.name||'')):h('span'),
     strip, actBar,
@@ -7101,7 +7101,7 @@ function projFilterMgr(list, isAdmin){
 }
 function projListRow(o, isAdmin){
   const st=projStage(o), meta=PROJECT_STAGE_META[st], open=projOpenCount(o, st);
-  const cust=state.customers.find(c=>c.id===o.customerId)||null;
+  const cust=(state.customers||[]).find(c=>c.id===o.customerId)||null;
   return h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'},onclick:()=>setState({modal:{type:'proje',oppId:o.id}})},
     h('div',{style:{flex:'1',minWidth:'160px'}},
       h('div',{style:{fontWeight:'700',color:'#0f2040',fontSize:'14px'}},o.title||'(başlıksız)'),
