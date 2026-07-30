@@ -6682,6 +6682,29 @@ async function servReopen(s){
   await personelSaveDoc('services', upd);
 }
 // ================= /FAZ 3a =================
+// ================= FAZ 3b: PERİYODİK BAKIM VADE/TEKRAR =================
+// Periyot seçenekleri (UI + etiket kaynağı).
+const MAINT_PERIODS = [
+  {v:'',       l:'Takip yok'},
+  {v:'aylik',  l:'Aylık'},
+  {v:'3aylik', l:'3 Aylık'},
+  {v:'6aylik', l:'6 Aylık'},
+  {v:'yillik', l:'Yıllık'},
+  {v:'ozel',   l:'Özel (gün)'},
+];
+// Tarih yardımcıları — timezone-safe, baz tarihe göreli (bugüne değil).
+function _ymd(dt){ return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0'); }
+function _addDay(iso, n){ const dt=_toDate(iso); if(!dt) return ''; dt.setDate(dt.getDate()+Number(n)); return _ymd(dt); }
+function _addMonth(iso, n){ const dt=_toDate(iso); if(!dt) return ''; const d0=dt.getDate(); dt.setDate(1); dt.setMonth(dt.getMonth()+Number(n)); const last=new Date(dt.getFullYear(), dt.getMonth()+1, 0).getDate(); dt.setDate(Math.min(d0, last)); return _ymd(dt); }
+// Okuma-anı default'lu güvenli erişimciler (mevcut kayıtları bozmaz).
+function maintPeriod(m){ return (m && m.mtPeriod) || ''; }
+function maintPeriodDays(m){ return (m && Number(m.mtPeriodDays)) || 0; }
+function maintNextDue(m){ return (m && m.mtNextDue) || ''; }
+function maintLastDone(m){ return (m && m.mtLastDone) || ''; }
+function maintHistory(m){ return (m && Array.isArray(m.mtHistory)) ? m.mtHistory : []; }
+function maintIsTracked(m){ return !!(m && m.mtPeriod && m.mtNextDue); }
+function maintPeriodLabel(p){ const o=MAINT_PERIODS.find(x=>x.v===p); return o ? o.l : ''; }
+// ================= /FAZ 3b =================
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
 async function personelAutoGenerateTasks(){
   try{
