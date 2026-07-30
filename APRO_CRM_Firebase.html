@@ -665,6 +665,7 @@ let state = {
   targets: { company: 0, reps: {} },     // SEÇİLİ mali yılın hedefleri (targetsByYear[fiscalYear] işaretçisi)
   targetsByYear: {},                     // { '2026': {company,reps,...}, '2027': {...} } — yıl bazlı hedefler
   fiscalYear: new Date().getFullYear(),  // aktif mali yıl (prim/hedef bu yıla göre hesaplanır)
+  activeFiscalYear: new Date().getFullYear(), // GLOBAL aktif mali yıl (settings/config; mercek + yeni kayıt damgası)
   primLedger: {},                        // { yıl: { isim: { paid, quarters:{Q:{amount,earned,skor,date}} } } }
   profitByRep: {}, revenueByRep: {},     // Teklif Programı'ndan ham kâr+ciro (YTD kümülatif blended marj için)
   geminiKey: '',
@@ -737,6 +738,55 @@ function targetsForYear(y){
   return byY[String(y)] || byY[y] || _emptyTargets();
 }
 function _currentFY(){ return Number(state.fiscalYear) || new Date().getFullYear(); }
+
+// ════════ MALİ YIL ALTYAPISI (global aktif yıl + yıl merceği) ════════
+// GLOBAL aktif mali yıl: tüm yıla-ait ekranlar bu yıla göre süzülür; yeni kayıtlar bu yıla damgalanır.
+function activeFiscalYear(){ return Number(state.activeFiscalYear) || new Date().getFullYear(); }
+// Yıla-ait koleksiyonlar (mercek uygulanır). Müşteri/Tedarikçi/Periyodik Bakım ORTAK → burada YOK.
+const FY_SCOPED_COLLECTIONS = ['opportunities','proposals','services','serviceOpps','visits','appointments','tasks','evaluations'];
+// Bir kaydın MERCEK yılı (hangi mali yıl bölümünde görünür): sabit damga varsa o, yoksa doğuş (createdAt) yılı.
+//   → updatedAt KULLANILMAZ (açık kaydın yılı düzenlemeyle kaymasın). Prim atfı ayrı fonksiyondadır (_pOppFY).
+function recFY(rec){
+  if(!rec) return 0;
+  if(rec.fiscalYear!=null && rec.fiscalYear!=='') return Number(rec.fiscalYear)||0;
+  const c = String(rec.createdAt||rec.date||rec.dueDate||rec.period||'');
+  return Number(c.slice(0,4)) || new Date().getFullYear();
+}
+// Listeyi aktif mali yıla göre süz (yıla-ait koleksiyonlar için).
+function filterFY(list, year){
+  const y = Number(year)||activeFiscalYear();
+  return (list||[]).filter(r=>recFY(r)===y);
+}
+// Aktif mali yılda o koleksiyonda HİÇ kayıt yoksa "temiz yıl" bilgilendirme şeridi (yoksa boş span).
+function fyEmptyBanner(coll, label){
+  const y = activeFiscalYear();
+  if(filterFY(state[coll], y).length>0) return h('span');
+  return h('div',{style:{background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:'11px',padding:'12px 15px',marginBottom:'12px',fontSize:'12px',color:'#3730a3',lineHeight:'1.6'}},
+    '📅 '+y+' mali yılında henüz '+label+' kaydı yok — bu yıl temiz bir bölüm olarak başladı. Yeni kayıt ekleyebilir ya da Araçlar → Mali Yıl ekranından önceki yıldan devir yapabilirsiniz.');
+}
+// Aktif mali yılı yükle: settings/config.activeFiscalYear; yoksa/eskiyse takvim yılına OTOMATİK ilerlet (1 Ocak geçişi).
+async function loadActiveFiscalYear(){
+  const calYear = new Date().getFullYear();
+  try {
+    const snap = await db.collection('settings').doc('config').get();
+    const stored = snap.exists ? Number(snap.data().activeFiscalYear)||0 : 0;
+    // Otomatik ilerleme: kayıtlı yıl takvim yılından küçükse yeni yıla geç ve kalıcılaştır.
+    if(stored && stored>=calYear) return stored;
+    if(stored && stored<calYear){ try{ await db.collection('settings').doc('config').set({activeFiscalYear:calYear},{merge:true}); }catch(e){} return calYear; }
+    return calYear;
+  } catch(e){ return calYear; }
+}
+// Aktif mali yılı GLOBAL değiştir (kalıcı). Admin: yıl geçişi / geçmiş yılı görüntüleme.
+async function saveActiveFiscalYear(year){
+  const y = Number(year)||new Date().getFullYear();
+  try {
+    await db.collection('settings').doc('config').set({activeFiscalYear:y},{merge:true});
+    state.activeFiscalYear = y;
+    state.fiscalYear = y;                                  // eski okuyucularla uyum
+    state.targets = targetsForYear(y);
+    return true;
+  } catch(e){ showToast('❌ Mali yıl kaydedilemedi!','#dc2626'); return false; }
+}
 // YIL BAZLI hedefleri döndürür: { '2026': {...}, ... }. Eski DÜZ yapıyı otomatik içinde bulunulan yıla sarar.
 async function loadTargets() {
   try {
@@ -1188,7 +1238,7 @@ async function saveFirm(form, isEdit) {
 async function saveAppointment(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
+  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
   await saveDoc('appointments', id, data);
   const list = isEdit ? (state.appointments||[]).map(a=>a.id===id?data:a) : [...(state.appointments||[]), data];
   setState({appointments:list, modal:null, saving:false});
@@ -1226,7 +1276,7 @@ function buildAppointmentModal(item) {
 async function saveVisit(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
+  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
   await saveDoc('visits', id, data);
   const list = isEdit ? state.visits.map(v=>v.id===id?data:v) : [...state.visits, data];
   setState({visits:list, modal:null, saving:false});
@@ -1236,7 +1286,7 @@ async function saveVisit(form, isEdit) {
 async function saveServiceOpp(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
+  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
   await saveDoc('serviceOpps', id, data);
   const list = isEdit ? state.serviceOpps.map(s=>s.id===id?data:s) : [...state.serviceOpps, data];
   setState({serviceOpps:list, modal:null, saving:false});
@@ -1275,7 +1325,7 @@ async function approveWonQuotation(opp) {
 async function saveOpp(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
+  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
   await saveDoc('opportunities', id, data);
   const list = isEdit ? state.opportunities.map(o=>o.id===id?data:o) : [...state.opportunities, data];
   setState({opportunities:list, modal:null, saving:false});
@@ -1286,7 +1336,7 @@ async function saveOpp(form, isEdit) {
 async function saveProp(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
+  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
 
   // Hazırlayan değişti mi veya yeni kayıt mı? → Anlık sesli bildirim
   const cu = state.currentUser;
@@ -1315,7 +1365,7 @@ async function saveProp(form, isEdit) {
 async function saveServ(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
+  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
   await saveDoc('services', id, data);
   const list = isEdit ? state.services.map(s=>s.id===id?data:s) : [...state.services, data];
   setState({services:list, modal:null, saving:false});
@@ -3242,10 +3292,11 @@ function miniTable(headers, rows) {
 // A — YÖNETİCİ DASHBOARD
 // ═══════════════════════════════════════════════════════
 function renderDashboardAdmin() {
-  const O = state.opportunities;
-  const P = state.proposals;
-  const S = state.services;
-  const M = state.maintenances;
+  const _fy = activeFiscalYear();                       // yıl merceği: aktif mali yıl
+  const O = filterFY(state.opportunities, _fy);
+  const P = filterFY(state.proposals, _fy);
+  const S = filterFY(state.services, _fy);
+  const M = state.maintenances;                          // ORTAK — mercek uygulanmaz
   const LOST = ["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
 
   // Tarih aralığı filtresi
@@ -3515,8 +3566,9 @@ function renderDashboardAdmin() {
 // B — SATIŞ / PROJE DASHBOARD
 // ═══════════════════════════════════════════════════════
 function renderDashboardSales() {
-  const O = state.opportunities;
-  const P = state.proposals;
+  const _fy = activeFiscalYear();                       // yıl merceği: aktif mali yıl
+  const O = filterFY(state.opportunities, _fy);
+  const P = filterFY(state.proposals, _fy);
   const cu = state.currentUser;
   const LOST = ["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
 
@@ -3925,8 +3977,8 @@ function renderDashboardSales() {
 // C — PAZARLAMA / İŞ GELİŞTİRME DASHBOARD
 // ═══════════════════════════════════════════════════════
 function renderDashboardMarketing() {
-  const O_ALL = state.opportunities;
-  const C = state.customers;
+  const O_ALL = filterFY(state.opportunities, activeFiscalYear());  // yıl merceği
+  const C = state.customers;                                        // ORTAK — mercek yok
   const LOST = ["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
 
   // Tarih filtresi
@@ -4696,7 +4748,8 @@ function renderOpportunities() {
   const f = state.filters;
   const EMPTY=FILTER_EMPTY;
   const custById=id=>state.customers.find(c=>c.id===id);
-  const fo = state.opportunities.filter(o=>{
+  const _fyOpps = filterFY(state.opportunities, activeFiscalYear());   // yıl merceği
+  const fo = _fyOpps.filter(o=>{
     if(f.oppQ){const _q=f.oppQ.toLowerCase();const _cn=(custById(o.customerId)?.firmName||'').toLowerCase();if(!(o.title||'').toLowerCase().includes(_q)&&!_cn.includes(_q))return false;}
     if(f.title){if(f.title===EMPTY){if((o.title||'').trim())return false;}else if(!(o.title||'').toLowerCase().includes(f.title.toLowerCase()))return false;}
     if(f.customer){if(f.customer===EMPTY){if(o.customerId)return false;}else if(o.customerId!==f.customer)return false;}
@@ -4760,6 +4813,7 @@ function renderOpportunities() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},
         btn('Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),
         (()=>{const lp=state.proposals.find(p=>p.opportunityId===o.id&&p.quotationId);const qId=o.quotationId||(lp&&lp.quotationId);if(!qId)return btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','6px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'});const crmSent=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];const qStatus=o.quotationStatus||(lp&&lp.quotationStatus);const isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);return isDraft?btn('✏️ Taslağı Aç',()=>openQuotationWithSSO(qId),'#fffbeb','#b45309','6px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn('🔗 Teklif Programı',()=>openQuotationWithSSO(qId),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});})(),
+        (_CARRY_OPEN_STAGES.indexOf(o.stage)>=0)?btn('↦ '+(recFY(o)+1),()=>carryOverOpp(o),'#fef3c7','#92400e','6px 10px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',whiteSpace:'nowrap'}):h('span'),
         btn('Sil',()=>delItem('opportunities',o.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})
       ))
     );
@@ -4772,6 +4826,7 @@ function renderOpportunities() {
       h('h2',{style:{fontSize:isMobO?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🎯 Satış Fırsatları ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+fo.length+'/'+state.opportunities.length+')')),
       btn('+ Yeni Fırsat',()=>setState({modal:{type:'opportunity',item:null}}),'linear-gradient(135deg,#ea580c,#d97706)','#fff',isMobO?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(234,88,12,.3)'})
     ),
+    fyEmptyBanner('opportunities','fırsat'),
     filterBox,
     isMobO ?
     h('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}},
@@ -4792,6 +4847,7 @@ function renderOpportunities() {
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             (()=>{const lp=state.proposals.find(p=>p.opportunityId===o.id&&p.quotationId);const qId=o.quotationId||(lp&&lp.quotationId);if(!qId)return btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','7px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'});const crmSent=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];const qStatus=o.quotationStatus||(lp&&lp.quotationStatus);const isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);return isDraft?btn('✏️ Taslağı Aç',()=>openQuotationWithSSO(qId),'#fffbeb','#b45309','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn('🔗 Teklif Programı',()=>openQuotationWithSSO(qId),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'});})(),
             btn('✏️ Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#fff3cd','#d97706','7px 14px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',flex:'1'}),
+            (_CARRY_OPEN_STAGES.indexOf(o.stage)>=0)?btn('↦ '+(recFY(o)+1),()=>carryOverOpp(o),'#fef3c7','#92400e','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):h('span'),
             btn('🗑️',()=>{if(confirm('Bu fırsatı silmek istediğinizden emin misiniz?')){deleteDoc('opportunities',o.id).then(()=>setState({opportunities:state.opportunities.filter(x=>x.id!==o.id)}));}},'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
         );
@@ -4810,13 +4866,14 @@ function renderProposals() {
   const pf=state.propFilters;
   const EMPTY=FILTER_EMPTY;
   const today0=new Date();today0.setHours(0,0,0,0);
-  const hiddenPropsArr=state.proposals.filter(p=>{
+  const _fyProps = filterFY(state.proposals, activeFiscalYear());   // yıl merceği
+  const hiddenPropsArr=_fyProps.filter(p=>{
     if(p.status!=='Gönderildi'||!p.sentDate)return false;
     const diff=Math.floor((today0-_toDate(p.sentDate))/(1000*60*60*24));
     return diff>5;
   });
   const autoHidden=hiddenPropsArr.length;
-  const propFiltered=state.proposals.filter(p=>{
+  const propFiltered=_fyProps.filter(p=>{
     // Fırsatlardan otomatik oluşturulan proposal'lar burada görünmez (manuel kayıtlar için)
     if(p.source==='opportunity')return false;
     // Gönderildi + sentDate'den 5 gün geçtiyse Teklifler listesinden gizle (veri silinmez)
@@ -4888,6 +4945,7 @@ function renderProposals() {
       h('h2',{style:{fontSize:isMobP?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'📄 Teklif Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+propFiltered.length+'/'+state.proposals.length+')'),autoHidden>0?h('span',{style:{fontSize:'11px',color:'#0284c7',fontWeight:'500',marginLeft:'8px',background:'#e0f2fe',padding:'2px 8px',borderRadius:'10px',cursor:'pointer',textDecoration:'underline'},title:'Tıkla: Gizlenen teklifleri gör ve düzenle',onClick:()=>setState({modal:{type:'proplist',title:'🙈 Otomatik Gizlenen Teklifler (+5 gün)',items:hiddenPropsArr}})},autoHidden+' teklif otomatik gizlendi — Görmek için tıkla'):h('span')),
       btn('+ Yeni Teklif Talebi',()=>setState({modal:{type:'proposal',item:null}}),'linear-gradient(135deg,#0284c7,#2563eb)','#fff',isMobP?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(2,132,199,.3)'})
     ),
+    fyEmptyBanner('proposals','teklif'),
     propFilterBox,
     isMobP ?
     h('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}},
@@ -4923,7 +4981,7 @@ function renderProposals() {
 // ═══════════════════════════════════════════════════════
 function renderServiceOpps() {
   const custById = id => state.customers.find(c=>c.id===id);
-  const O = state.serviceOpps||[];
+  const O = filterFY(state.serviceOpps, activeFiscalYear());   // yıl merceği
 
   // Filtreler
   if(!state.svcOppFilters) state.svcOppFilters = {title:'',assigned:'',stage:'',cust:''};
@@ -4997,6 +5055,7 @@ function renderServiceOpps() {
       h('h2',{style:{fontSize:isMobSO?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🔧 T.Servis İş Takip ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+filtered.length+'/'+(state.serviceOpps||[]).length+')')),
       btn('+ Yeni İş Takip',()=>setState({modal:{type:'serviceopp',item:null}}),'linear-gradient(135deg,#ea580c,#d97706)','#fff',isMobSO?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(234,88,12,.3)'})
     ),
+    fyEmptyBanner('serviceOpps','servis iş takip'),
     filterBox,
     isMobSO ?
     h('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}},
@@ -5029,7 +5088,8 @@ function renderServices() {
   if(!state.svcFilters) state.svcFilters={job:'',prep:'',cust:''};
   const sf=state.svcFilters;
   const EMPTY=FILTER_EMPTY;
-  const svcFiltered=state.services.filter(s=>{
+  const _fySvc = filterFY(state.services, activeFiscalYear());   // yıl merceği
+  const svcFiltered=_fySvc.filter(s=>{
     if(sf.q){const _q=sf.q.toLowerCase();const _cn=(custById(s.customerId)?.firmName||'').toLowerCase();if(!(s.jobName||'').toLowerCase().includes(_q)&&!_cn.includes(_q)&&!(s.preparedBy||'').toLowerCase().includes(_q))return false;}
     if(sf.job){if(sf.job===EMPTY){if((s.jobName||'').trim())return false;}else if(s.jobName!==sf.job)return false;}
     if(sf.prep){if(sf.prep===EMPTY){if((s.preparedBy||'').trim())return false;}else if(s.preparedBy!==sf.prep)return false;}
@@ -5113,6 +5173,7 @@ function renderServices() {
       h('h2',{style:{fontSize:isMobSvc?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🔧 Teknik Servis ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+svcFiltered.length+'/'+state.services.length+')')),
       btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#0891b2,#0284c7)','#fff',isMobSvc?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(8,145,178,.3)'})
     ),
+    fyEmptyBanner('services','teknik servis'),
     svcFilterBox,
     isMobSvc ?
     h('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}},
@@ -5149,7 +5210,7 @@ function renderAppointments() {
   const af = state.apptFilters;
   const EMPTY=FILTER_EMPTY;
 
-  const appts = [...(state.appointments||[])].sort((a,b)=>{
+  const appts = filterFY(state.appointments, activeFiscalYear()).sort((a,b)=>{   // yıl merceği
     const da=(_toISO(a.apptDate)||'')+(a.apptTime||'');
     const db=(_toISO(b.apptDate)||'')+(b.apptTime||'');
     return da>db?1:da<db?-1:0;
@@ -5257,6 +5318,7 @@ function renderAppointments() {
       h('h2',{style:{fontSize:'20px',fontWeight:'800',color:'#0f1f35'}},'📅 Randevular ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+filtered.length+'/'+(state.appointments||[]).length+')')),
       btn('+ Yeni Randevu',()=>setState({modal:{type:'appointment',item:null}}),'linear-gradient(135deg,#7c3aed,#6d28d9)','#fff','10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(124,58,237,.3)'})
     ),
+    fyEmptyBanner('appointments','randevu'),
     todayBanner,
     filterBox,
     list
@@ -5298,7 +5360,7 @@ function renderVisits() {
   const vf = state.visitFilters;
   const EMPTY=FILTER_EMPTY;
 
-  const visits = [...(state.visits||[])].sort((a,b)=>{ 
+  const visits = filterFY(state.visits, activeFiscalYear()).sort((a,b)=>{   // yıl merceği
     if(!a.visitDate) return 1; if(!b.visitDate) return -1;
     return _toISO(b.visitDate||'').localeCompare(_toISO(a.visitDate||''));
   });
@@ -5392,6 +5454,7 @@ h('span')
       h('h2',{style:{fontSize:'20px',fontWeight:'800',color:'#0f1f35'}},'📝 Müşteri Ziyaretleri ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+filtered.length+'/'+(state.visits||[]).length+')')),
       btn('+ Yeni Ziyaret',()=>setState({modal:{type:'visit',item:null}}),'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(37,99,235,.3)'})
     ),
+    fyEmptyBanner('visits','ziyaret'),
     filterBox,
     list
   );
@@ -6131,7 +6194,7 @@ async function personelAutoGenerateTasks(){
     const push = (id,title,name,due,linkedType,linkedId,desc) => {
       if(existing.has(id) || !name) return;
       existing.add(id);
-      toAdd.push({ id, title, desc:desc||'', assignedTo:name, department:deptOf(name), dueDate:due||'', status:'acik', completedAt:null, priority:'orta', linkedType, linkedId, autoGenerated:true, createdBy:'sistem', createdAt:today() });
+      toAdd.push({ id, title, desc:desc||'', assignedTo:name, department:deptOf(name), dueDate:due||'', status:'acik', completedAt:null, priority:'orta', linkedType, linkedId, autoGenerated:true, createdBy:'sistem', createdAt:today(), fiscalYear: activeFiscalYear() });
     };
     const offsetDay = n => { const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
     const cutoff = offsetDay(-90), soon = offsetDay(30);
@@ -6161,6 +6224,16 @@ async function personelAutoGenerateTasks(){
 // sayılmasını istediklerini elle işaretler → o.fiscalYear = sonrakiYıl. İşaret kaldırılırsa kapanış yılına döner.
 const _CARRY_OPEN_STAGES = ['TEKLİF','SICAK-1','SICAK-2','ERTELENDİ'];
 function openCarryoverModal(fromYear){ setState({modal:{type:'carryover', fromYear:Number(fromYear)}}); }
+// Tek fırsatı sonradan (fırsat bazlı) bir sonraki mali yıla taşı — bulunduğu bölüm yılının +1'ine.
+async function carryOverOpp(o){
+  const to = recFY(o)+1;
+  if(!confirm('"'+(o.title||'Fırsat')+'" fırsatı '+to+' mali yılına taşınsın mı?\n\nBu fırsat '+to+' bölümüne geçer ve '+to+' hedef/primlerine sayılır.')) return;
+  const upd = {...o, fiscalYear: to, ...stamp()};
+  await saveDoc('opportunities', o.id, upd);
+  setState({opportunities: (state.opportunities||[]).map(x=>x.id===o.id?upd:x)});
+  if(o.quotationId){ const r=await _syncQuotationFiscalYear(o.quotationId, to); showToast('↦ '+to+' yılına taşındı.'+(r.ok?'':' ⚠ teklif kârı senkronlanamadı'), r.ok?'#16a34a':'#d97706'); }
+  else showToast('↦ '+to+' mali yılına taşındı.','#16a34a');
+}
 function buildCarryoverModal(fromYear){
   fromYear = Number(fromYear); const toYear = fromYear+1;
   const cands = (state.opportunities||[])
@@ -6207,14 +6280,99 @@ function buildCarryoverModal(fromYear){
   return modal('🔄 '+fromYear+' → '+toYear+' Fırsat Devri', container, ()=>setState({modal:null}), '640px');
 }
 
+// ── MALİ YIL YÖNETİMİ (Araçlar → Mali Yıl) ──
+// Muhasebe programlarındaki "Mali Yıl" bölümü gibi: aktif yılı göster, yıllar arası geçiş yap,
+// önceki yıldan fırsat devret, yeni yıl hedeflerini gir. Her yıl birbirinden BAĞIMSIZ (mercek+damga).
+function openFiscalYearModal(){ setState({modal:{type:'fiscalyear'}}); }
+// Verideki + mantıksal (geçmiş/şu an/gelecek) tüm mali yılları topla (azalan).
+function _allFiscalYears(){
+  const set = new Set();
+  const cur = activeFiscalYear();
+  set.add(cur); set.add(cur-1); set.add(cur+1);
+  FY_SCOPED_COLLECTIONS.forEach(coll=>{ (state[coll]||[]).forEach(r=>{ const y=recFY(r); if(y) set.add(y); }); });
+  return [...set].filter(y=>y>=2000&&y<=2100).sort((a,b)=>b-a);
+}
+function buildFiscalYearModal(){
+  const cur = activeFiscalYear();
+  const prev = cur-1, next = cur+1;
+  const calYear = new Date().getFullYear();
+  const container = h('div',{});
+
+  // Bilgi kutusu
+  container.appendChild(h('div',{style:{fontSize:'12px',color:'#3730a3',lineHeight:'1.6',marginBottom:'14px',background:'#eef2ff',border:'1px solid #c7d2fe',borderRadius:'10px',padding:'11px 13px'}},
+    '📅 Aktif mali yıl GLOBAL\'dir — tüm ekranlar (dashboard, fırsatlar, teklifler, servis, ziyaret, randevu, görevler, hedef ve primler) bu yıla göre süzülür. '+
+    'Müşteriler, tedarikçiler ve periyodik bakımlar her yılda ORTAK görünür. Her 1 Ocak\'ta aktif yıl otomatik ilerler.'));
+
+  // Görüntülenen mali yıl seçici (geçmiş yıla dönüp geç girişte bulunabilirsiniz)
+  const years = _allFiscalYears();
+  const yearSel = sel(years.map(y=>({v:String(y),l:'Mali Yıl '+y+(y===calYear?' (takvim yılı)':'')})), String(cur), async v=>{
+    const y=Number(v)||calYear;
+    if(y===cur) return;
+    await saveActiveFiscalYear(y);
+    showToast('📅 Aktif mali yıl: '+y,'#2563eb');
+    setState({}); // modal açık kalır, yeniden çizilir
+  }, {maxWidth:'260px',fontSize:'14px'});
+  container.appendChild(h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap',marginBottom:'8px'}},
+    h('span',{style:{fontSize:'13px',fontWeight:'700',color:'#0f1f35'}},'Görüntülenen Mali Yıl:'),
+    yearSel,
+    h('span',{style:{fontSize:'22px',fontWeight:'800',color:'#1d4ed8',background:'#dbeafe',padding:'4px 14px',borderRadius:'10px'}},String(cur))
+  ));
+
+  // Aktif yıl kayıt sayıları (yıla-ait koleksiyonlar)
+  const scopedLabels = [
+    ['opportunities','Fırsat'],['proposals','Teklif'],['services','Teknik Servis'],['serviceOpps','Servis İş Takip'],
+    ['visits','Ziyaret'],['appointments','Randevu'],['tasks','Görev'],['evaluations','Değerlendirme']
+  ];
+  const countGrid = h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))',gap:'8px',margin:'12px 0'}});
+  scopedLabels.forEach(([coll,lb])=>{
+    const n = filterFY(state[coll], cur).length;
+    countGrid.appendChild(h('div',{style:{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'10px',padding:'9px 11px'}},
+      h('div',{style:{fontSize:'20px',fontWeight:'800',color:n?'#0f1f35':'#94a3b8'}},String(n)),
+      h('div',{style:{fontSize:'11px',color:T4,fontWeight:'600'}},lb)));
+  });
+  container.appendChild(h('div',{style:{fontSize:'12px',fontWeight:'700',color:T3,marginTop:'4px'}},cur+' mali yılı kayıtları:'));
+  container.appendChild(countGrid);
+  container.appendChild(h('div',{style:{fontSize:'11px',color:T4,marginBottom:'14px'}},
+    '🔗 Ortak (tüm yıllar): '+ (state.customers||[]).length+' müşteri · '+(state.suppliers||[]).length+' tedarikçi · '+(state.maintenances||[]).length+' periyodik bakım'));
+
+  // ── 3 ADIMLI GEÇİŞ ──
+  const stepCard = (no, title, desc, btnEl) => h('div',{style:{display:'flex',gap:'12px',alignItems:'flex-start',background:'#ffffff',border:'1px solid #d0daea',borderRadius:'12px',padding:'12px 14px',marginBottom:'10px'}},
+    h('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'#1e3a6e',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:'800',fontSize:'14px',flexShrink:'0'}},String(no)),
+    h('div',{style:{flex:'1',minWidth:'0'}},
+      h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#0f1f35',marginBottom:'3px'}},title),
+      h('div',{style:{fontSize:'12px',color:T3,lineHeight:'1.5',marginBottom:'8px'}},desc),
+      btnEl));
+
+  container.appendChild(h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#0f1f35',margin:'6px 0 10px'}},'🚀 Yıl Geçişi (3 Adım)'));
+
+  // Adım 1 — Yeni yıla geç
+  const goNextBtn = btn('🎊 '+next+' Mali Yılını Aç',()=>{
+    if(!confirm(next+' mali yılına geçilsin mi?\n\nAktif yıl '+next+' olur; yeni kayıtlar '+next+' yılına işlenir. '+cur+' verileri korunur, istediğinizde bu ekrandan geri dönebilirsiniz.')) return;
+    saveActiveFiscalYear(next).then(()=>{ showToast('🎊 '+next+' mali yılı açıldı.','#16a34a'); setState({}); });
+  },'linear-gradient(135deg,#16a34a,#15803d)','#fff','9px 16px',{fontSize:'13px'});
+  container.appendChild(stepCard(1,'Yeni Mali Yılı Aç',
+    'Aktif yılı '+next+' yap. '+next+' temiz bir bölüm olarak açılır; müşteri/tedarikçi/periyodik bakım aynen görünür.', goNextBtn));
+
+  // Adım 2 — Önceki yıldan fırsat devri (prev → cur)
+  const carryBtn = btn('🔄 '+prev+' → '+cur+' Fırsat Devri',()=>{ openCarryoverModal(prev); },'#fef3c7','#92400e','9px 16px',{fontSize:'13px',border:'1px solid #fcd34d'});
+  container.appendChild(stepCard(2,'Önceki Yıldan Devam Eden Fırsatları Taşı',
+    prev+' yılından devam eden AÇIK fırsatlardan seçtiklerinizi '+cur+' yılına taşıyın. Hiçbir şey otomatik taşınmaz. (Sonradan fırsat bazlı da taşıyabilirsiniz.)', carryBtn));
+
+  // Adım 3 — Yeni yıl hedefleri
+  const targetBtn = btn('🎯 '+cur+' Hedeflerini Gir',()=>{ setState({modal:null}); openTargetsModal(); },'#e0e7ff','#3730a3','9px 16px',{fontSize:'13px',border:'1px solid #c7d2fe'});
+  container.appendChild(stepCard(3,'Yeni Yıl Hedeflerini Belirle',
+    cur+' mali yılının şirket ve temsilci hedeflerini girin. Prim ve hedef hesapları yalnızca bu yıla göre çalışır.', targetBtn));
+
+  container.appendChild(h('div',{style:{display:'flex',marginTop:'8px'}}, btn('Kapat',()=>setState({modal:null}),'#e8eef7','#4a6080','9px 18px',{fontSize:'13px'})));
+  return modal('📅 Mali Yıl Yönetimi', container, ()=>setState({modal:null}), '680px');
+}
+
 function renderPersonel(){
   const cu = state.currentUser; const isAdmin = !!(cu && cu.isAdmin);
-  const period = state.personelPeriod || today().slice(0,7);
-  // Seçili dönemin YILI = aktif mali yıl → hedef modalı ve saveTargets bu yıla göre çalışır.
-  // NOT: state.targets'a DOKUNULMAZ (dashboard onu içinde bulunulan yıl için okur); prim hesapları
-  // zaten targetsForYear(period yılı) ile doğrudan çalışır → dashboard hedefleri kaymaz.
-  const fy = _periodYear(period) || new Date().getFullYear();
-  if(Number(state.fiscalYear)!==fy) state.fiscalYear = fy;
+  // Aktif mali yıl GLOBAL'dir (settings/config) — dönem seçici artık mali yılı DEĞİŞTİRMEZ.
+  // Dönem yalnızca performans/görev ayı içindir ve aktif mali yılın içinde kalır.
+  const fy = activeFiscalYear();
+  const period = _periodYear(state.personelPeriod)===fy ? state.personelPeriod : (fy+'-'+today().slice(5,7));
   const subTabs=[{id:'gorevler',l:'✅ Görevler'},{id:'performans',l:'📊 Performans'}];
   if(isAdmin) subTabs.push({id:'prim',l:'💰 Prim'});
   let active = state.personelTab || 'gorevler';
@@ -6231,9 +6389,8 @@ function renderPersonel(){
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
       h('span',{style:{fontSize:'12px',color:T3,fontWeight:'600'}},'Dönem:'),
       periodInp,
-      h('span',{style:{fontSize:'11px',fontWeight:'700',color:'#1e3a6e',background:'#dbeafe',padding:'4px 9px',borderRadius:'8px'}},'Mali Yıl '+fy),
-      isAdmin?btn('🎯 '+fy+' Hedefleri',()=>openTargetsModal(),'#e8eef7','#2a5080','9px 14px',{fontSize:'12px',border:'1px solid #b8c8de'}):h('span'),
-      isAdmin?btn('🔄 Devir',()=>openCarryoverModal(fy),'#fef3c7','#92400e','9px 14px',{fontSize:'12px',border:'1px solid #fcd34d'}):h('span'),
+      // Mali yıl kontrolleri Araçlar → Mali Yıl ekranına taşındı. Buradaki rozet bilgilendirme amaçlı; tıklayınca o ekranı açar.
+      isAdmin?btn('📅 Mali Yıl '+fy,()=>openFiscalYearModal(),'#dbeafe','#1e3a6e','5px 11px',{fontSize:'11px',fontWeight:'700',border:'1px solid #b8d4ec'}):h('span',{style:{fontSize:'11px',fontWeight:'700',color:'#1e3a6e',background:'#dbeafe',padding:'4px 9px',borderRadius:'8px'}},'Mali Yıl '+fy),
       isAdmin?btn('⚙ Ayarlar',()=>{PMOD.settingsOpen=!PMOD.settingsOpen;render();},'#e8eef7','#2a5080','9px 14px',{fontSize:'12px',border:'1px solid #b8c8de'}):h('span')
     )
   );
@@ -6250,7 +6407,7 @@ function renderPersonel(){
 
 function renderPersonelGorevler(period, isAdmin, cu){
   const myName = cu && cu.displayName;
-  let list = (state.tasks||[]).slice();
+  let list = filterFY(state.tasks, activeFiscalYear());
   if(!isAdmin) list = list.filter(t=>t.assignedTo===myName);
   const f = PMOD.taskFilter;
   const filtered = list.filter(t=>{
@@ -6301,7 +6458,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
             assignedTo:d.assignedTo, department: person?person.department:'',
             dueDate:d.dueDate||'', status:'acik', completedAt:null,
             priority:d.priority||'orta', linkedType:'none', linkedId:'',
-            autoGenerated:false, createdBy:(state.currentUser&&state.currentUser.displayName)||'', createdAt:today()
+            autoGenerated:false, createdBy:(state.currentUser&&state.currentUser.displayName)||'', createdAt:today(), fiscalYear: activeFiscalYear()
           };
           await personelSaveDoc('tasks', rec);
           PMOD.taskAdd=false; PMOD.draft=null; showToast('✅ Görev eklendi.');
@@ -6340,7 +6497,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
     );
   }) : [h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.')];
 
-  return h('div',{}, addBtn, addPanel, filterBar, ...cards);
+  return h('div',{}, fyEmptyBanner('tasks','görev'), addBtn, addPanel, filterBar, ...cards);
 }
 
 function renderPersonelPerformans(period, isAdmin){
@@ -6647,6 +6804,8 @@ function render() {
             menu.style.right = (window.innerWidth-rect.right)+'px';
             const items = [
               ...(window.innerWidth<=768&&cu?.isAdmin?[{icon:'🎯',label:'Hedefler',color:'#0f1f35',action:()=>{menu.remove();openTargetsModal();}},{icon:'👥',label:'Kullanıcılar',color:'#0f1f35',action:()=>{menu.remove();setState({modal:{type:'admin',item:null}});}},{sep:true}]:[]),
+              {icon:'📅', label:'Mali Yıl (Yıl Geçişi)', color:'#b45309', action:()=>{ menu.remove(); openFiscalYearModal(); }},
+              {sep:true},
               {icon:'📅', label:'Aylık Rapor',     color:'#2563eb', action:()=>{ menu.remove(); generateMonthlyReport(); }},
               {icon:'📊', label:'3 Aylık Rapor',   color:'#7c3aed', action:()=>{ menu.remove(); generateQuarterlyReport(); }},
               {icon:'📋', label:'Geçmiş Raporlar', color:'#0f1f35', action:()=>{ menu.remove(); setState({modal:{type:'reports'}}); }},
@@ -6690,13 +6849,15 @@ function render() {
   // INFO BAR
   const infobar = (()=>{
     const isMI=window.innerWidth<=768;
+    const fyBadge = h('span',{style:{fontSize:'11px',fontWeight:'800',color:'#fff',background:'#1d4ed8',padding:'2px 9px',borderRadius:'20px',whiteSpace:'nowrap',letterSpacing:'.02em'}},'📅 '+activeFiscalYear());
     if(isMI) return h('div',{style:{background:'#b0cce8',borderBottom:'1px solid #90b4d4',padding:'3px 10px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
-      h('span',{style:{fontSize:'11px',color:'#0f2040',fontWeight:'700'}},'🌐 Firebase'),
+      fyBadge,
       h('span',{style:{fontSize:'11px',color:'#2a5080'}},'⚡ Gerçek zamanlı'),
-      h('span',{style:{fontSize:'11px',color:'#2a5080',fontWeight:'600'}},state.customers.length+' firma · '+state.opportunities.length+' fırsat')
+      h('span',{style:{fontSize:'11px',color:'#2a5080',fontWeight:'600'}},state.customers.length+' firma')
     );
     return h('div',{style:{background:'#b0cce8',borderBottom:'1px solid #90b4d4',padding:'6px 24px'}},
       h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',alignItems:'center',gap:'9px'}},
+        fyBadge,
         h('span',{},'🌐'),h('span',{style:{fontSize:'12px',color:'#0f2040',fontWeight:'700'}},'Firebase Veritabanı'),h('span',{style:{fontSize:'12px',color:'#2a5080'}},'— Gerçek zamanlı senkronizasyon'),
         h('span',{style:{marginLeft:'auto',fontSize:'12px',color:'#2a5080',fontWeight:'500'}},state.customers.length+' firma · '+state.opportunities.length+' fırsat · '+state.proposals.length+' teklif · '+state.services.length+' servis · '+state.maintenances.length+' bakım'),
         h('a',{href:'KULLANIM_KILAVUZU.html',target:'_blank',style:{marginLeft:'12px',background:'#1e3a6e',color:'#fff',padding:'4px 12px',borderRadius:'20px',fontSize:'11px',fontWeight:'700',textDecoration:'none',whiteSpace:'nowrap',letterSpacing:'.03em'}},'❓ Yardım')
@@ -6851,6 +7012,7 @@ function render() {
     else if(type==='supplier') m=buildSupplierModal(state.modal.data||null);
     else if(type==='targets') m=buildTargetsModal();
     else if(type==='carryover') m=buildCarryoverModal(state.modal.fromYear);
+    else if(type==='fiscalyear') m=buildFiscalYearModal();
     else if(type==='proplist') m=buildPropListModal(state.modal.title, state.modal.items);
     else if(type==='reports') { buildReportsModal().then(function(el){if(el&&root)root.appendChild(el);}); }
     if(m) root.appendChild(m);
@@ -6864,7 +7026,8 @@ function render() {
   const users = await loadUsers();
   state.users = users;
   state.targetsByYear = await loadTargets();          // { '2026': {...}, ... } yıl bazlı
-  state.fiscalYear = new Date().getFullYear();         // aktif mali yıl = içinde bulunulan yıl
+  state.activeFiscalYear = await loadActiveFiscalYear(); // GLOBAL aktif mali yıl (settings, 1 Ocak otomatik ilerler)
+  state.fiscalYear = state.activeFiscalYear;           // eski okuyucularla uyum (mercek = aktif yıl)
   state.targets = targetsForYear(state.fiscalYear);    // seçili yılın hedef işaretçisi (mevcut okuyucular bozulmaz)
   state.primLedger = await loadPrimLedger();
   state.strategy = await loadStrategy();
