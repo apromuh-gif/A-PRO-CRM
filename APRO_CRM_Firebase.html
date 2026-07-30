@@ -1216,6 +1216,7 @@ function renderLogin() {
       await loadAllData();
       setState({loading:false});
       personelAutoGenerateTasks(); // fire-and-forget, idempotent
+      taskDueReminders(); // fire-and-forget, günde bir kez bildirir
     } catch(err) {
       loginState.checking=false;
       loginState.attempts++;
@@ -6286,6 +6287,22 @@ async function personelAutoGenerateTasks(){
     for(const t of toAdd){ await saveDoc('tasks', t.id, t); }
     setState({ tasks: [...(state.tasks||[]), ...toAdd] });
   }catch(e){ /* sessiz — otomatik görev üretimi ana CRM akışını etkilemez */ }
+}
+
+// Bugün biten / geciken açık görevler için günde bir kez bildirim (localStorage anti-spam).
+function taskDueReminders(){
+  try{
+    const key='taskRemind_'+today();
+    if(localStorage.getItem(key)) return;
+    const my=(state.currentUser&&state.currentUser.displayName)||'';
+    if(!my) return;
+    const mine=(state.tasks||[]).map(normTask).filter(t=>t.assignedTo===my && !taskIsClosed(t) && t.dueDate);
+    const overdue=mine.filter(t=>String(t.dueDate)<today());
+    const dueToday=mine.filter(t=>String(t.dueDate)===today());
+    if(overdue.length) showNotification('task_overdue_'+today(),'⏰ Geciken görev',overdue.length+' göreviniz gecikti.','urgent',my);
+    else if(dueToday.length) showNotification('task_today_'+today(),'📅 Bugün biten görev',dueToday.length+' göreviniz bugün bitiyor.','warning',my);
+    localStorage.setItem(key,'1');
+  }catch(e){}
 }
 
 // ── MANUEL DEVİR (carry-over) ──
