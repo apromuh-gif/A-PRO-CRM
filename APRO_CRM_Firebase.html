@@ -1711,7 +1711,15 @@ function buildOppModal(item) {
     field('Ön Gör. Sipariş Tarihi',fDue),
     field('Teklif Referansı (tekliften otomatik)',fRef),
     h('div',{style:{display:'flex',gap:'10px',marginTop:'4px'}},
-      btn('Kaydet',()=>{if(f.title&&f.customerId)saveOpp({...f,value:Number(f.value)||0},!!item);},'linear-gradient(135deg,#ea580c,#d97706)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{
+        if(!(f.title&&f.customerId)) return;
+        // Faz 2: aktif icrası olan fırsat KAZANILDI'dan çıkarılıyorsa uyar (görevler kalır, icra durur).
+        if(item && item.execActive===true && item.stage==='KAZANILDI' && f.stage!=='KAZANILDI'){
+          if(!confirm('Bu fırsatın aktif proje icrası var. Aşama KAZANILDI dışına alınırsa icra iptal edilir (görevler kalır). Devam edilsin mi?')) return;
+          f.execActive=false;
+        }
+        saveOpp({...f,value:Number(f.value)||0},!!item);
+      },'linear-gradient(135deg,#ea580c,#d97706)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#f1f5f9','#4a6080','11px 20px',{fontSize:'14px',border:'1px solid #b0c8e0',borderRadius:'9px'})
     )
   );
