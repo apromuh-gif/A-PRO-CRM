@@ -821,8 +821,8 @@ function normTask(t){
 }
 // "Kapalı" (iş bitti) sayılan durumlar: onaylandi her zaman; tamamlandi yalnız onay gerekmiyorsa.
 function taskIsClosed(t){
-  const s = (normTask(t)||{}).status;
-  return s==='onaylandi' || (s==='tamamlandi' && !t.needsApproval);
+  const n = normTask(t)||{};
+  return n.status==='onaylandi' || (n.status==='tamamlandi' && !n.needsApproval);
 }
 // Akıllı onay varsayılanı: yüksek öncelik VEYA proje/servis bağlamı → true.
 function defaultNeedsApproval(ctx, priority){
@@ -6750,7 +6750,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
   const f = PMOD.taskFilter;
   const statusFilter = t => {
     if(f==='acik') return !taskIsClosed(t);
-    if(f==='geciken') return !taskIsClosed(t) && t.dueDate && String(t.dueDate)<today();
+    if(f==='geciken') return !taskIsClosed(t) && t.dueDate && String(t.dueDate)<=today();
     if(f==='onay') return t.status==='tamamlandi' && t.needsApproval;
     if(f==='tamam') return taskIsClosed(t);
     return true;
@@ -6759,7 +6759,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
   if(isAdmin && PMOD.taskDept) list = list.filter(t=>t.department===PMOD.taskDept);
   if(isAdmin && PMOD.taskPerson) list = list.filter(t=>t.assignedTo===PMOD.taskPerson);
 
-  const chips = [['acik','Açık'],['geciken','Geciken'],['onay','Onay Bekleyen'],['tamam','Kapalı'],['hepsi','Hepsi']];
+  const chips = [['acik','Açık'],['geciken','Bugün/Geciken'],['onay','Onay Bekleyen'],['tamam','Kapalı'],['hepsi','Hepsi']];
   const filterBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
     ...chips.map(([id,lb])=>btn(lb,()=>{PMOD.taskFilter=id;render();},f===id?'#1e3a6e':'#e8eef7',f===id?'#fff':'#2a5080','7px 13px',{fontSize:'12px',border:'1px solid #b8c8de'}))
   );
