@@ -713,7 +713,7 @@ let state = {
 let toastTimer = null;
 
 // Personel modülü (Faz 1) — geçici UI durumu (render dışı, additive)
-let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'liste', taskDept:'', taskPerson:'', projView:'liste', projDept:'', projPerson:'', projShowClosed:false, arizaTab:'tumu', arizaView:'liste' };
+let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'liste', taskDept:'', taskPerson:'', projView:'liste', projDept:'', projPerson:'', projShowClosed:false, arizaTab:'tumu', arizaView:'liste', maintTab:'tumu' };
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -5741,6 +5741,29 @@ function renderMaintenances() {
     if(mf.cust){if(mf.cust===EMPTY){if(m.customerId)return false;}else if(m.customerId!==mf.cust)return false;}
     return true;
   });
+  const mTab=PMOD.maintTab||'tumu';
+  const _due=st=>maintFiltered.filter(m=>maintDueStatus(m)===st);
+  const upcomingM=_due('yaklasan');
+  const overdueM=_due('geciken');
+  const maintTabBar=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
+    ...[['tumu','📋 Tümü',maintFiltered.length],['yaklasan','🟡 Yaklaşan',upcomingM.length],['geciken','🔴 Geciken',overdueM.length]].map(x=>
+      btn(x[1]+' ('+x[2]+')',()=>{PMOD.maintTab=x[0];render();},mTab===x[0]?'#0e7490':'#e8eef7',mTab===x[0]?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}))
+  );
+  const maintInfoNote=h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},'ℹ️ Periyodik Bakım = yasal zorunlu tekrarlayan bakım vade takibi.');
+  const maintDueRow=m=>{
+    const stt=maintDueStatus(m), c=stt==='geciken'?'#dc2626':stt==='yaklasan'?'#d97706':'#16a34a';
+    const dl=maintDaysLeft(m), cust=custById(m.customerId);
+    return h('div',{style:{background:'#fff',border:'1px solid '+(stt==='geciken'?'#fca5a5':'#d0daea'),borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'}},
+      h('div',{style:{flex:'1',minWidth:'160px'}},
+        h('div',{style:{fontWeight:'700',color:'#0f2040'}},(stt==='geciken'?'🔴 ':'')+(m.jobName||'(başlıksız)')),
+        cust?h('div',{style:{fontSize:'12px',color:T3}},'👤 '+(cust.firmName||'')):h('span'),
+        h('div',{style:{fontSize:'11px',color:T4}},'Vade: '+(maintNextDue(m)?_toTR(maintNextDue(m)):'-')+' · '+maintPeriodLabel(maintPeriod(m)))
+      ),
+      h('span',{style:{background:c+'18',color:c,border:'1px solid '+c+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},dl<0?Math.abs(dl)+' gün gecikti':dl+' gün kaldı'),
+      btn('✅ Tamamla',()=>maintDone(m),'linear-gradient(135deg,#16a34a,#15803d)','#fff','7px 12px',{fontSize:'12px'}),
+      btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe'})
+    );
+  };
   const maintFilterBox=h('div',{style:{background:'#edf5fc',border:'1px solid #b0c8e0',borderRadius:'12px',padding:'12px 14px',marginBottom:'14px'}},
     h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#1e3a5f',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'10px'}},'🔍 Filtreler'),
     h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'flex-end'}},
@@ -5777,11 +5800,27 @@ function renderMaintenances() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(m.customerId)||c.name===m.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
   });
+  const maintHeaderRow=h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
+    h('h2',{style:{fontSize:isMobM?'16px':'20px',fontWeight:'800',color:'#0f1f35'}},'⚙️ Periyodik Bakım ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+maintFiltered.length+'/'+state.maintenances.length+')')),
+    btn(isMobM?'+ Bakım':'+ Yeni Periyodik Bakım Takip',()=>setState({modal:{type:'maintenance',item:null}}),'linear-gradient(135deg,#16a34a,#15803d)','#fff',isMobM?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(22,163,74,.3)'})
+  );
+  if(mTab==='yaklasan'){
+    return h('div',{style:{animation:'fu .3s ease'}}, maintHeaderRow, maintTabBar, maintInfoNote,
+      upcomingM.length ? h('div',{}, ...upcomingM.sort((a,b)=>maintDaysLeft(a)-maintDaysLeft(b)).map(maintDueRow))
+        : h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'15 gün içinde vadesi gelen bakım yok.'));
+  }
+  if(mTab==='geciken'){
+    return h('div',{style:{animation:'fu .3s ease'}}, maintHeaderRow, maintTabBar, maintInfoNote,
+      overdueM.length ? h('div',{}, ...overdueM.sort((a,b)=>maintDaysLeft(a)-maintDaysLeft(b)).map(maintDueRow))
+        : h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Vadesi geçmiş bakım yok. 👍'));
+  }
   return h('div',{style:{animation:'fu .3s ease'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
       h('h2',{style:{fontSize:isMobM?'16px':'20px',fontWeight:'800',color:'#0f1f35'}},'⚙️ Periyodik Bakım ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+maintFiltered.length+'/'+state.maintenances.length+')')),
       btn(isMobM?'+ Bakım':'+ Yeni Periyodik Bakım Takip',()=>setState({modal:{type:'maintenance',item:null}}),'linear-gradient(135deg,#16a34a,#15803d)','#fff',isMobM?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(22,163,74,.3)'})
     ),
+    maintTabBar,
+    maintInfoNote,
     maintFilterBox,
     isMobM ?
     h('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}},
