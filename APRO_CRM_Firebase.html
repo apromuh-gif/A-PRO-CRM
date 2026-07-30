@@ -6792,7 +6792,27 @@ function renderPersonelGorevler(period, isAdmin, cu){
     ? renderTaskKanban(filtered)
     : h('div',{}, ...(filtered.length? filtered.map(t=>taskCard(t,isAdmin,myName)) : [h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.')]));
 
-  return h('div',{}, fyEmptyBanner('tasks','görev'), addBtn, addPanel, ctxBar, mgrBar, filterBar, viewBar, body);
+  return h('div',{}, fyEmptyBanner('tasks','görev'), renderTaskDigest(isAdmin, myName), addBtn, addPanel, ctxBar, mgrBar, filterBar, viewBar, body);
+}
+
+function renderTaskDigest(isAdmin, myName){
+  const all = filterFY(state.tasks, activeFiscalYear()).map(normTask);
+  const mine = all.filter(t=>t.assignedTo===myName && !taskIsClosed(t) && t.dueDate);
+  const wkEnd = _offsetDay(7);
+  const today0 = today();
+  const bugun = mine.filter(t=>String(t.dueDate)<=today0);
+  const buHafta = mine.filter(t=>String(t.dueDate)>today0 && String(t.dueDate)<=wkEnd);
+  const onayBekleyen = isAdmin
+    ? all.filter(t=>t.status==='tamamlandi' && t.needsApproval)
+    : all.filter(t=>t.status==='tamamlandi' && t.needsApproval && t.assignedBy===myName);
+  const chip=(lbl,n,color,onClick)=> n?h('div',{style:{background:color+'14',border:'1px solid '+color+'55',borderRadius:'10px',padding:'8px 12px',cursor:'pointer',fontSize:'12px',fontWeight:'700',color},onclick:onClick},lbl+': '+n):null;
+  const items=[
+    chip('⏰ Bugün/Geciken', bugun.length, '#dc2626', ()=>{PMOD.taskFilter='geciken';render();}),
+    chip('📅 Bu hafta', buHafta.length, '#b45309', ()=>{PMOD.taskFilter='acik';render();}),
+    chip('✅ Onay bekleyen', onayBekleyen.length, '#16a34a', ()=>{PMOD.taskFilter='onay';render();}),
+  ].filter(Boolean);
+  if(!items.length) return h('span');
+  return h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'12px'}}, ...items);
 }
 
 function renderTaskAddPanel(isAdmin, myName){
