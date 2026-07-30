@@ -5761,7 +5761,8 @@ function renderMaintenances() {
       ),
       h('span',{style:{background:c+'18',color:c,border:'1px solid '+c+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},dl<0?Math.abs(dl)+' gün gecikti':dl+' gün kaldı'),
       btn('✅ Tamamla',()=>maintDone(m),'linear-gradient(135deg,#16a34a,#15803d)','#fff','7px 12px',{fontSize:'12px'}),
-      btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe'})
+      btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe'}),
+      btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'12px',border:'1px solid #fecaca'})
     );
   };
   const maintFilterBox=h('div',{style:{background:'#edf5fc',border:'1px solid #b0c8e0',borderRadius:'12px',padding:'12px 14px',marginBottom:'14px'}},
