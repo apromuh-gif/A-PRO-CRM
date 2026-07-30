@@ -708,7 +708,7 @@ let state = {
 let toastTimer = null;
 
 // Personel modülü (Faz 1) — geçici UI durumu (render dışı, additive)
-let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false };
+let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'liste', taskDept:'', taskPerson:'' };
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -6631,97 +6631,165 @@ function buildTaskModal(taskId){
 
 function renderPersonelGorevler(period, isAdmin, cu){
   const myName = cu && cu.displayName;
-  let list = filterFY(state.tasks, activeFiscalYear());
-  if(!isAdmin) list = list.filter(t=>t.assignedTo===myName);
-  const f = PMOD.taskFilter;
-  const filtered = list.filter(t=>{
-    if(f==='acik') return t.status!=='tamam';
-    if(f==='geciken') return t.status!=='tamam' && t.dueDate && String(t.dueDate)<today();
-    if(f==='tamam') return t.status==='tamam';
-    return true;
-  }).sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')));
+  let list = filterFY(state.tasks, activeFiscalYear()).map(normTask);
+  if(!isAdmin) list = list.filter(t=>t.assignedTo===myName || t.assignedBy===myName);
 
-  const chips = [['acik','Açık'],['geciken','Geciken'],['tamam','Tamamlanan'],['hepsi','Hepsi']];
-  const filterBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}},
+  const ctxTabs = [{v:'hepsi',l:'👁 Tümü'},{v:'bana',l:'⭐ Bana Atananlar'}, ...TASK_CONTEXTS.map(c=>({v:c.v,l:c.l}))];
+  const ctx = PMOD.taskCtx||'hepsi';
+  const ctxBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
+    ...ctxTabs.map(tb=>btn(tb.l,()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v?'#1e3a6e':'#e8eef7',ctx===tb.v?'#fff':'#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}))
+  );
+
+  if(ctx==='bana') list = list.filter(t=>t.assignedTo===myName);
+  else if(ctx!=='hepsi') list = list.filter(t=>t.context===ctx);
+
+  const f = PMOD.taskFilter;
+  const statusFilter = t => {
+    if(f==='acik') return !taskIsClosed(t);
+    if(f==='geciken') return !taskIsClosed(t) && t.dueDate && String(t.dueDate)<today();
+    if(f==='onay') return t.status==='tamamlandi' && t.needsApproval;
+    if(f==='tamam') return taskIsClosed(t);
+    return true;
+  };
+
+  if(isAdmin && PMOD.taskDept) list = list.filter(t=>t.department===PMOD.taskDept);
+  if(isAdmin && PMOD.taskPerson) list = list.filter(t=>t.assignedTo===PMOD.taskPerson);
+
+  const chips = [['acik','Açık'],['geciken','Geciken'],['onay','Onay Bekleyen'],['tamam','Kapalı'],['hepsi','Hepsi']];
+  const filterBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
     ...chips.map(([id,lb])=>btn(lb,()=>{PMOD.taskFilter=id;render();},f===id?'#1e3a6e':'#e8eef7',f===id?'#fff':'#2a5080','7px 13px',{fontSize:'12px',border:'1px solid #b8c8de'}))
+  );
+
+  let mgrBar = h('span');
+  if(isAdmin){
+    const deptOpts=[{v:'',l:'Tüm departmanlar'},...DEPARTMENTS.map(d=>({v:d.v,l:d.l}))];
+    const perOpts=[{v:'',l:'Tüm kişiler'},...personelPeople().map(u=>({v:u.displayName,l:u.displayName}))];
+    mgrBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px',alignItems:'center'}},
+      sel(deptOpts, PMOD.taskDept, v=>{PMOD.taskDept=v;render();}),
+      sel(perOpts, PMOD.taskPerson, v=>{PMOD.taskPerson=v;render();})
+    );
+  }
+  const viewBar = h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},
+    btn('📋 Liste',()=>{PMOD.taskView='liste';render();},PMOD.taskView==='liste'?'#1e3a6e':'#e8eef7',PMOD.taskView==='liste'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
+    btn('🗂 Kanban',()=>{PMOD.taskView='kanban';render();},PMOD.taskView==='kanban'?'#1e3a6e':'#e8eef7',PMOD.taskView==='kanban'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'})
   );
 
   const addBtn = btn('+ Görev Ekle',()=>{
     PMOD.taskAdd=true;
-    PMOD.draft={ title:'', desc:'', assignedTo: isAdmin?'':myName, dueDate:'', priority:'orta' };
+    PMOD.draft={ title:'', desc:'', assignedTo: isAdmin?'':myName, dueDate:'', dueTime:'', priority:'orta', context:(ctx==='proje'||ctx==='servis')?ctx:'sirket', needsApproval:null };
     render();
   },'linear-gradient(135deg,#10b981,#059669)','#fff','9px 16px',{fontSize:'13px',marginBottom:'12px'});
 
-  let addPanel = h('span');
-  if(PMOD.taskAdd){
-    const d = PMOD.draft;
-    const people = personelPeople();
-    const assignOpts = [{v:'',l:'— Kişi seçin —'}, ...people.map(u=>({v:u.displayName,l:u.displayName+' ('+(DEPT_LABEL[u.department]||'')+')'}))];
-    const assignEl = isAdmin
-      ? sel(assignOpts, d.assignedTo, v=>d.assignedTo=v)
-      : inp('', myName, ()=>{}, 'text', {background:'#e2e8f0'});
-    if(!isAdmin){ assignEl.disabled=true; d.assignedTo=myName; }
-    addPanel = h('div',{style:{background:'#ffffff',border:'1px solid #6366f1',borderRadius:'12px',padding:'16px',marginBottom:'14px'}},
-      h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#4338ca',marginBottom:'10px'}},'📝 Yeni Görev'),
-      field('Başlık *', inp('Görev başlığı', d.title, v=>d.title=v)),
-      row(
-        field('Atanan', assignEl, true),
-        field('Bitiş Tarihi', inp('', d.dueDate, v=>d.dueDate=v, 'date'), true)
-      ),
-      row(
-        field('Öncelik', sel([{v:'dusuk',l:'Düşük'},{v:'orta',l:'Orta'},{v:'yuksek',l:'Yüksek'}], d.priority, v=>d.priority=v), true),
-        h('div',{style:{flex:1}})
-      ),
-      field('Açıklama', inp('Detay (opsiyonel)', d.desc, v=>d.desc=v)),
-      h('div',{style:{display:'flex',gap:'8px',marginTop:'6px'}},
-        btn('✓ Kaydet', async()=>{
-          if(!d.title || !d.assignedTo){ showToast('⚠ Başlık ve atanan zorunlu.','#dc2626'); return; }
-          const person = personelPeople().find(u=>u.displayName===d.assignedTo);
-          const rec = {
-            id: genId(), title:d.title.trim(), desc:d.desc||'',
-            assignedTo:d.assignedTo, department: person?person.department:'',
-            dueDate:d.dueDate||'', status:'acik', completedAt:null,
-            priority:d.priority||'orta', linkedType:'none', linkedId:'',
-            autoGenerated:false, createdBy:(state.currentUser&&state.currentUser.displayName)||'', createdAt:today(), fiscalYear: activeFiscalYear()
-          };
-          await personelSaveDoc('tasks', rec);
-          PMOD.taskAdd=false; PMOD.draft=null; showToast('✅ Görev eklendi.');
-        },'linear-gradient(135deg,#10b981,#059669)','#fff','9px 16px',{flex:'1'}),
-        btn('İptal',()=>{PMOD.taskAdd=false;PMOD.draft=null;render();},'#e8eef7','#4a6080','9px 14px')
-      )
-    );
-  }
+  const addPanel = PMOD.taskAdd ? renderTaskAddPanel(isAdmin, myName) : h('span');
 
+  const filtered = list.filter(statusFilter).sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')));
+
+  const body = PMOD.taskView==='kanban'
+    ? renderTaskKanban(filtered)
+    : h('div',{}, ...(filtered.length? filtered.map(t=>taskCard(t,isAdmin,myName)) : [h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.')]));
+
+  return h('div',{}, fyEmptyBanner('tasks','görev'), addBtn, addPanel, ctxBar, mgrBar, filterBar, viewBar, body);
+}
+
+function renderTaskAddPanel(isAdmin, myName){
+  const d = PMOD.draft;
+  const people = personelPeople();
+  const assignOpts = [{v:'',l:'— Kişi seçin —'}, ...people.map(u=>({v:u.displayName,l:u.displayName+' ('+(DEPT_LABEL[u.department]||'')+')'}))];
+  const assignEl = isAdmin ? sel(assignOpts, d.assignedTo, v=>d.assignedTo=v) : inp('', myName, ()=>{}, 'text', {background:'#e2e8f0'});
+  if(!isAdmin){ assignEl.disabled=true; d.assignedTo=myName; }
+  const ctxOpts = TASK_CONTEXTS.map(c=>({v:c.v,l:c.l}));
+  const effApproval = d.needsApproval==null ? defaultNeedsApproval(d.context,d.priority) : d.needsApproval;
+  return h('div',{style:{background:'#ffffff',border:'1px solid #6366f1',borderRadius:'12px',padding:'16px',marginBottom:'14px'}},
+    h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#4338ca',marginBottom:'10px'}},'📝 Yeni Görev'),
+    field('Başlık *', inp('Görev başlığı', d.title, v=>d.title=v)),
+    row(
+      field('Bağlam', sel(ctxOpts, d.context, v=>{d.context=v;render();}), true),
+      field('Atanan', assignEl, true)
+    ),
+    row(
+      field('Bitiş Tarihi', inp('', d.dueDate, v=>d.dueDate=v, 'date'), true),
+      field('Bitiş Saati (ops.)', inp('', d.dueTime, v=>d.dueTime=v, 'time'), true)
+    ),
+    row(
+      field('Öncelik', sel([{v:'dusuk',l:'Düşük'},{v:'orta',l:'Orta'},{v:'yuksek',l:'Yüksek'}], d.priority, v=>{d.priority=v;render();}), true),
+      field('Onay gereksin mi?', sel([{v:'auto',l:'Otomatik ('+(effApproval?'Evet':'Hayır')+')'},{v:'evet',l:'Evet'},{v:'hayir',l:'Hayır'}], d.needsApproval==null?'auto':(d.needsApproval?'evet':'hayir'), v=>{ d.needsApproval = v==='auto'?null:(v==='evet'); }), true)
+    ),
+    field('Açıklama', inp('Detay (opsiyonel)', d.desc, v=>d.desc=v)),
+    h('div',{style:{display:'flex',gap:'8px',marginTop:'6px'}},
+      btn('✓ Kaydet', async()=>{
+        if(!d.title || !d.assignedTo){ showToast('⚠ Başlık ve atanan zorunlu.','#dc2626'); return; }
+        const person = people.find(u=>u.displayName===d.assignedTo);
+        const na = d.needsApproval==null ? defaultNeedsApproval(d.context,d.priority) : d.needsApproval;
+        const rec = normTask({
+          id: genId(), title:d.title.trim(), desc:d.desc||'',
+          assignedTo:d.assignedTo, department: person?person.department:'',
+          assignedBy:(state.currentUser&&state.currentUser.displayName)||'',
+          context:d.context||'sirket', linkType:'none', linkId:'', linkLabel:'',
+          dueDate:d.dueDate||'', dueTime:d.dueTime||'', startDate:'',
+          status:'yapilacak', completedAt:null, priority:d.priority||'orta',
+          needsApproval:na, revisionCount:0, assignmentHistory:[], comments:[],
+          autoGenerated:false, createdBy:(state.currentUser&&state.currentUser.displayName)||'', createdAt:today(), fiscalYear: activeFiscalYear()
+        });
+        await personelSaveDoc('tasks', rec);
+        if(rec.assignedTo!==((state.currentUser&&state.currentUser.displayName)||'')) showNotification('task_new_'+rec.id,'Yeni görev',(rec.title)+' size atandı.','info',rec.assignedTo);
+        PMOD.taskAdd=false; PMOD.draft=null; showToast('✅ Görev eklendi.');
+      },'linear-gradient(135deg,#10b981,#059669)','#fff','9px 16px',{flex:'1'}),
+      btn('İptal',()=>{PMOD.taskAdd=false;PMOD.draft=null;render();},'#e8eef7','#4a6080','9px 14px')
+    )
+  );
+}
+
+function taskCard(t, isAdmin, myName){
+  const overdue = !taskIsClosed(t) && t.dueDate && String(t.dueDate)<today();
+  const closed = taskIsClosed(t);
+  const canDel = isAdmin || t.createdBy===myName || t.assignedBy===myName;
   const PRIO = { dusuk:['Düşük','#64748b'], orta:['Orta','#d97706'], yuksek:['Yüksek','#dc2626'] };
-  const cards = filtered.length ? filtered.map(t=>{
-    const overdue = t.status!=='tamam' && t.dueDate && String(t.dueDate)<today();
-    const done = t.status==='tamam';
-    const canDel = isAdmin || t.createdBy===myName;
-    const pr = PRIO[t.priority]||PRIO.orta;
-    const cb = h('input',{type:'checkbox',style:{width:'20px',height:'20px',accentColor:'#10b981',cursor:'pointer',flexShrink:'0'}});
-    cb.checked = done;
-    cb.addEventListener('change', async()=>{
-      const rec = { ...t, status: done?'acik':'tamam', completedAt: done?null:today() };
-      await personelSaveDoc('tasks', rec);
-      showToast(done?'↩ Görev açıldı.':'✅ Görev tamamlandı.');
-    });
-    return h('div',{style:{background:'#ffffff',border:'1px solid '+(overdue?'#fca5a5':done?'#bbf7d0':'#d0daea'),borderRadius:'11px',padding:'12px 14px',marginBottom:'8px',display:'flex',alignItems:'flex-start',gap:'12px'}},
-      cb,
-      h('div',{style:{flex:'1',minWidth:'0'}},
-        h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
-          h('span',{style:{fontWeight:'700',fontSize:'14px',color:done?'#94a3b8':'#0f1f35',textDecoration:done?'line-through':'none'}},t.title),
-          h('span',{style:{background:pr[1]+'22',color:pr[1],fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},pr[0]),
-          t.autoGenerated?h('span',{style:{background:'#e0e7ff',color:'#4338ca',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'⚙ OTOMATİK'):h('span'),
-          overdue?h('span',{style:{background:'#fee2e2',color:'#dc2626',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'GECİKEN'):h('span')
-        ),
-        t.desc?h('div',{style:{fontSize:'12px',color:T3,marginTop:'4px'}},t.desc):h('span'),
-        h('div',{style:{fontSize:'11px',color:T4,marginTop:'5px'}},'👤 '+(t.assignedTo||'-')+(t.department?' · '+(DEPT_LABEL[t.department]||''):'')+(t.dueDate?' · 📅 '+_toTR(t.dueDate):''))
-      ),
-      canDel?btn('🗑️',()=>{ if(confirm('Görev silinsin mi?')) personelDeleteDoc('tasks',t.id).then(()=>showToast('✅ Silindi.')); },'#fef2f2','#dc2626','6px 10px',{fontSize:'12px',border:'1px solid #fecaca',flexShrink:'0'}):h('span')
-    );
-  }) : [h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.')];
+  const pr = PRIO[t.priority]||PRIO.orta;
+  const sm = TASK_STATUS_META[t.status]||TASK_STATUS_META.yapilacak;
+  const cm = TASK_CONTEXT_META[t.context]||TASK_CONTEXT_META.sirket;
+  const cardEl = h('div',{style:{background:'#ffffff',border:'1px solid '+(overdue?'#fca5a5':closed?'#bbf7d0':'#d0daea'),borderRadius:'11px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
+      h('span',{style:{background:cm.c+'22',color:cm.c,fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},cm.l),
+      h('span',{style:{background:sm.bg,color:sm.c,fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},sm.l),
+      h('span',{style:{fontWeight:'700',fontSize:'14px',color:closed?'#94a3b8':'#0f1f35',textDecoration:closed?'line-through':'none'}},t.title),
+      h('span',{style:{background:pr[1]+'22',color:pr[1],fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},pr[0]),
+      t.needsApproval?h('span',{style:{background:'#ede9fe',color:'#6d28d9',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'✔ onay'):h('span'),
+      t.autoGenerated?h('span',{style:{background:'#e0e7ff',color:'#4338ca',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'⚙ şablon'):h('span'),
+      overdue?h('span',{style:{background:'#fee2e2',color:'#dc2626',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'GECİKEN'):h('span'),
+      (t.assignmentHistory&&t.assignmentHistory.length)?h('span',{style:{fontSize:'10px',color:'#64748b'}},'↪'+t.assignmentHistory.length):h('span'),
+      (t.comments&&t.comments.length)?h('span',{style:{fontSize:'10px',color:'#64748b'}},'💬'+t.comments.length):h('span')
+    ),
+    t.desc?h('div',{style:{fontSize:'12px',color:T3,marginTop:'4px'}},t.desc):h('span'),
+    h('div',{style:{fontSize:'11px',color:T4,marginTop:'5px'}},'👤 '+(t.assignedTo||'-')+(t.department?' · '+(DEPT_LABEL[t.department]||''):'')+(t.dueDate?' · 📅 '+_toTR(t.dueDate)+(t.dueTime?' '+t.dueTime:''):''))
+  );
+  cardEl.addEventListener('click',()=>openTaskModal(t.id));
+  return h('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start'}},
+    h('div',{style:{flex:'1',minWidth:'0'}}, cardEl),
+    canDel?btn('🗑️',(e)=>{ if(confirm('Görev silinsin mi?')) personelDeleteDoc('tasks',t.id).then(()=>showToast('✅ Silindi.')); },'#fef2f2','#dc2626','6px 10px',{fontSize:'12px',border:'1px solid #fecaca',flexShrink:'0',marginTop:'4px'}):h('span')
+  );
+}
 
-  return h('div',{}, fyEmptyBanner('tasks','görev'), addBtn, addPanel, filterBar, ...cards);
+function renderTaskKanban(tasks){
+  const cols = TASK_KANBAN_COLUMNS.map(st=>{
+    const sm = TASK_STATUS_META[st];
+    const items = tasks.filter(t=>{
+      if(st==='onaylandi') return t.status==='onaylandi';
+      if(st==='tamamlandi') return t.status==='tamamlandi';
+      return t.status===st;
+    });
+    return h('div',{style:{minWidth:'220px',flex:'1',background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'10px',padding:'10px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'12px',color:sm.c,marginBottom:'8px'}},sm.l+' ('+items.length+')'),
+      ...(items.length? items.map(t=>{
+        const card = h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'8px',padding:'8px 10px',marginBottom:'6px',cursor:'pointer',fontSize:'12px'}},
+          h('div',{style:{fontWeight:'700',color:'#0f1f35'}},t.title),
+          h('div',{style:{color:'#64748b',marginTop:'3px'}},'👤 '+(t.assignedTo||'-')+(t.dueDate?' · '+_toTR(t.dueDate):''))
+        );
+        card.addEventListener('click',()=>openTaskModal(t.id));
+        return card;
+      }) : [h('div',{style:{fontSize:'11px',color:'#94a3b8'}},'—')])
+    );
+  });
+  return h('div',{style:{display:'flex',gap:'10px',overflowX:'auto',paddingBottom:'8px'}}, ...cols);
 }
 
 function renderPersonelPerformans(period, isAdmin){
