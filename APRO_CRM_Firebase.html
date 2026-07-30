@@ -4929,7 +4929,7 @@ function renderOpportunities() {
             (()=>{const lp=state.proposals.find(p=>p.opportunityId===o.id&&p.quotationId);const qId=o.quotationId||(lp&&lp.quotationId);if(!qId)return btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','7px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'});const crmSent=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];const qStatus=o.quotationStatus||(lp&&lp.quotationStatus);const isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);return isDraft?btn('✏️ Taslağı Aç',()=>openQuotationWithSSO(qId),'#fffbeb','#b45309','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn('🔗 Teklif Programı',()=>openQuotationWithSSO(qId),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'});})(),
             btn('✏️ Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#fff3cd','#d97706','7px 14px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',flex:'1'}),
             (_CARRY_OPEN_STAGES.indexOf(o.stage)>=0)?btn('↦ '+(recFY(o)+1),()=>carryOverOpp(o),'#fef3c7','#92400e','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):h('span'),
-            o.stage==='KAZANILDI'?btn('📋 Görev öner',()=>suggestTasksFor('proje','opportunity',o.id,o.title||'Fırsat'),'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe',borderRadius:'7px'}):h('span'),
+            h('span'),
             btn('🗑️',async()=>{ if(!confirm('Bu fırsatı silmek istediğinizden emin misiniz?')) return;
   const r=await cascadeDeleteTasksFor('opportunity',o.id);
   if(r.manuals.length && !confirm(r.manuals.length+' bağlı manuel görev var. Fırsatla birlikte silinsin mi? (İptal: görevler kalır)')){ /* manuelleri bırak */ }
@@ -6312,13 +6312,6 @@ async function _syncQuotationFiscalYear(quotationId, fy){
 }
 // Bağlam+aşama → standart görev şablonları. dept: doğru departman; dueOffset: bugünden gün.
 const TASK_TEMPLATES = {
-  proje: [
-    { title:'Proje çizimi & malzeme listesi', dept:'proje',    dueOffset:7,  priority:'yuksek' },
-    { title:'Hidrolik hesap',                 dept:'proje',    dueOffset:7,  priority:'yuksek' },
-    { title:'Tedarikçi siparişleri',          dept:'muhasebe', dueOffset:14, priority:'orta'  },
-    { title:'Saha mobilizasyon & İSG',        dept:'saha',     dueOffset:21, priority:'yuksek' },
-    { title:'İş programı hazırlığı',          dept:'saha',     dueOffset:21, priority:'orta'  },
-  ],
   servis: [
     { title:'Randevu & teknisyen planlama',   dept:'teknik',   dueOffset:2,  priority:'orta'  },
     { title:'Yedek parça / malzeme temini',   dept:'muhasebe', dueOffset:3,  priority:'orta'  },
@@ -6347,6 +6340,113 @@ async function suggestTasksFor(ctx, linkType, linkId, linkLabel){
   for(const t of toAdd){ await personelSaveDoc('tasks', t); }
   showToast('✅ '+toAdd.length+' görev oluşturuldu.');
 }
+// ================= FAZ 2: PROJE İCRA =================
+const PROJECT_STAGES = ['teknik','satinalma','saha','montaj','hakedis'];
+const PROJECT_STAGE_META = {
+  teknik:    { l:'Teknik/Ofis',     icon:'📐', color:'#4338ca' },
+  satinalma: { l:'Satın Alma',      icon:'🛒', color:'#b45309' },
+  saha:      { l:'Saha Hazırlık',   icon:'🚧', color:'#0e7490' },
+  montaj:    { l:'İmalat/Montaj',   icon:'🔧', color:'#047857' },
+  hakedis:   { l:'Hakediş/Kapanış', icon:'📑', color:'#7c3aed' },
+};
+const PROJECT_STAGE_TEMPLATES = {
+  teknik: [
+    { title:'Sözleşme / iş emri açılışı',       dept:'proje',    dueOffset:2,  priority:'yuksek' },
+    { title:'Hidrolik hesap / sistem tasarımı', dept:'teknik',   dueOffset:5,  priority:'yuksek' },
+    { title:'Uygulama (shop drawing) çizimi',   dept:'teknik',   dueOffset:8,  priority:'orta'  },
+    { title:'Malzeme listesi (BOQ) çıkarma',    dept:'teknik',   dueOffset:8,  priority:'orta'  },
+  ],
+  satinalma: [
+    { title:'Tedarikçi teklif toplama',         dept:'muhasebe', dueOffset:3,  priority:'orta'  },
+    { title:'Malzeme siparişi',                 dept:'muhasebe', dueOffset:5,  priority:'yuksek' },
+    { title:'Sevkiyat / teslim takibi',         dept:'muhasebe', dueOffset:10, priority:'orta'  },
+  ],
+  saha: [
+    { title:'Saha ölçü doğrulama',              dept:'saha',     dueOffset:2,  priority:'orta'  },
+    { title:'İSG / izin dosyası',               dept:'muhasebe', dueOffset:3,  priority:'yuksek' },
+    { title:'Ekip / ekipman mobilizasyon',      dept:'muhasebe', dueOffset:4,  priority:'orta'  },
+  ],
+  montaj: [
+    { title:'Boru / sprinkler montajı',         dept:'saha',     dueOffset:10, priority:'yuksek' },
+    { title:'Pano / algılama montajı',          dept:'saha',     dueOffset:12, priority:'yuksek' },
+    { title:'Test & devreye alma',              dept:'teknik',   dueOffset:14, priority:'yuksek' },
+  ],
+  hakedis: [
+    { title:'Geçici kabul',                     dept:'saha',     dueOffset:3,  priority:'orta'  },
+    { title:'As-built (imalat sonu çizim)',     dept:'saha',     dueOffset:5,  priority:'orta'  },
+    { title:'Kesin kabul',                      dept:'saha',     dueOffset:7,  priority:'orta'  },
+    { title:'Hakediş dosyası',                  dept:'proje',    dueOffset:5,  priority:'yuksek' },
+  ],
+};
+
+// Bir projenin belirli aşamasına ait görevler (boş execStage aktif aşamaya sayılır).
+function projStageTasks(o, stage){
+  return (state.tasks||[]).map(normTask).filter(t=>
+    t.linkType==='opportunity' && t.linkId===o.id &&
+    ((t.execStage||projStage(o))===stage));
+}
+function projOpenCount(o, stage){ return projStageTasks(o,stage).filter(t=>!taskIsClosed(t)).length; }
+function _projStageIndex(s){ const i=PROJECT_STAGES.indexOf(s); return i<0?0:i; }
+
+// Aşamaya geçince o aşamanın şablon görevlerini öner (Faz 1 confirm-akışıyla aynı; kör üretim yok).
+async function suggestStageTasks(o, stage){
+  const tpl = PROJECT_STAGE_TEMPLATES[stage]; if(!tpl) return;
+  const people = personelPeople();
+  const firstInDept = dept => { const u=people.find(x=>x.department===dept); return u?u.displayName:''; };
+  const existing = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType==='opportunity'&&t.linkId===o.id).map(t=>t.title));
+  const toAdd = tpl.filter(x=>!existing.has(x.title)).map(x=>normTask({
+    id: genId(), title:x.title, desc:'', assignedTo:firstInDept(x.dept), department:x.dept,
+    assignedBy:(state.currentUser&&state.currentUser.displayName)||'', context:'proje',
+    linkType:'opportunity', linkId:o.id, linkLabel:o.title||'Proje', execStage:stage,
+    dueDate:_offsetDay(x.dueOffset), dueTime:'', startDate:'',
+    status:'yapilacak', completedAt:null, priority:x.priority,
+    needsApproval:defaultNeedsApproval('proje',x.priority), revisionCount:0, assignmentHistory:[], comments:[],
+    autoGenerated:true, createdBy:'şablon', createdAt:today(), fiscalYear:activeFiscalYear()
+  }));
+  if(!toAdd.length) return;
+  if(!confirm(PROJECT_STAGE_META[stage].l+' aşaması için '+toAdd.length+' görev oluşturulsun mu?\n\n- '+toAdd.map(t=>t.title).join('\n- '))) return;
+  for(const t of toAdd){ await personelSaveDoc('tasks', t); }
+  showToast('✅ '+toAdd.length+' görev oluşturuldu.');
+}
+
+// İcraya başlat (kazanılmış fırsat → aktif proje, teknik aşama).
+async function projStart(o){
+  const now=today(), me=(state.currentUser&&state.currentUser.displayName)||'';
+  const upd=Object.assign({}, o, { execActive:true, execStage:'teknik', execStartedAt:now, execClosedAt:null,
+    execStageHistory:[...(o.execStageHistory||[]), {stage:'teknik', at:now, by:me}] });
+  await personelSaveDoc('opportunities', upd);
+  await suggestStageTasks(upd, 'teknik');
+}
+// Sonraki aşamaya geç (sıralı; açık görev varsa uyar).
+async function projAdvance(o){
+  const idx=_projStageIndex(projStage(o));
+  if(idx>=PROJECT_STAGES.length-1) return;
+  const cur=PROJECT_STAGES[idx];
+  const open=projOpenCount(o, cur);
+  if(open>0 && !confirm('Bu aşamada '+open+' açık görev var. Yine de sonraki aşamaya geçilsin mi?')) return;
+  const next=PROJECT_STAGES[idx+1];
+  const now=today(), me=(state.currentUser&&state.currentUser.displayName)||'';
+  const upd=Object.assign({}, o, { execStage:next, execStageHistory:[...(o.execStageHistory||[]), {stage:next, at:now, by:me}] });
+  await personelSaveDoc('opportunities', upd);
+  await suggestStageTasks(upd, next);
+}
+// Projeyi kapat (hakediş sonrası).
+async function projClose(o){
+  if(!confirm('Proje kapatılsın mı? (Hakediş/kapanış tamamlandı)')) return;
+  const upd=Object.assign({}, o, { execClosedAt:today() });
+  await personelSaveDoc('opportunities', upd);
+}
+// Yönetici geri-adım: kapanmışsa yeniden aç, değilse bir önceki aşamaya çek.
+async function projRollback(o){
+  const now=today(), me=(state.currentUser&&state.currentUser.displayName)||'';
+  let upd;
+  if(o.execClosedAt){ upd=Object.assign({}, o, { execClosedAt:null }); }
+  else { const idx=_projStageIndex(projStage(o)); if(idx<=0) return;
+    const prev=PROJECT_STAGES[idx-1];
+    upd=Object.assign({}, o, { execStage:prev, execStageHistory:[...(o.execStageHistory||[]), {stage:prev, at:now, by:me, rollback:true}] }); }
+  await personelSaveDoc('opportunities', upd);
+}
+// ================= /FAZ 2 =================
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
 async function personelAutoGenerateTasks(){
   try{
