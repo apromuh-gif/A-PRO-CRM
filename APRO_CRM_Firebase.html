@@ -8384,18 +8384,20 @@ function checkAllNotifications() {
 
   // ── PERİYODİK BAKIM ────────────────────────────────
   (state.maintenances||[]).forEach(m=>{
-    if(!m.appointmentDate) return;
+    const due=maintNextDue(m);
+    if(!due) return;
     const cn=_custName(m.customerId);
-    const iso=_toISO(m.appointmentDate);
+    const iso=_toISO(due);
     const diff=_diffDays(iso);
+    const tgt=m.serviceContact||m.preparedBy;
     // 7 gün - 09:00
     if(diff===7 && now>=540 && now<=544) {
-      showNotification('maint_7d_'+m.id,'⚙️ Bakım 7 Gün Sonra',(m.jobName||'Bakım')+' · '+cn+' · '+m.appointmentDate,'warning',m.preparedBy);
+      showNotification('maint_7d_'+m.id,'⚙️ Bakım 7 Gün Sonra',(m.jobName||'Bakım')+' · '+cn+' · '+_toTR(due),'warning',tgt);
     }
     // Geçti - her gün 09:00
     if(diff<0 && now>=540 && now<=544) {
-      showNotification('maint_over_'+m.id+'_'+today,'🚨 Bakım Tarihi Geçti!',(m.jobName||'Bakım')+' · '+cn+' · '+Math.abs(diff)+' gün geçti','urgent',m.preparedBy);
-      showNotification('maint_over_adm_'+m.id+'_'+today,'🚨 Bakım Tarihi Geçti',(m.jobName||'Bakım')+' · '+cn,'urgent','admin');
+      showNotification('maint_over_'+m.id+'_'+today,'🚨 Bakım Vadesi Geçti!',(m.jobName||'Bakım')+' · '+cn+' · '+Math.abs(diff)+' gün geçti','urgent',tgt);
+      showNotification('maint_over_adm_'+m.id+'_'+today,'🚨 Bakım Vadesi Geçti',(m.jobName||'Bakım')+' · '+cn,'urgent','admin');
     }
   });
 }
@@ -8736,19 +8738,21 @@ function checkAllMails() {
 
   // ── ⚙️ PERİYODİK BAKIM - 7 gün önce ─────────────────────────
   (state.maintenances||[]).forEach(m => {
-    if(!m.appointmentDate) return;
-    const diff = _diffDays(_toISO(m.appointmentDate));
+    const due = maintNextDue(m);
+    if(!due) return;
+    const diff = _diffDays(_toISO(due));
     if(diff === 7 && now >= 540 && now <= 544) {
       const cn = _custName(m.customerId);
+      const tgt = m.serviceContact || m.preparedBy;
       const mailKey = 'mail_maint_7d_' + m.id;
       const subject = '⚙️ Bakım 7 Gün Sonra: ' + (m.jobName||'Bakım');
       const body = mailBody('⚙️', 'Periyodik Bakım 7 Gün Sonra', [
         ['İşin Adı', m.jobName || '-'],
         ['Firma', cn],
-        ['Bakım Tarihi', _toTR(m.appointmentDate)],
-        ['İlgili', m.preparedBy || '-'],
+        ['Bakım Vadesi', _toTR(due)],
+        ['İlgili', tgt || '-'],
       ]);
-      const repEmail = getUserEmail(m.preparedBy);
+      const repEmail = getUserEmail(tgt);
       if(repEmail) sendMail(mailKey, repEmail, subject, body);
     }
   });
