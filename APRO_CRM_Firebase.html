@@ -5373,6 +5373,24 @@ function arizaListRow(s, isAdmin){
     open?h('span',{style:{background:'#fef2f2',color:'#dc2626',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},open+' açık görev'):h('span',{style:{color:'#16a34a',fontSize:'12px',fontWeight:'700'}},'✓ temiz')
   );
 }
+function renderArizaKanban(list, isAdmin){
+  const cols = SERVICE_STAGES.map(st=>{
+    const meta=SERVICE_STAGE_META[st];
+    const items=list.filter(s=>servExecStage(s)===st);
+    return h('div',{style:{flex:'0 0 220px',minWidth:'220px',background:'#f4f7fb',border:'1px solid #d0daea',borderRadius:'12px',padding:'10px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'13px',color:meta.color,marginBottom:'8px',display:'flex',justifyContent:'space-between'}},
+        h('span',{},meta.icon+' '+meta.l), h('span',{style:{color:T4}},String(items.length))),
+      ...(items.length? items.map(s=>{
+        const open=servOpenCount(s, st); const attn=servIsOverdue(s)||s.execUrgency==='acil';
+        return h('div',{style:{background:'#fff',border:'1px solid '+(attn?'#fca5a5':'#d0daea'),borderRadius:'10px',padding:'9px 10px',marginBottom:'8px',cursor:'pointer'},onclick:()=>setState({modal:{type:'ariza',serviceId:s.id}})},
+          h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f2040'}},(attn?'🔴 ':'')+(s.jobName||'(başlıksız)')),
+          open?h('div',{style:{fontSize:'11px',color:'#dc2626',marginTop:'4px',fontWeight:'700'}},open+' açık görev'):h('div',{style:{fontSize:'11px',color:'#16a34a',marginTop:'4px'}},'✓ temiz')
+        );
+      }) : [h('div',{style:{color:T4,fontSize:'12px',padding:'6px'}},'—')])
+    );
+  });
+  return h('div',{style:{display:'flex',gap:'10px',overflowX:'auto',paddingBottom:'8px'}}, ...cols);
+}
 
 
 // ═══════════════════════════════════════════════════════
