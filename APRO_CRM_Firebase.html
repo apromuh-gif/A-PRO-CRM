@@ -8331,8 +8331,8 @@ function checkAllNotifications() {
     if(new Date().getDay()===1 && now>=540 && now<=544 && !LOST.includes(o.stage) && o.stage!=='KAZANILDI') {
       const days=Math.floor((new Date()-new Date(o.updatedAt||o.createdAt||0))/(86400000));
       if(days>=10) {
-        showNotification('opp_stale_'+o.id+'_'+today,'⚠️ Fırsat '+days+' Gündür Bekliyor',o.title+' · '+cn,'warning',o.assignedTo);
-        showNotification('opp_stale_adm_'+o.id+'_'+today,'⚠️ Güncellenmemiş Fırsat',o.title+' · '+cn+' ('+days+' gün)','warning','admin');
+        showNotification('opp_stale_'+o.id+'_'+today(),'⚠️ Fırsat '+days+' Gündür Bekliyor',o.title+' · '+cn,'warning',o.assignedTo);
+        showNotification('opp_stale_adm_'+o.id+'_'+today(),'⚠️ Güncellenmemiş Fırsat',o.title+' · '+cn+' ('+days+' gün)','warning','admin');
       }
     }
   });
@@ -8356,8 +8356,8 @@ function checkAllNotifications() {
     }
     // Süresi geçti - her gün 09:00
     if(diff<0 && now>=540 && now<=544) {
-      showNotification('prop_over_'+p.id+'_'+today,'🚨 Teklif Süresi Geçti!',(p.title||'Teklif')+' · '+cn+' · '+Math.abs(diff)+' gün','urgent',p.preparedBy);
-      showNotification('prop_over_adm_'+p.id+'_'+today,'🚨 Teklif Süresi Geçti',(p.title||'Teklif')+' · '+cn,'urgent','admin');
+      showNotification('prop_over_'+p.id+'_'+today(),'🚨 Teklif Süresi Geçti!',(p.title||'Teklif')+' · '+cn+' · '+Math.abs(diff)+' gün','urgent',p.preparedBy);
+      showNotification('prop_over_adm_'+p.id+'_'+today(),'🚨 Teklif Süresi Geçti',(p.title||'Teklif')+' · '+cn,'urgent','admin');
     }
   });
 
@@ -8396,8 +8396,8 @@ function checkAllNotifications() {
     }
     // Geçti - her gün 09:00
     if(diff<0 && now>=540 && now<=544) {
-      showNotification('maint_over_'+m.id+'_'+today,'🚨 Bakım Vadesi Geçti!',(m.jobName||'Bakım')+' · '+cn+' · '+Math.abs(diff)+' gün geçti','urgent',tgt);
-      showNotification('maint_over_adm_'+m.id+'_'+today,'🚨 Bakım Vadesi Geçti',(m.jobName||'Bakım')+' · '+cn,'urgent','admin');
+      showNotification('maint_over_'+m.id+'_'+today(),'🚨 Bakım Vadesi Geçti!',(m.jobName||'Bakım')+' · '+cn+' · '+Math.abs(diff)+' gün geçti','urgent',tgt);
+      showNotification('maint_over_adm_'+m.id+'_'+today(),'🚨 Bakım Vadesi Geçti',(m.jobName||'Bakım')+' · '+cn,'urgent','admin');
     }
   });
 }
