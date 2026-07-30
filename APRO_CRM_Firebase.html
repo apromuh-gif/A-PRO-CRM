@@ -5391,6 +5391,62 @@ function renderArizaKanban(list, isAdmin){
   });
   return h('div',{style:{display:'flex',gap:'10px',overflowX:'auto',paddingBottom:'8px'}}, ...cols);
 }
+function buildArizaModal(serviceId){
+  const cu=state.currentUser; const isAdmin=!!(cu&&cu.isAdmin); const myName=cu&&cu.displayName;
+  const s=(state.services||[]).find(x=>x.id===serviceId);
+  if(!s) return modal('Arıza', h('div',{},'Servis kaydı bulunamadı.'), ()=>setState({modal:null}), '640px');
+  const st=servExecStage(s), idx=_servStageIndex(st), closed=!!s.execClosedAt;
+
+  const strip=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'14px'}},
+    ...SERVICE_STAGES.map((x,i)=>{
+      const meta=SERVICE_STAGE_META[x];
+      const state_ = i<idx?'done':(i===idx?'active':'todo');
+      const bg = state_==='active'?meta.color:(state_==='done'?'#16a34a':'#e8eef7');
+      const col = (state_==='active'||state_==='done')?'#fff':'#64748b';
+      return h('span',{style:{background:bg,color:col,borderRadius:'20px',padding:'5px 11px',fontSize:'12px',fontWeight:'700'}},
+        (state_==='done'?'✓ ':meta.icon+' ')+meta.l);
+    })
+  );
+
+  const urgSel=sel([{v:'dusuk',l:'Düşük'},{v:'normal',l:'Normal'},{v:'acil',l:'Acil'}], s.execUrgency||'normal', async v=>{
+    await personelSaveDoc('services', Object.assign({}, s, {execUrgency:v})); render();
+  });
+  const tgtInp=h('input',{type:'date',value:s.execTargetDate||'',style:{padding:'7px 10px',border:'1px solid #cbd5e1',borderRadius:'8px',fontSize:'12px'}});
+  tgtInp.addEventListener('change',async e=>{ await personelSaveDoc('services', Object.assign({}, s, {execTargetDate:e.target.value})); render(); });
+  const metaBar=h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',alignItems:'center',marginBottom:'12px'}},
+    h('span',{style:{fontSize:'12px',color:T3,fontWeight:'700'}},'Aciliyet:'), urgSel,
+    h('span',{style:{fontSize:'12px',color:T3,fontWeight:'700'}},'Hedef tarih:'), tgtInp,
+    servIsOverdue(s)?h('span',{style:{background:'#fef2f2',color:'#dc2626',border:'1px solid #fecaca',borderRadius:'20px',padding:'3px 9px',fontSize:'11px',fontWeight:'700'}},'⏰ Hedef geçti'):h('span')
+  );
+
+  const acts=[];
+  if(!closed && idx<SERVICE_STAGES.length-1) acts.push(btn('Sonraki aşama →',async()=>{await servAdvance(s); render();},'#1e3a6e','#fff','8px 14px',{fontSize:'13px'}));
+  if(!closed && idx===SERVICE_STAGES.length-1) acts.push(btn('✓ Arızayı kapat',async()=>{await servClose(s); render();},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'}));
+  if(isAdmin && closed) acts.push(btn('↺ Yeniden aç',async()=>{await servReopen(s); render();},'#fef3c7','#92400e','8px 14px',{fontSize:'13px'}));
+  if(isAdmin && !closed && idx>0) acts.push(btn('← Geri al',async()=>{await servRollback(s); render();},'#fef3c7','#92400e','8px 14px',{fontSize:'13px'}));
+  acts.push(btn('+ Bu aşamaya görev öner',async()=>{await suggestServStageTasks(s, st); render();},'#eef2ff','#4338ca','8px 14px',{fontSize:'13px'}));
+  const actBar=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}, ...acts);
+
+  const groups=SERVICE_STAGES.map(x=>{
+    const ts=servStageTasks(s, x);
+    if(!ts.length) return null;
+    return h('div',{style:{marginBottom:'12px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'13px',color:SERVICE_STAGE_META[x].color,marginBottom:'6px'}},SERVICE_STAGE_META[x].icon+' '+SERVICE_STAGE_META[x].l),
+      ...ts.map(t=>taskCard(t, isAdmin, myName))
+    );
+  }).filter(Boolean);
+  const tasksBox = groups.length? h('div',{}, ...groups)
+    : h('div',{style:{padding:'16px',textAlign:'center',color:T4}},'Bu arızaya bağlı görev yok. "Bu aşamaya görev öner" ile başlayın.');
+
+  const cust=(state.customers||[]).find(c=>c.id===s.customerId)||null;
+  const closeNote = (closed && s.execCloseNote) ? h('div',{style:{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:'10px',padding:'10px',marginBottom:'12px',fontSize:'12px',color:'#166534'}},'📝 Kapanış notu: '+s.execCloseNote) : h('span');
+  const content=h('div',{},
+    cust?h('div',{style:{fontSize:'13px',color:T3,marginBottom:'10px'}},'👤 '+(cust.firmName||'')):h('span'),
+    strip, metaBar, actBar, closeNote,
+    h('div',{style:{borderTop:'1px solid #e2e8f0',paddingTop:'12px'}}, tasksBox)
+  );
+  return modal((s.jobName||'Arıza')+' — İcra', content, ()=>setState({modal:null}), '720px');
+}
 
 
 // ═══════════════════════════════════════════════════════
@@ -7834,6 +7890,7 @@ function render() {
     if(type==='customer') m=buildCustomerModal(item);
     else if(type==='supplier') m=buildSupplierModal(item);
     else if(type==='proje') m=buildProjeModal(state.modal.oppId);
+    else if(type==='ariza') m=buildArizaModal(state.modal.serviceId);
     else if(type==='opportunity') m=buildOppModal(item);
     else if(type==='serviceopp') m=buildServiceOppModal(item);
     else if(type==='proposal') m=buildPropModal(item);
