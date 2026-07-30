@@ -6725,6 +6725,23 @@ function maintDueStatus(m){
   return 'planli';
 }
 function maintDaysLeft(m){ return maintIsTracked(m) ? _diffDays(maintNextDue(m)) : null; }
+// Bakım tamamla: geçmişe ekle, son yapılanı işaretle, sonraki vadeyi ileri sar,
+// durumu yeni döngü için "Henüz Verilmedi"ye geri al. Kayıt: saveMaint deseni.
+async function maintDone(m){
+  if(!maintIsTracked(m)){ showToast('⚠️ Önce periyot ve ilk vade tarihi girin.','#d97706'); return; }
+  const note = prompt('Bakım tamamlandı — yapılan işlem / not (opsiyonel):', '');
+  if(note === null) return;
+  const me = (state.currentUser && state.currentUser.displayName) || '';
+  const now = today();
+  const hist = [...maintHistory(m), {at:now, by:me, note:note||''}];
+  const nextDue = computeNextDue(now, maintPeriod(m), maintPeriodDays(m));
+  const data = {...m, mtLastDone:now, mtHistory:hist, mtNextDue:nextDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
+  setState({saving:true});
+  await saveDoc('maintenances', m.id, data);
+  const list = state.maintenances.map(x => x.id===m.id ? data : x);
+  setState({maintenances:list, modal:null, saving:false});
+  showToast('✅ Bakım tamamlandı — sonraki vade: ' + (nextDue ? _toTR(nextDue) : '-'));
+}
 // ================= /FAZ 3b =================
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
 async function personelAutoGenerateTasks(){
