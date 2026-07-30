@@ -1220,7 +1220,7 @@ function renderLogin() {
       setState({currentUser:user, view:'app', loading:true});
       await loadAllData();
       setState({loading:false});
-      personelAutoGenerateTasks(); // fire-and-forget, idempotent
+      // personelAutoGenerateTasks(); // KALDIRILDI — şablon-tetiklemeli modele geçildi (spec §8)
       taskDueReminders(); // fire-and-forget, günde bir kez bildirir
     } catch(err) {
       loginState.checking=false;
@@ -4923,7 +4923,13 @@ function renderOpportunities() {
             (()=>{const lp=state.proposals.find(p=>p.opportunityId===o.id&&p.quotationId);const qId=o.quotationId||(lp&&lp.quotationId);if(!qId)return btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','7px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'});const crmSent=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];const qStatus=o.quotationStatus||(lp&&lp.quotationStatus);const isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);return isDraft?btn('✏️ Taslağı Aç',()=>openQuotationWithSSO(qId),'#fffbeb','#b45309','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn('🔗 Teklif Programı',()=>openQuotationWithSSO(qId),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'});})(),
             btn('✏️ Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#fff3cd','#d97706','7px 14px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',flex:'1'}),
             (_CARRY_OPEN_STAGES.indexOf(o.stage)>=0)?btn('↦ '+(recFY(o)+1),()=>carryOverOpp(o),'#fef3c7','#92400e','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):h('span'),
-            btn('🗑️',()=>{if(confirm('Bu fırsatı silmek istediğinizden emin misiniz?')){deleteDoc('opportunities',o.id).then(()=>setState({opportunities:state.opportunities.filter(x=>x.id!==o.id)}));}},'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
+            o.stage==='KAZANILDI'?btn('📋 Görev öner',()=>suggestTasksFor('proje','opportunity',o.id,o.title||'Fırsat'),'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe',borderRadius:'7px'}):h('span'),
+            btn('🗑️',async()=>{ if(!confirm('Bu fırsatı silmek istediğinizden emin misiniz?')) return;
+  const r=await cascadeDeleteTasksFor('opportunity',o.id);
+  if(r.manuals.length && !confirm(r.manuals.length+' bağlı manuel görev var. Fırsatla birlikte silinsin mi? (İptal: görevler kalır)')){ /* manuelleri bırak */ }
+  else { for(const m of r.manuals){ await deleteDoc('tasks',m.id); } setState({tasks:(state.tasks||[]).filter(x=>!r.manuals.some(mm=>mm.id===x.id))}); }
+  await deleteDoc('opportunities',o.id); setState({opportunities:state.opportunities.filter(x=>x.id!==o.id)});
+  showToast('✅ Fırsat silindi'+(r.deletedAuto?(' · '+r.deletedAuto+' otomatik görev temizlendi'):'')); },'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
         );
       }) : [h('div',{style:{padding:'38px',textAlign:'center',color:T4,background:G2,borderRadius:'12px',border:`1px solid ${G3}`}},'Filtreye uygun fırsat bulunamadı.')]
@@ -5119,7 +5125,12 @@ function renderServiceOpps() {
       h('td',{style:{padding:'10px 12px',fontSize:'11px',whiteSpace:'nowrap'}},o._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},o._editedBy),h('br'),h('span',{style:{color:T4}},o._editedAt||'')):h('span',{style:{color:T4}},'—')),
       h('td',{style:{padding:'10px 12px'}},h('div',{style:{display:'flex',gap:'5px'}},
         btn('Düzenle',()=>setState({modal:{type:'serviceopp',item:o}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),
-        btn('Sil',()=>{deleteDoc('serviceOpps',o.id).then(()=>setState({serviceOpps:state.serviceOpps.filter(x=>x.id!==o.id)}));},'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})
+        btn('Sil',async()=>{ if(!confirm('Silinsin mi?')) return;
+  const r=await cascadeDeleteTasksFor('serviceOpp',o.id);
+  for(const m of r.manuals){ await deleteDoc('tasks',m.id); }
+  if(r.manuals.length) setState({tasks:(state.tasks||[]).filter(x=>!r.manuals.some(mm=>mm.id===x.id))});
+  await deleteDoc('serviceOpps',o.id); setState({serviceOpps:state.serviceOpps.filter(x=>x.id!==o.id)});
+  showToast('✅ Silindi'+(r.deletedAuto?(' · '+r.deletedAuto+' otomatik görev'):'')); },'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})
       ))
     ));
   });
@@ -5148,7 +5159,13 @@ function renderServiceOpps() {
           ),
           h('div',{style:{display:'flex',gap:'8px'}},
             btn('✏️',()=>setState({modal:{type:'serviceopp',item:o}}),'#fff3cd','#d97706','8px 14px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',flex:'1'}),
-            btn('🗑️',()=>{if(confirm('Silinsin mi?')){deleteDoc('serviceOpps',o.id).then(()=>setState({serviceOpps:state.serviceOpps.filter(x=>x.id!==o.id)}));}},'#fef2f2','#dc2626','8px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
+            btn('🔧 Görev öner',()=>suggestTasksFor('servis','serviceOpp',o.id,(o.title||o.customer||'Servis')),'#ecfeff','#0e7490','8px 12px',{fontSize:'13px',border:'1px solid #a5f3fc',borderRadius:'7px'}),
+            btn('🗑️',async()=>{ if(!confirm('Silinsin mi?')) return;
+  const r=await cascadeDeleteTasksFor('serviceOpp',o.id);
+  for(const m of r.manuals){ await deleteDoc('tasks',m.id); }
+  if(r.manuals.length) setState({tasks:(state.tasks||[]).filter(x=>!r.manuals.some(mm=>mm.id===x.id))});
+  await deleteDoc('serviceOpps',o.id); setState({serviceOpps:state.serviceOpps.filter(x=>x.id!==o.id)});
+  showToast('✅ Silindi'+(r.deletedAuto?(' · '+r.deletedAuto+' otomatik görev'):'')); },'#fef2f2','#dc2626','8px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
         );
       }) : [h('div',{style:{padding:'32px',textAlign:'center',color:T4,background:G2,borderRadius:'12px'}},'Kayıt bulunamadı.')]
@@ -6286,6 +6303,43 @@ async function _syncQuotationFiscalYear(quotationId, fy){
     });
     return { ok: res.ok };
   } catch(e){ return { ok:false }; }
+}
+// Bağlam+aşama → standart görev şablonları. dept: doğru departman; dueOffset: bugünden gün.
+const TASK_TEMPLATES = {
+  proje: [
+    { title:'Proje çizimi & malzeme listesi', dept:'proje',    dueOffset:7,  priority:'yuksek' },
+    { title:'Hidrolik hesap',                 dept:'proje',    dueOffset:7,  priority:'yuksek' },
+    { title:'Tedarikçi siparişleri',          dept:'muhasebe', dueOffset:14, priority:'orta'  },
+    { title:'Saha mobilizasyon & İSG',        dept:'saha',     dueOffset:21, priority:'yuksek' },
+    { title:'İş programı hazırlığı',          dept:'saha',     dueOffset:21, priority:'orta'  },
+  ],
+  servis: [
+    { title:'Randevu & teknisyen planlama',   dept:'teknik',   dueOffset:2,  priority:'orta'  },
+    { title:'Yedek parça / malzeme temini',   dept:'muhasebe', dueOffset:3,  priority:'orta'  },
+    { title:'Saha müdahale',                  dept:'teknik',   dueOffset:5,  priority:'yuksek' },
+    { title:'Test & devreye alma',            dept:'teknik',   dueOffset:6,  priority:'orta'  },
+    { title:'Servis raporu & teslim',         dept:'teknik',   dueOffset:7,  priority:'orta'  },
+  ],
+};
+function _offsetDay(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+// Bir kayıt için şablon görevlerini öner (kullanıcı onayıyla oluşturur). ctx: 'proje'|'servis'.
+async function suggestTasksFor(ctx, linkType, linkId, linkLabel){
+  const tpl = TASK_TEMPLATES[ctx]; if(!tpl) return;
+  const people = personelPeople();
+  const firstInDept = dept => { const u=people.find(x=>x.department===dept); return u?u.displayName:''; };
+  const existing = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType===linkType&&t.linkId===linkId).map(t=>t.title));
+  const toAdd = tpl.filter(x=>!existing.has(x.title)).map(x=>normTask({
+    id: genId(), title:x.title, desc:'', assignedTo:firstInDept(x.dept), department:x.dept,
+    assignedBy:(state.currentUser&&state.currentUser.displayName)||'', context:ctx,
+    linkType, linkId, linkLabel:linkLabel||'', dueDate:_offsetDay(x.dueOffset), dueTime:'', startDate:'',
+    status:'yapilacak', completedAt:null, priority:x.priority,
+    needsApproval:defaultNeedsApproval(ctx,x.priority), revisionCount:0, assignmentHistory:[], comments:[],
+    autoGenerated:true, createdBy:'şablon', createdAt:today(), fiscalYear:activeFiscalYear()
+  }));
+  if(!toAdd.length){ showToast('Bu kayıt için şablon görevleri zaten mevcut.'); return; }
+  if(!confirm(toAdd.length+' adet '+(TASK_CONTEXT_META[ctx].l)+' görevi oluşturulsun mu?\n\n- '+toAdd.map(t=>t.title).join('\n- '))) return;
+  for(const t of toAdd){ await personelSaveDoc('tasks', t); }
+  showToast('✅ '+toAdd.length+' görev oluşturuldu.');
 }
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
 async function personelAutoGenerateTasks(){
