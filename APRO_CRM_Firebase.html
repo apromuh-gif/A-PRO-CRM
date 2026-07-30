@@ -817,8 +817,14 @@ function normTask(t){
     revisionCount: Number(t.revisionCount)||0,
     assignmentHistory: Array.isArray(t.assignmentHistory)? t.assignmentHistory : [],
     comments: Array.isArray(t.comments)? t.comments : [],
+    execStage: t.execStage || '',
   });
 }
+// ---- Faz 2: Proje icra erişimcileri (okuma-anında varsayılan, migration yok) ----
+function projStage(o){ return (o && o.execStage) || 'teknik'; }
+function projIsActive(o){ return !!(o && o.execActive===true && !o.execClosedAt); }
+function projIsAwaiting(o){ return !!(o && o.stage==='KAZANILDI' && o.execActive!==true); }
+function projIsClosed(o){ return !!(o && o.execActive===true && o.execClosedAt); }
 // "Kapalı" (iş bitti) sayılan durumlar: onaylandi her zaman; tamamlandi yalnız onay gerekmiyorsa.
 function taskIsClosed(t){
   const n = normTask(t)||{};
