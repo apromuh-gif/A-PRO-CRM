@@ -6704,6 +6704,18 @@ function maintLastDone(m){ return (m && m.mtLastDone) || ''; }
 function maintHistory(m){ return (m && Array.isArray(m.mtHistory)) ? m.mtHistory : []; }
 function maintIsTracked(m){ return !!(m && m.mtPeriod && m.mtNextDue); }
 function maintPeriodLabel(p){ const o=MAINT_PERIODS.find(x=>x.v===p); return o ? o.l : ''; }
+// Periyot + baz tarihten sonraki vadeyi hesaplar (takvim-doğru).
+function computeNextDue(baseISO, period, days){
+  if(!baseISO) return '';
+  switch(period){
+    case 'aylik':  return _addMonth(baseISO, 1);
+    case '3aylik': return _addMonth(baseISO, 3);
+    case '6aylik': return _addMonth(baseISO, 6);
+    case 'yillik': return _addMonth(baseISO, 12);
+    case 'ozel':   return (Number(days) > 0) ? _addDay(baseISO, Number(days)) : '';
+    default:       return '';
+  }
+}
 // ================= /FAZ 3b =================
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
 async function personelAutoGenerateTasks(){
