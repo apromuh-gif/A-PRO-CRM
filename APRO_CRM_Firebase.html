@@ -713,7 +713,7 @@ let state = {
 let toastTimer = null;
 
 // Personel modülü (Faz 1) — geçici UI durumu (render dışı, additive)
-let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'liste', taskDept:'', taskPerson:'', projView:'liste', projDept:'', projPerson:'', projShowClosed:false };
+let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'liste', taskDept:'', taskPerson:'', projView:'liste', projDept:'', projPerson:'', projShowClosed:false, arizaTab:'tumu', arizaView:'liste' };
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -5281,11 +5281,49 @@ function renderServices() {
     ));
   });
   const isMobSvc = window.innerWidth <= 768;
+  // ── FAZ 3a: Arıza icra sekmeleri ──
+  const _svcAll=filterFY(state.services, activeFiscalYear());
+  const awaitingS=_svcAll.filter(servIsAwaiting);
+  const activeS=_svcAll.filter(servIsActive);
+  const closedS=_svcAll.filter(servIsClosed);
+  const isAdminS=!!(state.currentUser&&state.currentUser.isAdmin);
+  const arTab=PMOD.arizaTab||'tumu';
+  const tabBar=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
+    ...[['tumu','📋 Tümü',svcFiltered.length],['bekleyen','⏳ İcra bekleyen',awaitingS.length],['aktif','🚀 Aktif',activeS.length],['kapanan','✅ Kapanan',closedS.length]].map(x=>
+      btn(x[1]+' ('+x[2]+')',()=>{PMOD.arizaTab=x[0];render();},arTab===x[0]?'#0e7490':'#e8eef7',arTab===x[0]?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}))
+  );
+  const infoNote=h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},'ℹ️ Servis İş Takip = servis satış/fırsat; Teknik Servis icra = gelen arıza müdahale takibi.');
+  const headerRow=h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
+    h('h2',{style:{fontSize:isMobSvc?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🔧 Teknik Servis ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+svcFiltered.length+'/'+state.services.length+')')),
+    btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#0891b2,#0284c7)','#fff',isMobSvc?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(8,145,178,.3)'})
+  );
+
+  if(arTab==='bekleyen'){
+    return h('div',{style:{animation:'fu .3s ease'}}, headerRow, tabBar, infoNote,
+      awaitingS.length ? h('div',{}, ...awaitingS.map(s=>arizaAwaitingRow(s)))
+        : h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'İcra bekleyen arıza yok. (Durumu Onaylandı/Randevu olan, henüz icraya alınmamış servisler burada listelenir.)'));
+  }
+  if(arTab==='kapanan'){
+    return h('div',{style:{animation:'fu .3s ease'}}, headerRow, tabBar, infoNote,
+      closedS.length ? h('div',{}, ...closedS.map(s=>arizaListRow(s,isAdminS)))
+        : h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Kapanan arıza icrası yok.'));
+  }
+  if(arTab==='aktif'){
+    const arView=PMOD.arizaView||'liste';
+    const viewToggle=h('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},
+      btn('📋 Liste',()=>{PMOD.arizaView='liste';render();},arView==='liste'?'#1e3a6e':'#e8eef7',arView==='liste'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
+      btn('🗂 Kanban',()=>{PMOD.arizaView='kanban';render();},arView==='kanban'?'#1e3a6e':'#e8eef7',arView==='kanban'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'})
+    );
+    const body = (!activeS.length)
+      ? h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Aktif arıza icrası yok.')
+      : ((arView==='kanban' && !isMobSvc) ? renderArizaKanban(activeS, isAdminS)
+          : h('div',{}, ...activeS.map(s=>arizaListRow(s,isAdminS))));
+    return h('div',{style:{animation:'fu .3s ease'}}, headerRow, tabBar, infoNote, viewToggle, body);
+  }
+
+  // arTab==='tumu' → mevcut satış listesi (değişmedi)
   return h('div',{style:{animation:'fu .3s ease'}},
-    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
-      h('h2',{style:{fontSize:isMobSvc?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🔧 Teknik Servis ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+svcFiltered.length+'/'+state.services.length+')')),
-      btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#0891b2,#0284c7)','#fff',isMobSvc?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(8,145,178,.3)'})
-    ),
+    headerRow, tabBar, infoNote,
     fyEmptyBanner('services','teknik servis'),
     svcFilterBox,
     isMobSvc ?
@@ -5308,6 +5346,31 @@ function renderServices() {
       }) : [h('div',{style:{padding:'32px',textAlign:'center',color:T4,background:G2,borderRadius:'12px'}},'Filtre sonucu yok.')]
     ) :
     makeScrollTable(thead, tbody, [160,150,120,130,110,110,110,110,110,130,110], !svcFiltered.length, 'Henüz teknik servis kaydı yok.')
+  );
+}
+function arizaAwaitingRow(s){
+  const cust=(state.customers||[]).find(c=>c.id===s.customerId)||null;
+  return h('div',{style:{background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'}},
+    h('div',{style:{flex:'1',minWidth:'160px'}},
+      h('div',{style:{fontWeight:'700',color:'#0f2040'}},s.jobName||'(başlıksız)'),
+      cust?h('div',{style:{fontSize:'12px',color:T3}},'👤 '+(cust.firmName||'')):h('span'),
+      h('div',{style:{fontSize:'11px',color:T4}},'Durum: '+(s.status||'-'))
+    ),
+    btn('🔧 İcraya al',async()=>{await servStart(s); PMOD.arizaTab='aktif'; render();},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'})
+  );
+}
+function arizaListRow(s, isAdmin){
+  const st=servExecStage(s), meta=SERVICE_STAGE_META[st], open=servOpenCount(s, st);
+  const cust=(state.customers||[]).find(c=>c.id===s.customerId)||null;
+  const attn=servIsOverdue(s)||s.execUrgency==='acil';
+  return h('div',{style:{background:'#fff',border:'1px solid '+(attn?'#fca5a5':'#d0daea'),borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'},onclick:()=>setState({modal:{type:'ariza',serviceId:s.id}})},
+    h('div',{style:{flex:'1',minWidth:'160px'}},
+      h('div',{style:{fontWeight:'700',color:'#0f2040',fontSize:'14px'}},(attn?'🔴 ':'')+(s.jobName||'(başlıksız)')),
+      cust?h('div',{style:{fontSize:'12px',color:T3}},'👤 '+(cust.firmName||'')):h('span')
+    ),
+    (s.execUrgency==='acil')?h('span',{style:{background:'#fef2f2',color:'#dc2626',border:'1px solid #fecaca',borderRadius:'20px',padding:'4px 10px',fontSize:'11px',fontWeight:'700'}},'ACİL'):h('span'),
+    h('span',{style:{background:meta.color+'18',color:meta.color,border:'1px solid '+meta.color+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},meta.icon+' '+meta.l),
+    open?h('span',{style:{background:'#fef2f2',color:'#dc2626',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},open+' açık görev'):h('span',{style:{color:'#16a34a',fontSize:'12px',fontWeight:'700'}},'✓ temiz')
   );
 }
 
