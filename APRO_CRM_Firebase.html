@@ -825,6 +825,12 @@ function projStage(o){ return (o && typeof PROJECT_STAGES!=='undefined' && PROJE
 function projIsActive(o){ return !!(o && o.execActive===true && !o.execClosedAt); }
 function projIsAwaiting(o){ return !!(o && o.stage==='KAZANILDI' && o.execActive!==true); }
 function projIsClosed(o){ return !!(o && o.execActive===true && o.execClosedAt); }
+// ===== FAZ 3a: Arıza servis icra — salt-okuma güvenli erişimciler =====
+function servExecStage(s){ return (s && typeof SERVICE_STAGES!=='undefined' && SERVICE_STAGES.includes(s.execStage)) ? s.execStage : 'talep'; }
+function servIsActive(s){ return !!(s && s.execActive===true && !s.execClosedAt); }
+function servIsAwaiting(s){ return !!(s && s.execActive!==true && (s.status==='Onaylandı' || s.status==='Randevu')); }
+function servIsClosed(s){ return !!(s && s.execActive===true && s.execClosedAt); }
+function servIsOverdue(s){ return !!(s && s.execTargetDate && _toDate(s.execTargetDate) < _toDate(today())); }
 // "Kapalı" (iş bitti) sayılan durumlar: onaylandi her zaman; tamamlandi yalnız onay gerekmiyorsa.
 function taskIsClosed(t){
   const n = normTask(t)||{};
