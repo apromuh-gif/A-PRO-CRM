@@ -6474,6 +6474,161 @@ function renderPersonel(){
   return h('div',{}, headRow, tabBar, settings, body);
 }
 
+function openTaskModal(taskId){ setState({ modal:{ type:'task', taskId } }); }
+
+async function taskSetStatus(t, status){
+  const rec = Object.assign({}, normTask(t), { status, ...stamp() });
+  if(status==='tamamlandi') rec.completedAt = rec.completedAt || today();
+  await personelSaveDoc('tasks', rec);
+  if(status==='tamamlandi' && rec.needsApproval){
+    showNotification('task_done_'+rec.id, 'Onay bekliyor', (rec.title||'Görev')+' tamamlandı, onayınızı bekliyor.', 'info', rec.assignedBy);
+  }
+  showToast('✅ Durum güncellendi: '+(TASK_STATUS_META[status]?TASK_STATUS_META[status].l:status));
+}
+
+async function taskApprove(t){
+  const who = (state.currentUser && state.currentUser.displayName)||'';
+  const rec = Object.assign({}, normTask(t), { status:'onaylandi', approvedAt:today(), approvedBy:who, completedAt: t.completedAt||today(), ...stamp() });
+  await personelSaveDoc('tasks', rec);
+  showNotification('task_ok_'+rec.id, '✅ Görev onaylandı', (rec.title||'Görev')+' onaylandı.', 'win', rec.assignedTo);
+  playBeep('win');
+  showToast('✅ Görev onaylandı.');
+}
+
+async function taskRevise(t){
+  const note = prompt('Revizyon nedeni (zorunlu — neyin düzeltileceğini yazın):');
+  if(!note || !note.trim()){ showToast('⚠ Revizyon için açıklama zorunlu.','#dc2626'); return; }
+  const who = (state.currentUser && state.currentUser.displayName)||'';
+  const base = normTask(t);
+  const comments = base.comments.concat([{ by:who, text:'↩ Revizyon: '+note.trim(), at:today() }]);
+  const rec = Object.assign({}, base, { status:'devam', revisionCount:(base.revisionCount||0)+1, comments, ...stamp() });
+  await personelSaveDoc('tasks', rec);
+  showNotification('task_rev_'+rec.id, '↩ Revizyona döndü', (rec.title||'Görev')+' revizyona gönderildi.', 'warning', rec.assignedTo);
+  playBeep('warning');
+  showToast('↩ Revizyona gönderildi.');
+}
+
+async function taskReassign(t, toName, reason, note, newDue){
+  const who = (state.currentUser && state.currentUser.displayName)||'';
+  const person = personelPeople().find(u=>u.displayName===toName);
+  const base = normTask(t);
+  const hist = base.assignmentHistory.concat([{ from:base.assignedTo, to:toName, at:today(), by:who, reason:reason||'diger', note:note||'' }]);
+  const comments = base.comments.concat([{ by:who, text:'↪ Devredildi → '+toName+(reason?(' ('+(DEVIR_REASONS.find(r=>r.v===reason)||{}).l+')'):'' )+(note?': '+note:''), at:today() }]);
+  const rec = Object.assign({}, base, {
+    assignedTo: toName, department: person? person.department : base.department,
+    assignmentHistory: hist, comments,
+    dueDate: newDue || base.dueDate, ...stamp()
+  });
+  await personelSaveDoc('tasks', rec);
+  showNotification('task_reassign_'+rec.id, '↪ Yeni görev', (rec.title||'Görev')+' size devredildi.', 'info', toName);
+  playBeep('info');
+  showToast('↪ Devredildi: '+toName);
+}
+
+async function taskAddComment(t, text){
+  if(!text || !text.trim()) return;
+  const who = (state.currentUser && state.currentUser.displayName)||'';
+  const base = normTask(t);
+  const comments = base.comments.concat([{ by:who, text:text.trim(), at:today() }]);
+  const rec = Object.assign({}, base, { comments, ...stamp() });
+  await personelSaveDoc('tasks', rec);
+  const other = who===base.assignedTo ? base.assignedBy : base.assignedTo;
+  if(other) showNotification('task_cmt_'+rec.id, '💬 Yorum', (rec.title||'Görev')+' için yeni yorum.', 'info', other);
+}
+
+function buildTaskModal(taskId){
+  const t = normTask((state.tasks||[]).find(x=>x.id===taskId));
+  if(!t) return modal('Görev', h('div',{style:{padding:'16px'}},'Görev bulunamadı.'), ()=>setState({modal:null}));
+  const cu = state.currentUser || {};
+  const isAdmin = cu.role==='admin' || cu.role==='yonetici';
+  const myName = cu.displayName;
+  const isOwner = t.assignedTo===myName;
+  const isGiver = t.assignedBy===myName || isAdmin;
+  const sm = TASK_STATUS_META[t.status] || TASK_STATUS_META.yapilacak;
+  const cm = TASK_CONTEXT_META[t.context] || TASK_CONTEXT_META.sirket;
+
+  const ownerBtns = [];
+  if(isOwner && !taskIsClosed(t)){
+    if(t.status==='yapilacak') ownerBtns.push(btn('▶ Başla',()=>taskSetStatus(t,'devam'),'#2563eb','#fff','8px 14px'));
+    if(t.status==='devam'){
+      ownerBtns.push(btn('✓ Tamamladım',()=>taskSetStatus(t,'tamamlandi'),'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px'));
+      ownerBtns.push(btn('⏸ Beklet',()=>taskSetStatus(t,'beklemede'),'#fef3c7','#b45309','8px 14px'));
+    }
+    if(t.status==='beklemede') ownerBtns.push(btn('▶ Devam',()=>taskSetStatus(t,'devam'),'#2563eb','#fff','8px 14px'));
+  }
+
+  const approveBtns = [];
+  if(isGiver && t.status==='tamamlandi' && t.needsApproval){
+    approveBtns.push(btn('✅ Onayla',()=>taskApprove(t),'linear-gradient(135deg,#16a34a,#15803d)','#fff','8px 14px'));
+    approveBtns.push(btn('↩ Revizyon',()=>taskRevise(t),'#fee2e2','#dc2626','8px 14px'));
+  }
+
+  let devretPanel = h('span');
+  if(isGiver && !taskIsClosed(t)){
+    const d = state._devretDraft || (state._devretDraft = { to:'', reason:'is_yuku', note:'', newDue:t.dueDate||'', wide:false });
+    const pool = personelPeople().filter(u=> state._devretDraft.wide ? true : (u.department===t.department));
+    const opts = [{v:'',l:'— Kişi seçin —'}, ...pool.filter(u=>u.displayName!==t.assignedTo).map(u=>({v:u.displayName,l:u.displayName+' ('+(DEPT_LABEL[u.department]||'')+')'}))];
+    devretPanel = h('div',{style:{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'10px',padding:'12px',marginTop:'10px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',marginBottom:'8px'}},'↪ Devret'),
+      row(
+        field('Kime', sel(opts, d.to, v=>{d.to=v;}), true),
+        field('Sebep', sel(DEVIR_REASONS.map(r=>({v:r.v,l:r.l})), d.reason, v=>{d.reason=v;}), true)
+      ),
+      row(
+        field('Yeni bitiş (ops.)', inp('', d.newDue, v=>{d.newDue=v;}, 'date'), true),
+        field('Not (ops.)', inp('', d.note, v=>{d.note=v;}), true)
+      ),
+      h('div',{style:{display:'flex',gap:'8px',alignItems:'center',marginTop:'6px'}},
+        btn(d.wide?'◱ Sadece departman':'◲ Tüm ekip',()=>{d.wide=!d.wide;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'11px'}),
+        btn('↪ Devret',()=>{ if(!d.to){showToast('⚠ Kişi seçin.','#dc2626');return;} taskReassign(t,d.to,d.reason,d.note,d.newDue).then(()=>{state._devretDraft=null;setState({modal:null});}); },'#1e3a6e','#fff','8px 14px',{flex:'1'})
+      )
+    );
+  }
+
+  const commentList = (t.comments||[]).map(c=>h('div',{style:{fontSize:'12px',color:'#334155',padding:'6px 0',borderBottom:'1px solid #f1f5f9'}},
+    h('span',{style:{fontWeight:'700'}},(c.by||'-')+' · '),
+    h('span',{style:{color:'#94a3b8'}},_toTR(c.at)+' — '),
+    c.text));
+  const cDraft = state._commentDraft || (state._commentDraft={text:''});
+  const commentBox = h('div',{style:{marginTop:'12px'}},
+    h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',marginBottom:'6px'}},'💬 Yorumlar'),
+    ...(commentList.length?commentList:[h('div',{style:{fontSize:'12px',color:'#94a3b8'}},'Henüz yorum yok.')]),
+    h('div',{style:{display:'flex',gap:'6px',marginTop:'8px'}},
+      inp('Yorum ekle…', cDraft.text, v=>{cDraft.text=v;}),
+      btn('Gönder',()=>{ taskAddComment(t,cDraft.text).then(()=>{state._commentDraft=null;render();}); },'#2563eb','#fff','8px 14px')
+    )
+  );
+
+  const histList = (t.assignmentHistory||[]).length ? h('div',{style:{marginTop:'10px',fontSize:'11px',color:'#64748b'}},
+    h('div',{style:{fontWeight:'700',marginBottom:'4px',color:'#0f1f35'}},'↪ Devir geçmişi'),
+    ...(t.assignmentHistory.map(hh=>h('div',{},_toTR(hh.at)+': '+(hh.from||'-')+' → '+hh.to+(hh.reason?' ('+((DEVIR_REASONS.find(r=>r.v===hh.reason)||{}).l||hh.reason)+')':''))))
+  ) : h('span');
+
+  const meta = h('div',{style:{fontSize:'12px',color:'#475569',lineHeight:'1.7'}},
+    h('div',{},h('b',{},'Atanan: '),(t.assignedTo||'-')+(t.department?' · '+(DEPT_LABEL[t.department]||''):'')),
+    h('div',{},h('b',{},'Veren: '),(t.assignedBy||'-')),
+    h('div',{},h('b',{},'Bitiş: '),(t.dueDate?_toTR(t.dueDate):'-')+(t.dueTime?' '+t.dueTime:'')),
+    t.linkId?h('div',{},h('b',{},'Bağlı: '),(t.linkLabel||t.linkType)) : h('span'),
+    t.revisionCount?h('div',{style:{color:'#dc2626'}},h('b',{},'Revizyon: '),String(t.revisionCount)+' kez') : h('span')
+  );
+
+  const content = h('div',{style:{padding:'16px',maxHeight:'70vh',overflowY:'auto'}},
+    h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'8px'}},
+      h('span',{style:{background:cm.c+'22',color:cm.c,fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'9px'}},cm.l),
+      h('span',{style:{background:sm.bg,color:sm.c,fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'9px'}},sm.l),
+      t.needsApproval?h('span',{style:{background:'#ede9fe',color:'#6d28d9',fontSize:'11px',fontWeight:'700',padding:'3px 9px',borderRadius:'9px'}},'✔ Onay gerekir'):h('span')
+    ),
+    h('div',{style:{fontWeight:'800',fontSize:'16px',color:'#0f1f35',marginBottom:'4px'}},t.title||'Görev'),
+    t.desc?h('div',{style:{fontSize:'13px',color:'#475569',marginBottom:'10px'}},t.desc):h('span'),
+    meta,
+    (ownerBtns.length||approveBtns.length)?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'12px'}}, ...ownerBtns, ...approveBtns):h('span'),
+    devretPanel,
+    histList,
+    commentBox
+  );
+  return modal(t.title||'Görev', content, ()=>{ state._devretDraft=null; state._commentDraft=null; setState({modal:null}); }, '560px');
+}
+
 function renderPersonelGorevler(period, isAdmin, cu){
   const myName = cu && cu.displayName;
   let list = filterFY(state.tasks, activeFiscalYear());
@@ -7082,6 +7237,7 @@ function render() {
     else if(type==='targets') m=buildTargetsModal();
     else if(type==='carryover') m=buildCarryoverModal(state.modal.fromYear);
     else if(type==='fiscalyear') m=buildFiscalYearModal();
+    else if(type==='task') m=buildTaskModal(state.modal.taskId);
     else if(type==='proplist') m=buildPropListModal(state.modal.title, state.modal.items);
     else if(type==='reports') { buildReportsModal().then(function(el){if(el&&root)root.appendChild(el);}); }
     if(m) root.appendChild(m);
