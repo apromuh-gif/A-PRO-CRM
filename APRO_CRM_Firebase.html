@@ -713,7 +713,7 @@ let state = {
 let toastTimer = null;
 
 // Personel modülü (Faz 1) — geçici UI durumu (render dışı, additive)
-let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'liste', taskDept:'', taskPerson:'' };
+let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'liste', taskDept:'', taskPerson:'', projView:'liste', projDept:'', projPerson:'', projShowClosed:false };
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -7022,6 +7022,78 @@ function renderTaskKanban(tasks){
   return h('div',{style:{display:'flex',gap:'10px',overflowX:'auto',paddingBottom:'8px'}}, ...cols);
 }
 
+function renderProjeKanban(list, isAdmin){ return h('div',{}, ...list.map(o=>projListRow(o,isAdmin))); }
+function projFilterMgr(list, isAdmin){
+  if(isAdmin && PMOD.projDept) list = list.filter(o=>{
+    const deps = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType==='opportunity'&&t.linkId===o.id).map(t=>t.department));
+    return deps.has(PMOD.projDept);
+  });
+  if(isAdmin && PMOD.projPerson) list = list.filter(o=>o.assignedTo===PMOD.projPerson);
+  return list;
+}
+function projListRow(o, isAdmin){
+  const st=projStage(o), meta=PROJECT_STAGE_META[st], open=projOpenCount(o, st);
+  const cust=state.customers.find(c=>c.id===o.customerId)||null;
+  return h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'},onclick:()=>setState({modal:{type:'proje',oppId:o.id}})},
+    h('div',{style:{flex:'1',minWidth:'160px'}},
+      h('div',{style:{fontWeight:'700',color:'#0f2040',fontSize:'14px'}},o.title||'(başlıksız)'),
+      cust?h('div',{style:{fontSize:'12px',color:T3}},'👤 '+(cust.name||cust.firmName||'')):h('span')
+    ),
+    h('span',{style:{background:meta.color+'18',color:meta.color,border:'1px solid '+meta.color+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},meta.icon+' '+meta.l),
+    open?h('span',{style:{background:'#fef2f2',color:'#dc2626',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},open+' açık görev'):h('span',{style:{color:'#16a34a',fontSize:'12px',fontWeight:'700'}},'✓ temiz')
+  );
+}
+function renderProjeler(){
+  const cu=state.currentUser; const isAdmin=!!(cu&&cu.isAdmin); const myName=cu&&cu.displayName;
+  let all=(state.opportunities||[]);
+  if(!isAdmin) all=all.filter(o=>o.assignedTo===myName);
+  let awaiting=all.filter(projIsAwaiting);
+  let active=projFilterMgr(all.filter(projIsActive), isAdmin);
+  let closed=all.filter(projIsClosed);
+
+  const header=h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap',marginBottom:'14px'}},
+    h('h2',{style:{margin:'0',fontSize:'20px',color:'#0f2040'}},'🏗 Projeler'),
+    h('span',{style:{color:T3,fontSize:'13px'}},active.length+' aktif · '+awaiting.length+' bekleyen · '+closed.length+' kapanan')
+  );
+
+  let mgrBar=h('span');
+  if(isAdmin){
+    const deptOpts=[{v:'',l:'Tüm departmanlar'},...DEPARTMENTS.map(d=>({v:d.v,l:d.l}))];
+    const perOpts=[{v:'',l:'Tüm kişiler'},...personelPeople().map(u=>({v:u.displayName,l:u.displayName}))];
+    mgrBar=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}},
+      sel(deptOpts, PMOD.projDept, v=>{PMOD.projDept=v;render();}),
+      sel(perOpts, PMOD.projPerson, v=>{PMOD.projPerson=v;render();})
+    );
+  }
+
+  const awaitingBox = awaiting.length ? h('div',{style:{marginBottom:'16px'}},
+    h('div',{style:{fontWeight:'700',color:'#b45309',fontSize:'14px',marginBottom:'8px'}},'⏳ İcra bekleyen (kazanıldı)'),
+    ...awaiting.map(o=>h('div',{style:{background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'}},
+      h('div',{style:{flex:'1',minWidth:'160px',fontWeight:'700',color:'#0f2040'}},o.title||'(başlıksız)'),
+      btn('🏗 İcraya başlat',()=>projStart(o),'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'})
+    ))
+  ) : h('span');
+
+  const viewBar=h('div',{style:{display:'flex',gap:'6px',marginBottom:'10px'}},
+    btn('📋 Liste',()=>{PMOD.projView='liste';render();},PMOD.projView==='liste'?'#1e3a6e':'#e8eef7',PMOD.projView==='liste'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
+    btn('🗂 Kanban',()=>{PMOD.projView='kanban';render();},PMOD.projView==='kanban'?'#1e3a6e':'#e8eef7',PMOD.projView==='kanban'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'})
+  );
+  const isMobile = window.innerWidth<=768;
+  const activeBody = (!active.length)
+    ? h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Aktif proje yok.')
+    : ((PMOD.projView==='kanban' && !isMobile) ? renderProjeKanban(active, isAdmin)
+        : h('div',{}, ...active.map(o=>projListRow(o,isAdmin))));
+
+  const closedBox = closed.length ? h('div',{style:{marginTop:'16px'}},
+    btn((PMOD.projShowClosed?'▾':'▸')+' Kapanan projeler ('+closed.length+')',()=>{PMOD.projShowClosed=!PMOD.projShowClosed;render();},'#eef2f7','#334155','7px 12px',{fontSize:'12px'}),
+    PMOD.projShowClosed ? h('div',{style:{marginTop:'8px'}}, ...closed.map(o=>projListRow(o,isAdmin))) : h('span')
+  ) : h('span');
+
+  return h('div',{}, header, mgrBar, awaitingBox,
+    h('div',{style:{fontWeight:'700',color:'#0f2040',fontSize:'14px',margin:'4px 0 8px'}},'🚀 Aktif projeler'),
+    viewBar, activeBody, closedBox);
+}
+
 function renderPersonelPerformans(period, isAdmin){
   const people = personelPeople();
   if(!people.length){
@@ -7287,7 +7359,7 @@ function render() {
     return;
   }
 
-  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'personel',l:'🧑‍💼 Personel'}];
+  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'projeler',l:'🏗 Projeler'},{id:'personel',l:'🧑‍💼 Personel'}];
   const cu = state.currentUser;
 
   // NAVBAR
@@ -7497,6 +7569,7 @@ function render() {
   else if(state.tab==='appointments') content=renderAppointments();
   else if(state.tab==='visits') content=renderVisits();
   else if(state.tab==='maintenance') content=renderMaintenances();
+  else if(state.tab==='projeler') content=renderProjeler();
   else if(state.tab==='personel') content=renderPersonel();
 
   const isMobMain = window.innerWidth <= 768;
