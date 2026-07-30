@@ -6716,6 +6716,15 @@ function computeNextDue(baseISO, period, days){
     default:       return '';
   }
 }
+// Vade durumu: geciken (<0) / yaklasan (0–15 gün) / planli (>15) / '' (takipsiz).
+function maintDueStatus(m){
+  if(!maintIsTracked(m)) return '';
+  const dl = _diffDays(maintNextDue(m));
+  if(dl < 0) return 'geciken';
+  if(dl <= 15) return 'yaklasan';
+  return 'planli';
+}
+function maintDaysLeft(m){ return maintIsTracked(m) ? _diffDays(maintNextDue(m)) : null; }
 // ================= /FAZ 3b =================
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
 async function personelAutoGenerateTasks(){
