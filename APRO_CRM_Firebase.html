@@ -6754,6 +6754,24 @@ async function projRollback(o){
     upd=Object.assign({}, o, { execStage:prev, execStageHistory:[...(o.execStageHistory||[]), {stage:prev, at:now, by:me, rollback:true}] }); }
   await personelSaveDoc('opportunities', upd);
 }
+// İcrayı iptal et: proje aktif listeden çıkar; fırsat kaydı ve görevler KALIR (silinmez).
+async function projCancelExec(o){
+  if(!confirm('Proje icrası iptal edilsin mi?\n\nFırsat kaydı ve bağlı görevler KALIR; proje yalnızca aktif listeden çıkar. (Daha sonra "İcraya başlat" ile tekrar başlatılabilir.)')) return;
+  const upd=Object.assign({}, o, { execActive:false });
+  await personelSaveDoc('opportunities', upd);
+  setState({modal:null});
+  showToast('✅ İcra iptal edildi (kayıt korundu).');
+}
+// Projeyi tamamen sil: fırsat kaydı + bağlı görevler (otomatik + manuel) kaldırılır.
+async function projDelete(o){
+  if(!confirm('Bu proje/fırsat KALICI olarak silinsin mi?\n\nFırsat kaydı ve bağlı TÜM görevler silinir. Bu işlem geri alınamaz.')) return;
+  const r=await cascadeDeleteTasksFor('opportunity', o.id);
+  for(const m of (r.manuals||[])){ await deleteDoc('tasks', m.id); }
+  if(r.manuals && r.manuals.length) setState({tasks:(state.tasks||[]).filter(x=>!r.manuals.some(mm=>mm.id===x.id))});
+  await deleteDoc('opportunities', o.id);
+  setState({opportunities:(state.opportunities||[]).filter(x=>x.id!==o.id), modal:null});
+  showToast('🗑 Proje silindi'+(r.deletedAuto?(' · '+r.deletedAuto+' otomatik görev'):''));
+}
 // ================= /FAZ 2 =================
 // ================= FAZ 3a: ARIZA SERVİS İCRA =================
 const SERVICE_STAGES = ['talep','planlama','mudahale','kapanis'];
@@ -7536,6 +7554,8 @@ function buildProjeModal(oppId){
   if(!closed && idx===PROJECT_STAGES.length-1) acts.push(btn('✓ Projeyi kapat',async()=>{await projClose(o); render();},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'}));
   if(isAdmin && (closed || idx>0)) acts.push(btn(closed?'↺ Yeniden aç':'← Geri al',async()=>{await projRollback(o); render();},'#fef3c7','#92400e','8px 14px',{fontSize:'13px'}));
   acts.push(btn('+ Bu aşamaya görev öner',async()=>{await suggestStageTasks(o, st); render();},'#eef2ff','#4338ca','8px 14px',{fontSize:'13px'}));
+  acts.push(btn('⏹ İcra iptal',()=>projCancelExec(o),'#fff7ed','#c2410c','8px 14px',{fontSize:'13px',border:'1px solid #fed7aa'}));
+  if(isAdmin) acts.push(btn('🗑 Sil',()=>projDelete(o),'#fef2f2','#dc2626','8px 14px',{fontSize:'13px',border:'1px solid #fecaca'}));
   const actBar=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}, ...acts);
 
   const groups=PROJECT_STAGES.map(s=>{
