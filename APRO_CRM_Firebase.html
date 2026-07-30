@@ -7022,7 +7022,24 @@ function renderTaskKanban(tasks){
   return h('div',{style:{display:'flex',gap:'10px',overflowX:'auto',paddingBottom:'8px'}}, ...cols);
 }
 
-function renderProjeKanban(list, isAdmin){ return h('div',{}, ...list.map(o=>projListRow(o,isAdmin))); }
+function renderProjeKanban(list, isAdmin){
+  const cols = PROJECT_STAGES.map(st=>{
+    const meta=PROJECT_STAGE_META[st];
+    const items=list.filter(o=>projStage(o)===st);
+    return h('div',{style:{flex:'0 0 220px',minWidth:'220px',background:'#f4f7fb',border:'1px solid #d0daea',borderRadius:'12px',padding:'10px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'13px',color:meta.color,marginBottom:'8px',display:'flex',justifyContent:'space-between'}},
+        h('span',{},meta.icon+' '+meta.l), h('span',{style:{color:T4}},String(items.length))),
+      ...(items.length? items.map(o=>{
+        const open=projOpenCount(o, st);
+        return h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'10px',padding:'9px 10px',marginBottom:'8px',cursor:'pointer'},onclick:()=>setState({modal:{type:'proje',oppId:o.id}})},
+          h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f2040'}},o.title||'(başlıksız)'),
+          open?h('div',{style:{fontSize:'11px',color:'#dc2626',marginTop:'4px',fontWeight:'700'}},open+' açık görev'):h('div',{style:{fontSize:'11px',color:'#16a34a',marginTop:'4px'}},'✓ temiz')
+        );
+      }) : [h('div',{style:{color:T4,fontSize:'12px',padding:'6px'}},'—')])
+    );
+  });
+  return h('div',{style:{display:'flex',gap:'10px',overflowX:'auto',paddingBottom:'8px'}}, ...cols);
+}
 function projFilterMgr(list, isAdmin){
   if(isAdmin && PMOD.projDept) list = list.filter(o=>{
     const deps = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType==='opportunity'&&t.linkId===o.id).map(t=>t.department));
