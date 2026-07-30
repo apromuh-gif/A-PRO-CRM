@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 28 Temmuz 2026 (Performans/Prim Faz 2 + karlılık marj% + Test Modu)
+> Son güncelleme: 30 Temmuz 2026 (Servis Faz 3a arıza icra + Faz 3b periyodik bakım vade takibi; servis menü etiketleri; prim bordrosu çıktısı)
 
 ---
 
@@ -363,6 +363,8 @@ EPC & Anahtar Teslim Projeler · İnşaat & Taahhüt · Yangın & Güvenlik Sist
 | 7 Haz 2026 | v2.9 | Sticky navbar + tablo başlıkları, hedefsiz kullanıcı dropdown filtrelemesi, 9 bölümde Bul arama kutusu, Bul donma + pozisyon + TypeError düzeltmeleri |
 | 7 Haz 2026 | Web | Firebase Firestore günlük yedekleme (GitHub Actions, private repo, 30 gün rolling) |
 | 7 Haz 2026 | Web | NextAura web sitesi: badge güncelleme, hero logo tam ekran, sektör carousel (EPC/İnşaat/MEP/SiEnt), stats bar, pause-on-hover, "Sorunlar" bölümü kaldırıldı, slayt zemin renk uyumu |
+| 28 Tem 2026 | Faz 2 | Performans/Prim Faz 2: kriter bazlı manuel girdi, görev metriği ayrımı, karlılık marj% entegrasyonu, Test Modu |
+| 29 Tem 2026 | Faz 3 | Prim modeli (taban + aşım tavanlı/ivmeli, birey & karlılık aşımı), Kriter Performans Görünümü grafiği, rapor sadeleştirme, YTD hedef kartı |
 
 ---
 
@@ -505,3 +507,71 @@ DB'ye yazılmaz (`personelSaveDoc`/`saveTargets`/manuel kriter guard'lı); kapat
 veriler geri yüklenir, F5 de temizler.
 
 **Durum:** Tümü canlı (CRM `7f95572`, Teklif `0365423`). Endpoint doğrulandı (401/200).
+
+---
+
+## 🧑‍💼 Performans & Prim — Faz 3 (29 Temmuz 2026)
+
+### Prim hesaplama modeli yeniden yazıldı (taban + aşım)
+Prim artık iki bileşenden oluşur:
+- **Taban Prim** = `Tam Prim × Σ(ağırlık payı × min(gerçekleşme, %100))`. Her kriter en çok
+  kendi ağırlık payı kadar prim getirir; **karşılanmayan kriterin payı toplamdan düşülür**
+  (aşan kriter zayıf olanı telafi edemez). Eski `primBase × skor × hızlandırıcı` mantığı kaldırıldı.
+- **Aşım Primi** = `Tam Prim × Σ(birey,karlılık) ağırlık × (min(oran, aşım tavanı) − 1) × ivme`.
+  Yalnızca **bireysel satış hedefi** ve **karlılık** kriterlerinde %100'ü aşan kısım ödüllendirilir.
+- **Aşım tavanı** (varsayılan 1,5 = %150) aşırı primi sınırlar: temsilci hedefi %300 aşsa bile
+  aşım primi tavana takılır. **İvme** (varsayılan 1,0) aşımın ödül çarpanıdır.
+- Ayarlar → prim bölümüne **Aşım tavanı** + **Aşım ivmesi** alanları eklendi
+  (Firestore `settings/evalConfig`: `overCap`, `overAccel`).
+- Rapor prim kutusu artık "Taban X € + Aşım Y €" olarak ayrık gösterir.
+
+**Örnek (Erkan KARACAKALE, Temmuz):** birey %150 + karlılık %150 (tavanlı), şirket hedefi %5,
+görev %0 vb. → Taban 1.492 € + Aşım 600 € = **2.092 €**.
+
+### Rapor sadeleştirme + Kriter Performans Görünümü
+- İşe yaramayan **Skor Trendi** kaldırıldı; yerine yatay bar grafik **"Kriter Performans
+  Görünümü"** eklendi (kriter bazlı gerçekleşme, %70 eşik + %100 hedef referans çizgileri,
+  renk lejantı, veri yok = gri).
+- Rapor başına **{Ay} {Yıl} — Toplam Hedef (YTD)** kartı: bireysel/şirket satış + karlılık
+  marj hedefi, gerçekleşen + kalan.
+- Hedef sütunundan YTD değeri çıkarıldı (yalnız yıllık), "Nasıl okunur?" ve "Görev Dökümü"
+  bölümleri kaldırıldı, kazanılan projelere müşteri adı eklendi.
+
+**Durum:** Canlı (CRM `801057a`).
+
+---
+
+## 🔧 Servis İcra & Periyodik Bakım — Faz 3a + 3b (30 Temmuz 2026)
+
+Faz 3 iki seri işe ayrıldı: **3a = Arıza (services) doğrusal aşama motoru**, **3b = Periyodik bakım (maintenances) tekrar/vade takibi**. İkisi de canlı.
+
+### Faz 3a — Arıza Servis İcra (`services`)
+Faz 2 proje aşama motorunun servis eksenine taşınması. Reaktif/tek seferlik arıza müdahalesi.
+- **İcra alanları** (okuma-anı default, mevcut kayıt bozulmaz): `execActive / execStage / execStartedAt / execClosedAt / execStageHistory / execUrgency / execTargetDate / execCloseNote`. Satış ekseni `status` (Gönderildi/Revize/Onaylandı/Randevu) dokunulmadı — icra ayrı eksen.
+- **Aşamalar:** `talep → planlama → mudahale → kapanis` (📩/📅/🔧/✅). "planlama" adı `status`'taki "Randevu" ile çakışmayı önler.
+- **Onay bazlı aşama görev şablonları** (`SERVICE_STAGE_TEMPLATES`), `linkType:'service'`.
+- **Aciliyet/SLA:** `dusuk/normal/acil` + opsiyonel `execTargetDate`; acil veya vadesi geçen kayıtlar kırmızı vurgu.
+- **Fonksiyonlar:** `servExecStage / servIsActive / servIsAwaiting / servIsClosed / servStart / servAdvance / servClose / servRollback(admin) / servReopen(admin)`.
+- **UI:** Teknik Servis ekranına Tümü / İcra bekleyen / Aktif(+Kanban) / Kapanan sekmeleri, `buildArizaModal` aşama şeridi + aksiyonlar.
+- **Cascade delete:** `delItem('services')` → `cascadeDeleteTasksFor('service',id)` (öksüz görev kalmaz).
+
+### Faz 3b — Periyodik Bakım Vade Takibi (`maintenances`)
+Yasal zorunlu (BYKHY) tekrarlayan bakım. Aşama motoru YOK; **vade/tekrar (due-date/recurrence)** ekseni.
+- **Yeni alanlar** (okuma-anı default): `mtPeriod` (''/aylik/3aylik/6aylik/yillik/ozel), `mtPeriodDays`, `mtNextDue`, `mtLastDone`, `mtHistory[]`. İkili `status` (Hizmet Verildi/Verilmedi) ve `appointmentStart/End` ayrı yaşar. `maintenances` ORTAK → mali-yıl merceği uygulanmaz.
+- **`_addMonth(iso,n)`** — timezone-safe, ay-sonu clamp (31 Oca +1 ay → 28/29 Şub). `computeNextDue(base,period,days)` periyottan sonraki vadeyi türetir.
+- **Fonksiyonlar:** `maintPeriod / maintNextDue / maintLastDone / maintHistory / maintIsTracked / maintDueStatus (geciken/yaklasan/planli) / maintDaysLeft / maintDone`.
+- **Tamamlama akışı (`maintDone`):** not iste → `mtHistory` ekle → `mtLastDone=today()` → `mtNextDue=computeNextDue(...)` → `status` "Henüz Verilmedi"ye resetle → `saveMaint` deseni.
+- **UI:** Periyodik Bakım ekranına Tümü / 🟡 Yaklaşan (≤15 gün) / 🔴 Geciken (kırmızı) sekmeleri; `buildMaintModal` periyot seçici + vade + "✅ Bakımı Tamamla"; `buildBakimModal` geçmiş modalı.
+- **Ölü kod tamiri:** bildirim (~8386) + e-posta (~8738) tüketicileri yok olan `m.appointmentDate` yerine `mtNextDue` okuyacak şekilde bağlandı (7 gün önce uyarı/mail).
+
+### Doğrulama (test)
+`docs/superpowers/tests/` — `_addMonth` (8/8), `computeNextDue` (9/9), `maintDueStatus` (10/10) = **27 assertion geçti**; her değişiklikte `✅ SYNTAX OK`.
+
+### Ek düzeltmeler (aynı gün)
+- **Servis menü etiketleri:** "Teknik Servis" → **T. Servis Hizmet Takibi**; "T.Servis İş Takip" → **T. Servis Teklif Takip**; "Periyodik Bakım Takip" aynen.
+- **`today()` dedupe bug'ı:** 6 gecikme-bildirimi anahtarı fonksiyon referansını (`today`) değil değeri (`today()`) kullanacak şekilde düzeltildi — günlük hatırlatma anahtarı artık her gün rotasyona giriyor (opp_stale/prop_over/maint_over).
+- **Prim kırılım kod görünümü:** ham `<span>` HTML'i düz metin olarak görünüyordu → ayrı `h('span')` çocuğuna çevrildi (yüzde artık `%40` olarak render).
+- **Prim Bordrosu çıktısı:** prim kartına "🖨️ Prim Bordrosu" butonu + yazdırılabilir çeyreklik bordro (kriter · ağırlık · hak edilen €, taban/aşım/hak ediş/ödenen/devir, imza alanları).
+- **CRUD tutarlılığı:** Periyodik bakım Yaklaşan/Geciken satırlarına eksik olan **Sil** butonu eklendi (her görünümde kaydet/düzenle/sil tam).
+
+**Durum:** Tümü canlı (son commit `dd545eb`).
