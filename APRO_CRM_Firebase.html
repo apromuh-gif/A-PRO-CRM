@@ -1458,6 +1458,11 @@ async function saveServ(form, isEdit) {
   const list = isEdit ? state.services.map(s=>s.id===id?data:s) : [...state.services, data];
   setState({services:list, modal:null, saving:false});
   showToast('✅ Teknik Servis kaydedildi!');
+  // A) Onaylandı/Randevu olunca otomatik icraya al (henüz alınmadıysa) — ayrı "İcraya al" adımı gerekmez.
+  if((data.status==='Onaylandı' || data.status==='Randevu') && data.execActive!==true){
+    await servStart(data);
+    render();
+  }
 }
 async function saveMaint(form, isEdit) {
   setState({saving:true});
@@ -5362,10 +5367,12 @@ function renderServices() {
   const isAdminS=!!(state.currentUser&&state.currentUser.isAdmin);
   const arTab=PMOD.arizaTab||'tumu';
   const tabBar=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-    ...[['tumu','📋 Tümü',svcFiltered.length],['bekleyen','⏳ İcra bekleyen',awaitingS.length],['aktif','🚀 Aktif',activeS.length],['kapanan','✅ Kapanan',closedS.length]].map(x=>
+    ...[['tumu','📋 Tümü',svcFiltered.length],['bekleyen','⏳ Başlamadı',awaitingS.length],['aktif','🚀 Devam eden',activeS.length],['kapanan','✅ Bitti',closedS.length]].map(x=>
       btn(x[1]+' ('+x[2]+')',()=>{PMOD.arizaTab=x[0];render();},arTab===x[0]?'#0e7490':'#e8eef7',arTab===x[0]?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}))
   );
-  const infoNote=h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},'ℹ️ Servis İş Takip = servis satış/fırsat; Teknik Servis icra = gelen arıza müdahale takibi.');
+  const infoNote=h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},
+    h('div',{},'ℹ️ Servis İş Takip = servis satış/fırsat; Teknik Servis icra = gelen arıza müdahale takibi.'),
+    h('div',{style:{marginTop:'3px',color:'#0e7490',fontWeight:'600'}},'🧭 Akış: 1) Onaylanınca otomatik icraya alınır → 2) Aşamayı ilerlet → 3) Checklist + imza → 4) Kapat'));
   const headerRow=h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
     h('h2',{style:{fontSize:isMobSvc?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🔧 Teknik Servis ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+svcFiltered.length+'/'+state.services.length+')')),
     btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#0891b2,#0284c7)','#fff',isMobSvc?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(8,145,178,.3)'})
@@ -5374,12 +5381,12 @@ function renderServices() {
   if(arTab==='bekleyen'){
     return h('div',{style:{animation:'fu .3s ease'}}, headerRow, tabBar, infoNote,
       awaitingS.length ? h('div',{}, ...awaitingS.map(s=>arizaAwaitingRow(s)))
-        : h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'İcra bekleyen arıza yok. (Durumu Onaylandı/Randevu olan, henüz icraya alınmamış servisler burada listelenir.)'));
+        : h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Başlamamış arıza yok. (Onay bekleyen / henüz icraya alınmamış servisler burada listelenir; onaylananlar otomatik “Devam eden”e geçer.)'));
   }
   if(arTab==='kapanan'){
     return h('div',{style:{animation:'fu .3s ease'}}, headerRow, tabBar, infoNote,
       closedS.length ? h('div',{}, ...closedS.map(s=>arizaListRow(s,isAdminS)))
-        : h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Kapanan arıza icrası yok.'));
+        : h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bitmiş arıza icrası yok.'));
   }
   if(arTab==='aktif'){
     const arView=PMOD.arizaView||'liste';
@@ -5388,7 +5395,7 @@ function renderServices() {
       btn('🗂 Kanban',()=>{PMOD.arizaView='kanban';render();},arView==='kanban'?'#1e3a6e':'#e8eef7',arView==='kanban'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'})
     );
     const body = (!activeS.length)
-      ? h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Aktif arıza icrası yok.')
+      ? h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Devam eden arıza icrası yok.')
       : ((arView==='kanban' && !isMobSvc) ? renderArizaKanban(activeS, isAdminS)
           : h('div',{}, ...activeS.map(s=>arizaListRow(s,isAdminS))));
     return h('div',{style:{animation:'fu .3s ease'}}, headerRow, tabBar, infoNote, viewToggle, body);
@@ -5718,7 +5725,7 @@ function buildArizaModal(serviceId){
   if(!closed && idx===SERVICE_STAGES.length-1) acts.push(btn('✓ Arızayı kapat',async()=>{await servClose(s); render();},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'}));
   if(isAdmin && closed) acts.push(btn('↺ Yeniden aç',async()=>{await servReopen(s); render();},'#fef3c7','#92400e','8px 14px',{fontSize:'13px'}));
   if(isAdmin && !closed && idx>0) acts.push(btn('← Geri al',async()=>{await servRollback(s); render();},'#fef3c7','#92400e','8px 14px',{fontSize:'13px'}));
-  acts.push(btn('+ Bu aşamaya görev öner',async()=>{await suggestServStageTasks(s, st); render();},'#eef2ff','#4338ca','8px 14px',{fontSize:'13px'}));
+  acts.push(btn('+ Bu aşamaya görev öner',async()=>{await suggestServStageTasks(s, st, {manual:true, silent:true}); render();},'#eef2ff','#4338ca','8px 14px',{fontSize:'13px'}));
   const actBar=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}, ...acts);
 
   const groups=SERVICE_STAGES.map(x=>{
@@ -6923,7 +6930,6 @@ async function suggestTasksFor(ctx, linkType, linkId, linkLabel){
     autoGenerated:true, createdBy:'şablon', createdAt:today(), fiscalYear:activeFiscalYear()
   }));
   if(!toAdd.length){ showToast('Bu kayıt için şablon görevleri zaten mevcut.'); return; }
-  if(!confirm(toAdd.length+' adet '+(TASK_CONTEXT_META[ctx].l)+' görevi oluşturulsun mu?\n\n- '+toAdd.map(t=>t.title).join('\n- '))) return;
   for(const t of toAdd){ await personelSaveDoc('tasks', t); }
   showToast('✅ '+toAdd.length+' görev oluşturuldu.');
 }
@@ -6976,8 +6982,11 @@ function projOpenCount(o, stage){ return projStageTasks(o,stage).filter(t=>!task
 function _projStageIndex(s){ const i=PROJECT_STAGES.indexOf(s); return i<0?0:i; }
 
 // Aşamaya geçince o aşamanın şablon görevlerini öner (Faz 1 confirm-akışıyla aynı; kör üretim yok).
-async function suggestStageTasks(o, stage){
-  const tpl = PROJECT_STAGE_TEMPLATES[stage]; if(!tpl) return;
+async function suggestStageTasks(o, stage, opts){
+  const manual = !!(opts && opts.manual);
+  const silent = !!(opts && opts.silent);
+  const tpl = PROJECT_STAGE_TEMPLATES[stage];
+  if(!tpl || !tpl.length){ if(manual) showToast('Bu aşama için şablon görev tanımlı değil.', '#d97706'); return; }
   const people = personelPeople();
   const firstInDept = dept => { const u=people.find(x=>x.department===dept); return u?u.displayName:''; };
   const existing = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType==='opportunity'&&t.linkId===o.id).map(t=>t.title));
@@ -6990,8 +6999,8 @@ async function suggestStageTasks(o, stage){
     needsApproval:defaultNeedsApproval('proje',x.priority), revisionCount:0, assignmentHistory:[], comments:[],
     autoGenerated:true, createdBy:'şablon', createdAt:today(), fiscalYear:activeFiscalYear()
   }));
-  if(!toAdd.length) return;
-  if(!confirm(PROJECT_STAGE_META[stage].l+' aşaması için '+toAdd.length+' görev oluşturulsun mu?\n\n- '+toAdd.map(t=>t.title).join('\n- '))) return;
+  if(!toAdd.length){ if(manual) showToast('Bu aşamanın önerilen görevleri zaten ekli.', '#0891b2'); return; }
+  if(!silent && !confirm(PROJECT_STAGE_META[stage].l+' aşaması için '+toAdd.length+' görev oluşturulsun mu?\n\n- '+toAdd.map(t=>t.title).join('\n- '))) return;
   for(const t of toAdd){ await personelSaveDoc('tasks', t); }
   showToast('✅ '+toAdd.length+' görev oluşturuldu.');
 }
@@ -7002,7 +7011,7 @@ async function projStart(o){
   const upd=Object.assign({}, o, { execActive:true, execStage:'teknik', execStartedAt:now, execClosedAt:null,
     execStageHistory:[...(o.execStageHistory||[]), {stage:'teknik', at:now, by:me}] });
   await personelSaveDoc('opportunities', upd);
-  await suggestStageTasks(upd, 'teknik');
+  await suggestStageTasks(upd, 'teknik', {silent:true});
 }
 // Sonraki aşamaya geç (sıralı; açık görev varsa uyar).
 async function projAdvance(o){
@@ -7015,7 +7024,7 @@ async function projAdvance(o){
   const now=today(), me=(state.currentUser&&state.currentUser.displayName)||'';
   const upd=Object.assign({}, o, { execStage:next, execStageHistory:[...(o.execStageHistory||[]), {stage:next, at:now, by:me}] });
   await personelSaveDoc('opportunities', upd);
-  await suggestStageTasks(upd, next);
+  await suggestStageTasks(upd, next, {silent:true});
 }
 // Projeyi kapat (hakediş sonrası).
 async function projClose(o){
@@ -7073,8 +7082,11 @@ function servStageTasks(s, stage){
 }
 function servOpenCount(s, stage){ return servStageTasks(s,stage).filter(t=>!taskIsClosed(t)).length; }
 function _servStageIndex(st){ const i=SERVICE_STAGES.indexOf(st); return i<0?0:i; }
-async function suggestServStageTasks(s, stage){
-  const tpl = SERVICE_STAGE_TEMPLATES[stage]; if(!tpl) return;
+async function suggestServStageTasks(s, stage, opts){
+  const manual = !!(opts && opts.manual);
+  const silent = !!(opts && opts.silent);
+  const tpl = SERVICE_STAGE_TEMPLATES[stage];
+  if(!tpl || !tpl.length){ if(manual) showToast('Bu aşama için şablon görev tanımlı değil.', '#d97706'); return; }
   const people = personelPeople();
   const firstInDept = dept => { const u=people.find(x=>x.department===dept); return u?u.displayName:''; };
   const existing = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType==='service'&&t.linkId===s.id).map(t=>t.title));
@@ -7087,8 +7099,8 @@ async function suggestServStageTasks(s, stage){
     needsApproval:defaultNeedsApproval('servis',x.priority), revisionCount:0, assignmentHistory:[], comments:[],
     autoGenerated:true, createdBy:'şablon', createdAt:today(), fiscalYear:activeFiscalYear()
   }));
-  if(!toAdd.length) return;
-  if(!confirm(SERVICE_STAGE_META[stage].l+' aşaması için '+toAdd.length+' görev oluşturulsun mu?\n\n- '+toAdd.map(t=>t.title).join('\n- '))) return;
+  if(!toAdd.length){ if(manual) showToast('Bu aşamanın önerilen görevleri zaten ekli.', '#0891b2'); return; }
+  if(!silent && !confirm(SERVICE_STAGE_META[stage].l+' aşaması için '+toAdd.length+' görev oluşturulsun mu?\n\n- '+toAdd.map(t=>t.title).join('\n- '))) return;
   for(const t of toAdd){ await personelSaveDoc('tasks', t); }
   showToast('✅ '+toAdd.length+' görev oluşturuldu.');
 }
@@ -7099,7 +7111,7 @@ async function servStart(s){
     execUrgency:s.execUrgency||'normal', execTargetDate:s.execTargetDate||'',
     execStageHistory:[...(s.execStageHistory||[]), {stage:'talep', at:now, by:me}] });
   await personelSaveDoc('services', upd);
-  await suggestServStageTasks(upd, 'talep');
+  await suggestServStageTasks(upd, 'talep', {silent:true});
 }
 // Sonraki aşama (sıralı; açık görev varsa uyar).
 async function servAdvance(s){
@@ -7112,7 +7124,7 @@ async function servAdvance(s){
   const now=today(), me=(state.currentUser&&state.currentUser.displayName)||'';
   const upd=Object.assign({}, s, { execStage:next, execStageHistory:[...(s.execStageHistory||[]), {stage:next, at:now, by:me}] });
   await personelSaveDoc('services', upd);
-  await suggestServStageTasks(upd, next);
+  await suggestServStageTasks(upd, next, {silent:true});
 }
 // Arızayı kapat (kapanış notu iste — R7).
 async function servClose(s){
@@ -7824,8 +7836,11 @@ function buildTaskModal(taskId){
   let devretPanel = h('span');
   if(isGiver && !taskIsClosed(t)){
     const d = state._devretDraft || (state._devretDraft = { to:'', reason:'is_yuku', note:'', newDue:t.dueDate||'', wide:false });
-    const pool = personelPeople().filter(u=> state._devretDraft.wide ? true : (u.department===t.department));
-    const opts = [{v:'',l:'— Kişi seçin —'}, ...pool.filter(u=>u.displayName!==t.assignedTo).map(u=>({v:u.displayName,l:u.displayName+' ('+(DEPT_LABEL[u.department]||'')+')'}))];
+    // Devredilebilecek kişiler: aktif tüm kullanıcılar (departmansız olanlar da dahil), mevcut atanan hariç.
+    const _allPeople = (state.users||[]).filter(u=> u.active!==false && u.displayName && u.displayName!==t.assignedTo);
+    let pool = d.wide ? _allPeople : _allPeople.filter(u=> u.department && u.department===t.department);
+    if(!pool.length) pool = _allPeople; // departman eşleşmesi/tanımı yoksa tüm ekibe düş
+    const opts = [{v:'',l:'— Kişi seçin —'}, ...pool.map(u=>({v:u.displayName,l:u.displayName+(u.department?' ('+(DEPT_LABEL[u.department]||'')+')':'')}))];
     devretPanel = h('div',{style:{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'10px',padding:'12px',marginTop:'10px'}},
       h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',marginBottom:'8px'}},'↪ Devret'),
       row(
@@ -8109,7 +8124,7 @@ function buildProjeModal(oppId){
   if(!closed && idx<PROJECT_STAGES.length-1) acts.push(btn('Sonraki aşama →',async()=>{await projAdvance(o); render();},'#1e3a6e','#fff','8px 14px',{fontSize:'13px'}));
   if(!closed && idx===PROJECT_STAGES.length-1) acts.push(btn('✓ Projeyi kapat',async()=>{await projClose(o); render();},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'}));
   if(isAdmin && (closed || idx>0)) acts.push(btn(closed?'↺ Yeniden aç':'← Geri al',async()=>{await projRollback(o); render();},'#fef3c7','#92400e','8px 14px',{fontSize:'13px'}));
-  acts.push(btn('+ Bu aşamaya görev öner',async()=>{await suggestStageTasks(o, st); render();},'#eef2ff','#4338ca','8px 14px',{fontSize:'13px'}));
+  acts.push(btn('+ Bu aşamaya görev öner',async()=>{await suggestStageTasks(o, st, {manual:true, silent:true}); render();},'#eef2ff','#4338ca','8px 14px',{fontSize:'13px'}));
   acts.push(btn('⏹ İcra iptal',()=>projCancelExec(o),'#fff7ed','#c2410c','8px 14px',{fontSize:'13px',border:'1px solid #fed7aa'}));
   if(isAdmin) acts.push(btn('🗑 Sil',()=>projDelete(o),'#fef2f2','#dc2626','8px 14px',{fontSize:'13px',border:'1px solid #fecaca'}));
   const actBar=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}, ...acts);
