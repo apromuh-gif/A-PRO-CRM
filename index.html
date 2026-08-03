@@ -5525,12 +5525,11 @@ function clLoadItems(c, sys){
 }
 function clAddSystem(c){
   var used = (c.systems||[]).map(function(s){ return s.sysKey; });
-  var opts = Object.keys(SYS_META).filter(function(k){ return used.indexOf(k)<0; }).map(function(k){ return k+' = '+SYS_META[k].l; });
-  if(!opts.length){ showToast('Tüm sistemler eklendi', '#d97706'); return; }
-  var sysKey = prompt('Eklenecek sistem kodu:\n\n'+opts.join('\n'));
-  if(!sysKey) return; sysKey = sysKey.trim();
-  if(!SYS_META[sysKey]){ showToast('Geçersiz sistem kodu', '#dc2626'); return; }
-  c.systems.push({sysKey:sysKey, subType:'', visitFreq:'', items:[], extraNotes:'', nextDue:''});
+  var avail = Object.keys(SYS_META).filter(function(k){ return used.indexOf(k)<0; });
+  if(!avail.length){ showToast('Tüm sistemler eklendi', '#d97706'); return; }
+  // Boş satır ekle; sistem clSystemCard içindeki açılır listeden seçilir.
+  c.systems = c.systems || [];
+  c.systems.push({sysKey:'', subType:'', visitFreq:'', items:[], extraNotes:'', nextDue:''});
   _clRerender();
 }
 function _clResultBtn(label, active, color, onclick){
@@ -5548,6 +5547,15 @@ function clItemRow(c, sys, it){
     h('input',{value:it.note||'', placeholder:'Not', oninput:function(e){ it.note = e.target.value; }, style:Object.assign(_clInputStyle(),{flex:'1 1 140px',minWidth:'120px',padding:'6px 9px',fontSize:'12px'})}));
 }
 function clSystemCard(c, sys, idx){
+  // Sistem henüz seçilmemişse: açılır listeden seçtir.
+  if(!sys.sysKey){
+    var used = (c.systems||[]).map(function(s){ return s.sysKey; });
+    var pickOpts = [{v:'',l:'Sistem seçin…'}].concat(
+      Object.keys(SYS_META).filter(function(k){ return used.indexOf(k)<0; }).map(function(k){ return {v:k, l:SYS_META[k].l}; }));
+    return h('div',{style:{border:'1px dashed #94a3b8',borderRadius:'12px',padding:'12px',marginBottom:'12px',background:'#f8fafc',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
+      h('div',{style:{flex:'1 1 200px'}}, _clSelect(pickOpts, '', function(v){ if(!v) return; sys.sysKey=v; sys.subType=''; sys.visitFreq=''; sys.items=[]; sys.nextDue=''; _clRerender(); })),
+      btn('✕', function(){ c.systems.splice(idx,1); _clRerender(); }, '#dc2626', '#fff', '7px 11px', {fontSize:'12px'}));
+  }
   var meta = SYS_META[sys.sysKey] || {l:sys.sysKey, subs:[]};
   var head = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',alignItems:'center',marginBottom:'8px'}},
     h('div',{style:{fontWeight:'800',fontSize:'14px',color:'#0f1f35',flex:'1 1 160px'}}, meta.l,
@@ -5568,7 +5576,7 @@ function clSystemCard(c, sys, idx){
     h('textarea',{oninput:function(e){ sys.extraNotes=e.target.value; }, style:Object.assign(_clInputStyle(),{minHeight:'46px',resize:'vertical'})}, sys.extraNotes||''));
   return h('div',{style:{border:'1px solid #e2e8f0',borderRadius:'12px',padding:'12px',marginBottom:'12px',background:'#f8fafc'}}, head, due, ...rows, extra);
 }
-function clSignPad(c, sign, label, canvasId){
+function clSignPad(c, sign, label, canvasId, nameList){
   setTimeout(function(){
     var cv = document.getElementById(canvasId); if(!cv) return;
     var ctx = cv.getContext('2d'); ctx.lineWidth=2; ctx.lineCap='round'; ctx.strokeStyle='#0f172a';
@@ -5581,9 +5589,15 @@ function clSignPad(c, sign, label, canvasId){
     cv.onmousedown=start; cv.onmousemove=move; cv.onmouseup=end; cv.onmouseleave=end;
     cv.ontouchstart=start; cv.ontouchmove=move; cv.ontouchend=end;
   }, 0);
+  var _listId = canvasId+'-names';
+  var _hasList = Array.isArray(nameList) && nameList.length;
+  var _nameInput = _hasList
+    ? h('input',{value:sign.name||'', placeholder:'Ad Soyad (listeden seçin veya yazın)', list:_listId, oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})})
+    : h('input',{value:sign.name||'', placeholder:'Ad Soyad', oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})});
   return h('div',{style:{flex:'1 1 240px',minWidth:'220px'}},
     h('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'4px',color:'#334155'}}, label),
-    h('input',{value:sign.name||'', placeholder:'Ad Soyad', oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})}),
+    _nameInput,
+    _hasList ? h('datalist',{id:_listId}, ...nameList.map(function(n){ return h('option',{value:n}); })) : null,
     h('canvas',{id:canvasId, width:'440', height:'150', style:{width:'100%',height:'140px',border:'1px dashed #94a3b8',borderRadius:'8px',background:'#fff',touchAction:'none',cursor:'crosshair'}}),
     h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'4px'}},
       h('span',{style:{fontSize:'11px',color:'#94a3b8'}}, sign.at?('Tarih: '+_toTR(sign.at)):'İmza için alana çizin'),
@@ -5608,7 +5622,7 @@ function buildChecklistModal(c){
   var signs = h('div',{style:{marginTop:'14px',paddingTop:'14px',borderTop:'2px solid #e2e8f0'}},
     h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}}, 'İmzalar (dijital + ıslak)'),
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
-      clSignPad(c, c.staffSign, 'A-Pro Yetkilisi', 'sig-staff'),
+      clSignPad(c, c.staffSign, 'A-Pro Yetkilisi', 'sig-staff', (state.users||[]).filter(function(u){return u.active!==false;}).map(function(u){return u.displayName;}).sort(function(a,b){return a.localeCompare(b,'tr');})),
       clSignPad(c, c.custSign, 'Müşteri Yetkilisi', 'sig-cust')));
   var isExisting = (state.checklists||[]).some(function(x){ return x.id===c.id; });
   var footer = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
