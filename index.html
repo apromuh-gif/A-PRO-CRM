@@ -7227,7 +7227,8 @@ function _clTemplates(){ return {
       {kod:'spr_a5', label:'Arıza giderildi; değişen malzeme kaydedildi'},
       {kod:'spr_a6', label:'Ana drenaj (main drain) testi ile sistem doğrulandı'},
       {kod:'spr_a7', label:'Alarm / akış anahtarı fonksiyonu tekrar test edildi'},
-      {kod:'spr_a8', label:'Sistem servise alındı; vanalar açık ve mühürlü'}
+      {kod:'spr_a8', label:'Sistem servise alındı; vanalar açık ve mühürlü'},
+      {kod:'spr_a9', label:'Devre dışı bırakma / geri alma (impairment) kaydı: ilgili taraflar bilgilendirildi'}
     ],
     pompa: [
       {kod:'pmp_a1', label:'Arıza / alarm sebebi teyit edildi'},
@@ -7263,7 +7264,8 @@ function _clTemplates(){ return {
       {kod:'gas_a1', label:'Arıza / alarm sebebi teyit edildi'},
       {kod:'gas_a2', label:'Tüp basıncı ve tartım değerleri kontrol edildi'},
       {kod:'gas_a3', label:'Boşaltma devresi (blok) durumu kontrol edildi'},
-      {kod:'gas_a4', label:'Arıza giderildi; sistem tekrar devreye alındı'}
+      {kod:'gas_a4', label:'Arıza giderildi; sistem tekrar devreye alındı'},
+      {kod:'gas_a5', label:'Devre dışı süresince manuel/otomatik mod ve blokaj durumu kayıt altına alındı'}
     ],
     davlumbaz: [
       {kod:'kit_a1', label:'Arıza konusu teyit edildi'},
@@ -7330,7 +7332,8 @@ function _clTemplates(){ return {
       {kod:'gas_d3', label:'Boşaltma devresi ve gecikme süresi doğrulandı'},
       {kod:'gas_d4', label:'Manuel / otomatik tetik ve abort butonu test edildi'},
       {kod:'gas_d5', label:'Uyarı ve blokaj sinyalleri doğrulandı'},
-      {kod:'gas_d6', label:'Devreye alma tutanağı imzalandı'}
+      {kod:'gas_d6', label:'Devreye alma tutanağı imzalandı'},
+      {kod:'gas_d7', label:'Tüp hidrostatik test tarihleri geçerli ve etiketli'}
     ],
     davlumbaz: [
       {kod:'kit_d1', label:'Nozul tipi / konumu ocak yerleşimi ile uyumlu'},
@@ -7354,6 +7357,8 @@ function _clTemplates(){ return {
       {kod:'spr_m10', freq:'yillik',  label:'Yangın pompası / su kaynağı bağlantısı doğrulandı'},
       {kod:'spr_m11', freq:'5yillik', label:'Boru iç muayenesi (yabancı madde / tıkanma) yapıldı'},
       {kod:'spr_m12', freq:'5yillik', label:'Gate valf iç aksam / basınç azaltma vanası testi'},
+      {kod:'spr_m13', freq:'3aylik',  label:'İtfaiye bağlantısı (FDC): kapak, kaçak, tıkanma kontrolü'},
+      {kod:'spr_m14', freq:'5yillik', label:'Manometreler test / kalibre edildi veya değiştirildi (5 yıl)'},
       {kod:'spr_w1', sub:'islak', freq:'aylik', label:'Islak sistem: ısıtma sağlanıyor, donma riski yok (min 4°C)'},
       {kod:'spr_k1', sub:'kuru', freq:'haftalik', label:'Kuru sistem hava / azot basıncı normal aralıkta'},
       {kod:'spr_k2', sub:'kuru', freq:'3aylik',   label:'Kuru vana priming su seviyesi kontrol edildi'},
@@ -7372,7 +7377,9 @@ function _clTemplates(){ return {
       {kod:'pmp_m6', freq:'aylik',   label:'Salmastra sızıntısı normal, titreşim / ses yok'},
       {kod:'pmp_m7', freq:'yillik',  label:'Yıllık debi testi (churn / %100 / %150) yapıldı'},
       {kod:'pmp_m8', freq:'yillik',  label:'Pompa eğrisi kabul değerleri ile karşılaştırıldı'},
-      {kod:'pmp_m9', sub:'dizel', freq:'yillik', label:'Dizel: yakıt filtresi, kayış, egzoz bakımı yapıldı'}
+      {kod:'pmp_m9', sub:'dizel', freq:'yillik', label:'Dizel: yakıt filtresi, kayış, egzoz bakımı yapıldı'},
+      {kod:'pmp_m10', freq:'yillik', label:'Basınç tahliye (relief) vanası ve dönüş hattı kontrol edildi'},
+      {kod:'pmp_m11', freq:'aylik',  label:'Otomatik / manuel start testi ve çalışma süresi kaydedildi'}
     ],
     hidrant_dolap: [
       {kod:'hyd_m1', freq:'aylik',  label:'Yangın dolapları erişilebilir, hortum ve lans yerinde'},
@@ -7399,14 +7406,16 @@ function _clTemplates(){ return {
       {kod:'alr_m2', freq:'3aylik', label:'Örnek dedektör / buton / siren fonksiyon testi yapıldı'},
       {kod:'alr_m3', freq:'yillik', label:'Tüm dedektörler test / temizlik yapıldı'},
       {kod:'alr_m4', freq:'yillik', label:'Aküler kapasite / gerilim testine tabi tutuldu'},
-      {kod:'alr_m5', freq:'yillik', label:'Çevre birim entegrasyonları (damper, asansör) doğrulandı'}
+      {kod:'alr_m5', freq:'yillik', label:'Çevre birim entegrasyonları (damper, asansör) doğrulandı'},
+      {kod:'alr_m6', freq:'yillik', label:'Duman dedektörü hassasiyet (sensitivity) testi yapıldı — NFPA 72'}
     ],
     gazli: [
       {kod:'gas_m1', freq:'aylik',  label:'Tüp basınç / seviye göstergeleri normal aralıkta'},
       {kod:'gas_m2', freq:'3aylik', label:'Panel, tetik devresi ve uyarılar fonksiyon kontrolü'},
       {kod:'gas_m3', freq:'6aylik', label:'Tüp tartımı yapıldı (ağırlık kaybı sınır içinde)'},
       {kod:'gas_m4', freq:'yillik', label:'Boşaltma nozulları ve boru hattı muayene edildi'},
-      {kod:'gas_m5', freq:'yillik', label:'Mahal sızdırmazlık kontrolü ve tutanak güncellendi'}
+      {kod:'gas_m5', freq:'yillik', label:'Mahal sızdırmazlık kontrolü ve tutanak güncellendi'},
+      {kod:'gas_m6', freq:'5yillik', label:'Tüp hidrostatik test / muayene tarihi kontrol edildi (DOT / imalatçı süresi)'}
     ],
     davlumbaz: [
       {kod:'kit_m1', freq:'aylik',  label:'Nozul kapakları takılı, yağ / tıkanma yok'},
