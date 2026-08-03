@@ -687,6 +687,7 @@ let state = {
   tab: 'dashboard',
   currentUser: null,
   customers: [], opportunities: [], proposals: [], services: [], maintenances: [],
+  checklists: [],
   users: [],
   // Personel modülü (Faz 1) — additive
   tasks: [], evaluations: [], prim: [],
@@ -1297,13 +1298,13 @@ function renderLogin() {
 // VERİ YÜKLEME
 // ═══════════════════════════════════════════════════════
 async function loadAllData() {
-  const [customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim] = await Promise.all([
+  const [customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim, checklists] = await Promise.all([
     loadCollection('customers'), loadCollection('opportunities'),
     loadCollection('proposals'), loadCollection('services'), loadCollection('maintenances'),
     loadCollection('suppliers'), loadCollection('serviceOpps'), loadCollection('visits'), loadCollection('appointments'),
-    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('prim')
+    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('prim'), loadCollection('checklists')
   ]);
-  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim});
+  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim, checklists});
   if(Array.isArray(state.tasks)) setState({ tasks: state.tasks.map(normTask) });
 }
 
@@ -5407,6 +5408,213 @@ function renderArizaKanban(list, isAdmin){
   });
   return h('div',{style:{display:'flex',gap:'10px',overflowX:'auto',paddingBottom:'8px'}}, ...cols);
 }
+// ═══════════════════════════════════════════════════════
+// NFPA CHECKLIST — CRUD + UI + İMZA + PDF
+// ═══════════════════════════════════════════════════════
+function _clInputStyle(){ return {width:'100%',padding:'9px 11px',border:'1px solid #cbd5e1',borderRadius:'8px',fontSize:'14px',boxSizing:'border-box',background:'#fff'}; }
+function _clSelect(opts, val, onch){
+  return h('select',{onchange:function(e){onch(e.target.value);}, style:_clInputStyle()},
+    ...opts.map(function(o){ return h('option', Object.assign({value:o.v}, String(o.v)===String(val)?{selected:'selected'}:{}), o.l); }));
+}
+function _clRerender(){ setState({modal: state.modal}); }
+
+async function clSave(c){
+  c.status = (c.staffSign && c.staffSign.name && c.custSign && c.custSign.name) ? 'tamam' : 'taslak';
+  c._editedBy = (state.currentUser && state.currentUser.displayName) || '';
+  c._editedAt = today();
+  if(!c.createdAt) c.createdAt = today();
+  setState({saving:true});
+  await saveDoc('checklists', c.id, c);
+  var list = (state.checklists||[]).slice();
+  var i = list.findIndex(function(x){ return x.id===c.id; });
+  if(i>=0) list[i]=c; else list.push(c);
+  setState({checklists:list, modal:null, saving:false});
+  showToast('✅ Checklist kaydedildi');
+}
+async function clDelete(id){
+  if(!confirm('Bu checklist kalıcı olarak silinsin mi?')) return;
+  await deleteDoc('checklists', id);
+  setState({checklists:(state.checklists||[]).filter(function(x){ return x.id!==id; }), modal:null});
+  showToast('🗑 Checklist silindi');
+}
+// Açıcı: opts { formType, customerId, siteName, projectId, linkType, linkId, defaultSysKey }
+function openChecklist(opts){
+  opts = opts || {};
+  var existing = opts.id ? (state.checklists||[]).find(function(x){ return x.id===opts.id; }) : null;
+  var c = normChecklist(existing ? JSON.parse(JSON.stringify(existing)) : {
+    id: genId(),
+    formType: opts.formType || 'bakim',
+    customerId: opts.customerId || '',
+    siteName: opts.siteName || '',
+    projectId: opts.projectId || '',
+    linkType: opts.linkType || '',
+    linkId: opts.linkId || '',
+    systems: [],
+    createdAt: today()
+  });
+  if(!existing && opts.defaultSysKey && SYS_META[opts.defaultSysKey]){
+    c.systems.push({sysKey:opts.defaultSysKey, subType:'', visitFreq:'', items:[], extraNotes:'', nextDue:''});
+  }
+  setState({modal:{type:'checklist', item:c}});
+}
+// Sisteme madde yükle/güncelle (cevapları koru).
+function clLoadItems(c, sys){
+  var prev = {}; (sys.items||[]).forEach(function(it){ prev[it.kod] = {result:it.result, note:it.note}; });
+  var base = (c.formType==='bakim') ? clVisitItems(sys) : clItems(c.formType, sys.sysKey, sys.subType||'');
+  sys.items = base.map(function(t){
+    var p = prev[t.kod] || {};
+    return {kod:t.kod, label:t.label, freq:t.freq||'', result:(p.result||''), note:(p.note||'')};
+  });
+  if(c.formType==='bakim' && sys.visitFreq){ sys.nextDue = clComputeNextDue(c.createdAt||today(), sys.visitFreq); }
+}
+function clAddSystem(c){
+  var used = (c.systems||[]).map(function(s){ return s.sysKey; });
+  var opts = Object.keys(SYS_META).filter(function(k){ return used.indexOf(k)<0; }).map(function(k){ return k+' = '+SYS_META[k].l; });
+  if(!opts.length){ showToast('Tüm sistemler eklendi', '#d97706'); return; }
+  var sysKey = prompt('Eklenecek sistem kodu:\n\n'+opts.join('\n'));
+  if(!sysKey) return; sysKey = sysKey.trim();
+  if(!SYS_META[sysKey]){ showToast('Geçersiz sistem kodu', '#dc2626'); return; }
+  c.systems.push({sysKey:sysKey, subType:'', visitFreq:'', items:[], extraNotes:'', nextDue:''});
+  _clRerender();
+}
+function _clResultBtn(label, active, color, onclick){
+  return h('button',{onclick:onclick, style:{padding:'5px 9px',border:'1px solid '+(active?color:'#cbd5e1'),background:(active?color:'#fff'),color:(active?'#fff':'#475569'),borderRadius:'7px',fontSize:'12px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap'}}, label);
+}
+function clItemRow(c, sys, it){
+  return h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',alignItems:'center',padding:'7px 0',borderBottom:'1px solid #f1f5f9'}},
+    h('div',{style:{flex:'1 1 240px',fontSize:'13px',color:'#1e293b'}},
+      it.label,
+      it.freq ? h('span',{style:{fontSize:'11px',color:'#94a3b8',marginLeft:'6px'}}, '['+(FREQ_META[it.freq]||it.freq)+']') : ''),
+    h('div',{style:{display:'flex',gap:'5px'}},
+      _clResultBtn('Uygun', it.result==='uygun', '#16a34a', function(){ it.result = it.result==='uygun'?'':'uygun'; _clRerender(); }),
+      _clResultBtn('Uygun Değil', it.result==='uygundegil', '#dc2626', function(){ it.result = it.result==='uygundegil'?'':'uygundegil'; _clRerender(); }),
+      _clResultBtn('N/A', it.result==='na', '#64748b', function(){ it.result = it.result==='na'?'':'na'; _clRerender(); })),
+    h('input',{value:it.note||'', placeholder:'Not', oninput:function(e){ it.note = e.target.value; }, style:Object.assign(_clInputStyle(),{flex:'1 1 140px',minWidth:'120px',padding:'6px 9px',fontSize:'12px'})}));
+}
+function clSystemCard(c, sys, idx){
+  var meta = SYS_META[sys.sysKey] || {l:sys.sysKey, subs:[]};
+  var head = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',alignItems:'center',marginBottom:'8px'}},
+    h('div',{style:{fontWeight:'800',fontSize:'14px',color:'#0f1f35',flex:'1 1 160px'}}, meta.l,
+      h('span',{style:{fontSize:'11px',color:'#94a3b8',marginLeft:'6px',fontWeight:'600'}}, meta.std||'')),
+    (meta.subs && meta.subs.length) ? h('div',{style:{flex:'0 0 150px'}}, _clSelect(
+      [{v:'',l:'Alt-tip seçin…'}].concat(meta.subs), sys.subType, function(v){ sys.subType=v; clLoadItems(c,sys); _clRerender(); })) : '',
+    (c.formType==='bakim') ? h('div',{style:{flex:'0 0 140px'}}, _clSelect(
+      [{v:'',l:'Ziyaret frekansı…'},{v:'haftalik',l:'Haftalık'},{v:'aylik',l:'Aylık'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'}],
+      sys.visitFreq, function(v){ sys.visitFreq=v; clLoadItems(c,sys); _clRerender(); })) : '',
+    btn('↻ Maddeler', function(){ clLoadItems(c,sys); _clRerender(); }, '#0891b2', '#fff', '7px 12px', {fontSize:'12px'}),
+    btn('✕', function(){ c.systems.splice(idx,1); _clRerender(); }, '#dc2626', '#fff', '7px 11px', {fontSize:'12px'}));
+  var due = (c.formType==='bakim' && sys.nextDue) ? h('div',{style:{fontSize:'12px',color:'#0891b2',marginBottom:'6px'}}, '⏭ Sonraki bakım vadesi: '+_toTR(sys.nextDue)) : '';
+  var rows = (sys.items && sys.items.length)
+    ? sys.items.map(function(it){ return clItemRow(c, sys, it); })
+    : [h('div',{style:{fontSize:'12px',color:'#94a3b8',padding:'8px 0'}}, 'Madde yok — alt-tip/frekans seçip “↻ Maddeler” ile yükleyin.')];
+  var extra = h('div',{style:{marginTop:'8px'}},
+    h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}}, 'Ek not / bu sahada olmayan maddeler:'),
+    h('textarea',{oninput:function(e){ sys.extraNotes=e.target.value; }, style:Object.assign(_clInputStyle(),{minHeight:'46px',resize:'vertical'})}, sys.extraNotes||''));
+  return h('div',{style:{border:'1px solid #e2e8f0',borderRadius:'12px',padding:'12px',marginBottom:'12px',background:'#f8fafc'}}, head, due, ...rows, extra);
+}
+function clSignPad(c, sign, label, canvasId){
+  setTimeout(function(){
+    var cv = document.getElementById(canvasId); if(!cv) return;
+    var ctx = cv.getContext('2d'); ctx.lineWidth=2; ctx.lineCap='round'; ctx.strokeStyle='#0f172a';
+    if(sign.dataURL){ var img=new Image(); img.onload=function(){ ctx.drawImage(img,0,0,cv.width,cv.height); }; img.src=sign.dataURL; }
+    var drawing=false;
+    function pos(e){ var r=cv.getBoundingClientRect(); var t=e.touches&&e.touches[0]; var cx=t?t.clientX:e.clientX; var cy=t?t.clientY:e.clientY; return {x:(cx-r.left)*(cv.width/r.width), y:(cy-r.top)*(cv.height/r.height)}; }
+    function start(e){ e.preventDefault(); drawing=true; var p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); }
+    function move(e){ if(!drawing) return; e.preventDefault(); var p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); }
+    function end(){ if(!drawing) return; drawing=false; sign.dataURL=cv.toDataURL('image/png'); if(!sign.at) sign.at=today(); }
+    cv.onmousedown=start; cv.onmousemove=move; cv.onmouseup=end; cv.onmouseleave=end;
+    cv.ontouchstart=start; cv.ontouchmove=move; cv.ontouchend=end;
+  }, 0);
+  return h('div',{style:{flex:'1 1 240px',minWidth:'220px'}},
+    h('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'4px',color:'#334155'}}, label),
+    h('input',{value:sign.name||'', placeholder:'Ad Soyad', oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})}),
+    h('canvas',{id:canvasId, width:'440', height:'150', style:{width:'100%',height:'140px',border:'1px dashed #94a3b8',borderRadius:'8px',background:'#fff',touchAction:'none',cursor:'crosshair'}}),
+    h('div',{style:{display:'flex',justifyContent:'space-between',marginTop:'4px'}},
+      h('span',{style:{fontSize:'11px',color:'#94a3b8'}}, sign.at?('Tarih: '+_toTR(sign.at)):'İmza için alana çizin'),
+      h('button',{onclick:function(){ var cv=document.getElementById(canvasId); if(cv){ cv.getContext('2d').clearRect(0,0,cv.width,cv.height); } sign.dataURL=''; sign.at=''; _clRerender(); }, style:{fontSize:'11px',color:'#dc2626',background:'none',border:'none',cursor:'pointer',fontWeight:'700'}}, 'Temizle')));
+}
+function buildChecklistModal(c){
+  c = normChecklist(c); state.modal.item = c;
+  var custOpts = [{v:'',l:'Müşteri seçin…'}].concat(
+    [].concat(state.customers||[]).sort(function(a,b){ return (a.firmName||'').localeCompare(b.firmName||'','tr'); })
+      .map(function(x){ return {v:x.id, l:x.firmName||'(isimsiz)'}; }));
+  var header = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px',marginBottom:'12px'}},
+    h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Müşteri'),
+      _clSelect(custOpts, c.customerId, function(v){ c.customerId=v; })),
+    h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Saha / Bina Adı'),
+      h('input',{value:c.siteName||'', placeholder:'Örn. Merkez Bina, A Blok', oninput:function(e){ c.siteName=e.target.value; }, style:_clInputStyle()})),
+    h('div',{style:{flex:'0 0 190px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Form Tipi'),
+      _clSelect([{v:'ariza',l:'Arıza / Servis'},{v:'devreye',l:'Test / Devreye Alma'},{v:'bakim',l:'Periyodik Bakım'}], c.formType, function(v){ c.formType=v; (c.systems||[]).forEach(function(s){ clLoadItems(c,s); }); _clRerender(); })),
+    h('div',{style:{flex:'0 0 150px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Tarih'),
+      h('input',{type:'date', value:c.createdAt||today(), oninput:function(e){ c.createdAt=e.target.value; }, style:_clInputStyle()})));
+  var systems = (c.systems||[]).map(function(sys,idx){ return clSystemCard(c, sys, idx); });
+  var addBtn = h('div',{style:{marginBottom:'14px'}}, btn('+ Sistem Ekle', function(){ clAddSystem(c); }, '#2563eb'));
+  var signs = h('div',{style:{marginTop:'14px',paddingTop:'14px',borderTop:'2px solid #e2e8f0'}},
+    h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}}, 'İmzalar (dijital + ıslak)'),
+    h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
+      clSignPad(c, c.staffSign, 'A-Pro Yetkilisi', 'sig-staff'),
+      clSignPad(c, c.custSign, 'Müşteri Yetkilisi', 'sig-cust')));
+  var isExisting = (state.checklists||[]).some(function(x){ return x.id===c.id; });
+  var footer = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
+    btn('💾 Kaydet', function(){ clSave(c); }, '#16a34a'),
+    btn('🖨️ PDF / Yazdır', function(){ printChecklist(c); }, '#0891b2'),
+    isExisting ? btn('🗑 Sil', function(){ clDelete(c.id); }, '#dc2626') : '',
+    btn('Kapat', function(){ setState({modal:null}); }, '#64748b'));
+  var body = h('div',{}, header, ...systems, addBtn, signs, footer);
+  return modal(FORMTYPE_META[c.formType]||'Servis Checklist', body, function(){ setState({modal:null}); }, '900px');
+}
+// ── PDF ──
+function _clResultBadge(r){ return r==='uygun'?'✔ Uygun': r==='uygundegil'?'✗ Uygun Değil': r==='na'?'N/A':'—'; }
+function printChecklist(c){
+  c = normChecklist(c);
+  var cust = (state.customers||[]).find(function(x){ return x.id===c.customerId; });
+  var sysHtml = (c.systems||[]).map(function(sys){
+    var meta = SYS_META[sys.sysKey] || {l:sys.sysKey};
+    var subLabel = ''; if(sys.subType && meta.subs){ var so=meta.subs.find(function(o){return o.v===sys.subType;}); subLabel = so?so.l:sys.subType; }
+    var head = escapeHtml(meta.l) + (subLabel?(' · '+escapeHtml(subLabel)):'') + (c.formType==='bakim'&&sys.visitFreq?(' · '+escapeHtml(FREQ_META[sys.visitFreq]||sys.visitFreq)):'');
+    var due = (c.formType==='bakim'&&sys.nextDue) ? '<div class="due">Sonraki bakım vadesi: '+escapeHtml(_toTR(sys.nextDue))+'</div>' : '';
+    var rows = (sys.items||[]).map(function(it){
+      return '<tr><td>'+escapeHtml(it.label)+'</td><td class="c">'+(it.freq?escapeHtml(FREQ_META[it.freq]||it.freq):'')+'</td><td class="c">'+_clResultBadge(it.result)+'</td><td>'+escapeHtml(it.note||'')+'</td></tr>';
+    }).join('');
+    var extra = sys.extraNotes ? '<div class="extra"><b>Ek not:</b> '+escapeHtml(sys.extraNotes)+'</div>' : '';
+    return '<div class="sys"><h3>'+head+'</h3>'+due+'<table><thead><tr><th>Madde</th><th class="c">Frekans</th><th class="c">Sonuç</th><th>Not</th></tr></thead><tbody>'+(rows||'<tr><td colspan="4" class="c">—</td></tr>')+'</tbody></table>'+extra+'</div>';
+  }).join('');
+  function signBox(s, role){
+    var img = s.dataURL ? '<img src="'+s.dataURL+'" class="sig"/>' : '<div class="sig"></div>';
+    return '<div class="signbox"><div class="role">'+role+'</div>'+img+'<div class="sigline">Ad Soyad: '+escapeHtml(s.name||'')+'</div><div class="sigline">Tarih: '+escapeHtml(s.at?_toTR(s.at):'')+'</div><div class="sigline">İmza (ıslak): ______________________</div></div>';
+  }
+  var html = ''
+   + '<style>@media print{.no-print{display:none!important;}} @page{margin:14mm;} body{font-family:Arial,Helvetica,sans-serif;color:#111;} .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f1f35;padding-bottom:8px;margin-bottom:12px;} .hd img{height:46px;} .hd h1{font-size:17px;margin:0;color:#0f1f35;text-align:right;} .meta{font-size:12px;color:#334155;margin-bottom:12px;line-height:1.6;} .sys{margin:14px 0;page-break-inside:avoid;} .sys h3{font-size:14px;background:#eef2ff;padding:6px 9px;border-radius:6px;margin:0 0 6px;} table{width:100%;border-collapse:collapse;font-size:11.5px;} th,td{border:1px solid #e2e8f0;padding:5px 7px;text-align:left;vertical-align:top;} th{background:#f8fafc;} td.c,th.c{text-align:center;white-space:nowrap;} .due{font-size:12px;color:#0891b2;margin:2px 0 6px;} .extra{font-size:12px;margin:4px 0;} .signs{display:flex;gap:24px;margin-top:26px;page-break-inside:avoid;} .signbox{flex:1;} .role{font-weight:700;font-size:13px;margin-bottom:4px;} img.sig,.sig{display:block;width:220px;height:80px;border:1px solid #cbd5e1;border-radius:6px;object-fit:contain;} .sigline{font-size:12px;margin-top:4px;} .foot{margin-top:24px;font-size:10px;color:#94a3b8;text-align:center;}</style>'
+   + '<div class="hd"><img src="'+APRO_LOGO_DATAURI+'"/><h1>'+escapeHtml(FORMTYPE_META[c.formType]||'Servis Checklist')+'</h1></div>'
+   + '<div class="meta"><b>Müşteri:</b> '+escapeHtml(cust?(cust.firmName||'—'):'—')+' &nbsp;·&nbsp; <b>Saha / Bina:</b> '+escapeHtml(c.siteName||'—')+' &nbsp;·&nbsp; <b>Tarih:</b> '+escapeHtml(_toTR(c.createdAt||today()))+'</div>'
+   + sysHtml
+   + '<div class="signs">'+signBox(c.staffSign,'A-Pro Yetkilisi')+signBox(c.custSign,'Müşteri Yetkilisi')+'</div>'
+   + '<div class="foot">A-PRO Mühendislik · NFPA temelli servis checklist · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
+  var ep = document.getElementById('print-overlay'); if(ep) ep.remove();
+  var po = document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
+  var bar = document.createElement('div'); bar.className='no-print'; bar.style.cssText='display:flex;gap:8px;padding:10px;border-bottom:1px solid #e2e8f0;';
+  var pb = document.createElement('button'); pb.textContent='🖨️ Yazdır'; pb.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;'; pb.onclick=function(){ window.print(); };
+  var cb = document.createElement('button'); cb.textContent='✕ Kapat'; cb.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;'; cb.onclick=function(){ po.remove(); };
+  bar.appendChild(pb); bar.appendChild(cb);
+  var content = document.createElement('div'); content.style.cssText='overflow:auto;padding:24px;'; content.innerHTML=html;
+  po.appendChild(bar); po.appendChild(content); document.body.appendChild(po);
+}
+// Bir kayda bağlı checklist listesi + yeni buton bloğu (modal içi giriş noktası).
+function clListBlock(opts){
+  var list = (state.checklists||[]).filter(function(x){ return x.linkType===opts.linkType && x.linkId===opts.linkId; });
+  var rows = list.map(function(c){
+    return h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 8px',border:'1px solid #e2e8f0',borderRadius:'8px',marginBottom:'6px',background:'#fff'}},
+      h('span',{style:{flex:'1',fontSize:'13px'}}, (FORMTYPE_META[c.formType]||c.formType)+' · '+_toTR(c.createdAt)+' · '+(c.status==='tamam'?'✅ Tamam':'✏️ Taslak')+' · '+((c.systems||[]).length)+' sistem'),
+      btn('Aç', function(){ openChecklist({id:c.id}); }, '#2563eb', '#fff', '5px 12px', {fontSize:'12px'}),
+      btn('PDF', function(){ printChecklist(c); }, '#0891b2', '#fff', '5px 12px', {fontSize:'12px'}));
+  });
+  return h('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #e2e8f0'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
+      h('div',{style:{fontWeight:'800',fontSize:'14px',flex:'1',color:'#0f1f35'}}, '🧪 Servis Checklist (NFPA)'),
+      btn('+ Yeni Checklist', function(){ openChecklist(opts.newOpts); }, '#16a34a', '#fff', '6px 13px', {fontSize:'12px'})),
+    rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#94a3b8'}}, 'Henüz checklist yok.'));
+}
+
 function buildArizaModal(serviceId){
   const cu=state.currentUser; const isAdmin=!!(cu&&cu.isAdmin); const myName=cu&&cu.displayName;
   const s=(state.services||[]).find(x=>x.id===serviceId);
@@ -5461,6 +5669,7 @@ function buildArizaModal(serviceId){
     strip, metaBar, actBar, closeNote,
     h('div',{style:{borderTop:'1px solid #e2e8f0',paddingTop:'12px'}}, tasksBox)
   );
+  content.appendChild(clListBlock({ linkType:'service', linkId:s.id, newOpts:{ formType:'ariza', customerId:s.customerId||'', siteName:(cust&&cust.firmName)||'', linkType:'service', linkId:s.id } }));
   return modal((s.jobName||'Arıza')+' — İcra', content, ()=>setState({modal:null}), '720px');
 }
 
@@ -6890,6 +7099,268 @@ function computeNextDue(baseISO, period, days){
     default:       return '';
   }
 }
+
+// ═══════════════════════════════════════════════════════
+// NFPA SERVİS CHECKLIST MODÜLÜ (Faz 4)
+//   Formlar: ariza (arıza/servis) · devreye (test/devreye alma) · bakim (periyodik)
+//   Standartlar: su bazlı=NFPA 25/13/20 · algılama=NFPA 72 · gazlı=NFPA 2001/12 · davlumbaz=NFPA 96/17A
+// ═══════════════════════════════════════════════════════
+const APRO_LOGO_DATAURI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQQAAABwCAIAAAB3rpk+AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAABBKADAAQAAAABAAAAcAAAAAAmbA7sAAA17ElEQVR4Ae2dB3wU1dbAt7d0CEVAIQoWEESqCBYQsCGgvidiARUVxadYEXzP9ikioj6xYUEQGyoWEBERVFRE6V2R3ntLssn23e8/e5NhMluyKbtB3swvLDN3bj1zzj3lnnuuPhQK6bRLg4AGAZ3OoAFBg4AGAQEBjRg0TNAgUAIBjRg0VNAgUAIB07EICdQY+Y/+Ca1Gr5e6yq/8dyx2XevT3xgCxwYxBIO6QIC/EH9eb6igIHj4cCg/P+h0hoqLdV6vDiXfYtanpfFnyMoy5GTrM7P0VqveaNTxZzBIv9qlQaBqEKg5YoAA/P4Qf4WF/o0bfGv+9K9Z7V+3LrB9e3D/fhJDLlekpUvPZbPpMzIMubnGRo2MzZqZW7Tgz9i0qSE7W28y6fiDNrRLg0DFIaCPRLiKV1KREsg8Pl/I5/Ov3+CZ/6tv7lzv0qWBbdtIkWsJy0PyU/QbpT0Y/mBs2Mjc+izLBRdYz+tiOqO53mzW8adRRXTgaanRIZBCYgiLQIGtW9zfzvJM+8q7ZHGgsBC8TwT1o/e9bKogD4Pdbmrd2tbrCttll5pOPVVvsUi8Qrs0CCQAgZQQA7KQx+OdP9/13nuumTODBw/SsZg0YDCEUJENBgSiEL9S1pK8MDHuQshXsJdgUC9uIgYJVfBnzMq0XtTdMWCAtWtXvd0uMQrt0iAQFwJJJga4gdvtnjWr+I03PD/8gH4chQZAepNJqMKGzExDvXrGBg2M9evr69Q15OTo09MkRdliQY6CotAlgocOBffuDe7aFdi9O7B3r6RhQ2zUjAou7E6lAxa8wtqli+OOO+y9eqF8a1yiFDba/1EgkDRiCAbBXc/cn4r++6J79mxaVpGBNOubzai8xrwm5rNam9q3t7RqZTz5ZGOdOnqHI0pPI5KCEMaePf71673Ll/sWLvSvWiXRhs+n9/vhG3L2EpLo3Dntvvtsl16K/q3pEjJwtBslBJJDDF4vdqHC50a7Pv5Ews4yDepDZrPBajW1amXt0cN60UXmli2xliqzVO4+sG+vb8lSz3ffeX6c69+wHhOtXqGUC5KwX3llxn/+Yz7zTB26hHZpECgLgeomBhhCcXHRO+Odo0YH9u5RkoHECqxWY+PGtl697FddZW7bVtJuk3AFCwok/WTKFAgDK214mULQgqRLGGrXTh82LP2OO/Tp6TXMIhDqStWhJIBBq7LCEKhWYvD5fGvXFowY4Z4xI5IMzG3a2AcOtPftiyBU4W5WqoB/06biTz5xffhhYONGnccjaxSQhO3iizNHjzY3b15TijWripiYDXXrVmpkWqGkQKD6iMHtdn3+ef7DDwd27pQpAbsQ3AAySLvrLsggQWWgegcaOHDANXly0ZtvBTasl0gifEEPqOmZY8Y4rr5aZ7XGa5H5W+jl1bpqgRgZcjqBTLymtXephUD1EANGnsJnnikcM0Yy6ZRe6AamvLy0oUPTBgyQZJIavQL790EPxW++iZItdAlJcjKZMoaPyHhkhGR7jXoFAsF9+wL799N/04knViMbQe8PFRWZW7eO2qyWWCMQqDIxhELB3XuODL3H9dlnSobA4hdCUcbw4caTTqqRgUVt1Pfnn86Rz7i+/AJfD0ZOHqxOaQMHZr34oqFWLXWRYNAzb17o0CF93To6jxfjle3CC/WZmepslXrWiKFSYEtuoaq58QSD/o0bD/W7plhJCSaTqUWL7MmTs19/PR4lgIsYQGMsnCVp0OYzzsj54P3sd94xNWvG4gatMP6iSZMODxwY2LNH1ShDg3V4V692T/nM9fHHaN7exUtUebTH4wkCVSCGQMC7ePGhvn2ZPuVa9FlZjptvzp31rb137+hgYhm5qAjZwweS/fij+/s53uXLeJTWzlJ1Oa69tvbs2Y4bB+izs2mTzru//vpw//4S9gv1INwTlB+MsIFNm3Q2W2DrVtYBQ14Pq3up6qbWTqohUFm/HShh6dLDNw30/7m2RDrS6w116qQNH55+992S92i0C+EkuGe3a9p091df4aMaPHIE5GPV2diyJQiKvZXZNzXmTtNJJ2W/9aazVUvnc8+F0CKQiObOPXL77TkTJmD8Lem7zYqOa0hLR4LSp6Xr7TayYRGINjIt7XiAQKV0hlCIef0QU+maNQI1WENAV858/nlMRrGgEjp82DVtWuELL/hXryaPEqck4R1z5xVXZD37rOn001NDD+E2de5vZhY89KBv3TrWrekGfch5e7yhnmTxRG/2L14cyM+3X3IJi+jB/Hxzx46Wli1FwSr+ajpDFQGYjOKVIYbAli1Qgvf330sowWi0NG+eOW6ctXPn6F0MhQK79xQ+/VTxW29Fd08KF0OXtbRpU+uDD0xnnBG9nuSkepctyx8yxLdkCYZ/SZ++5Zbsl15iywStITgxWJ3dpvP6dWkOa9u21UWoGjEk52NWrVZk+Apd+Jwe7NNnh063M/y3w2DYd/bZnqVL41Ti37LlwBVXyEVEwai/5NnfrRtTcpzakvHKt2HD/q5dd5rN9Io+5D/9NP6FJQ35/YFDB4PFxdXbLrwIIqzeOrXaqggBWfVNiKQQ+gtGjkTakaUjdpllvTvRcvbZscrjW3pkyBD39OlKuShWZvLg3Fr4wos4osbKk4x00ymnZE+aZDmvC+Yj+uB8eqRrxowSbz+j0ZBTK+ZCRDJ6o9VZQxCoCDEEAjj8FL38SgklsGaVl5f19tuWVmfF6jwKqOSd8c03iVCCqIScxa+/5l2xPFadSUpnTS17wkS0gpDRGHK78h+UFIkktaVVe2xCoALE4FuzBswO+Uv2Zxrr1s169VVrx44xB+b3F731ZvGkSYlTgqgKTzvn8y+kmDnQtKlx4+zx49F/8J8LbN5c+MgjqTT4xgSj9iJVEEiUGEKFzoLhwwO7dpVgdlpa+lNP2S65JE4/WaIqfOrpilICFVLEM306Bqs4lSfplfn00zNZK2zQgD64vvzSNWmScmtEkhrVqj1GIJAYMQQCRRPecc+cWYLZZnPaoEHpt90WZwzMqQWPPyatJFTqChYVFb//vnIJrFLVVKYQO+Myn31Wl57OYFGQAhs2VKYWrczfEAIJEQPGFuezowUlYIy3nNMp48kn4/viu6dO9cyeXUI8lYKLe9q0UH4laalSDR4t5LjhBjY84JbHInQBhEHgJu36H4BAAsTg9TpHjQrs2S2ggaqQ8fwYghTFAQ5CP4trVZnXoSL8IDy//R6nlaS+Sn/0Ucu559KE66OP3PPmJbUtrfJjBALlE4OHXWMff1wyxyMg3XeftUOH+L3HkOpburQqbIH6sRljhorfUPLe4iSSMeY59iGxk7sI5uByJa8treZjBALlEYPH4xz9HAhBdxGQzB06sE2nnK57PKw0q/JAGMo/1dtYj96ffmLxK9bbZKdb23dIu+ce/KxY+nDN/i7ZzWn11zgEyiEG99y5njlzxBzPPrWMxx83hP0U4vTbs3iR7KlBNkEDAb2+gLVqi+WI0eQPR0MSdcaphwyB9ev9mzfFyZPsVxCDqfXZQewH/31JV3NkmexhavULCMQjBixCzufGiIUFNnDim23r3r0cwAWDrrfHE5lCZAOh8fPcaLW+lZMztE7dwXXq3F0n9+WcnFV2u89Q/jbKoNvtqzm1gSEgLGU9M9KQmeX55RdXzcls5cBce11NEIhHDMSY8P46T0zhxhNOSBsyJL4FiS4RyMgtcxIkK71+ud0+MifnDbt9icm4ORRaaTBMtNkez87+0eHwioB5cUfiWbQo7vukv7R062bvdTkRwovHjxfiYtKb1BqoIQjEJoaAH0t/ibag19uvvVaKJVHexQyKOVLkouq1VuuzmZkLjUZzKGQJhUxoHTqdNRTaYDA8m5U1lxB35e0PCKxapQvgS1pjF6H+0tihkZ3t+fln38qVNdYPreHkQyAmMfi3bfd8+63ogDE31zFoUPmdwf6Df1v44riEgybT2OzsP4xGm2L7mHgLYRwMhV7IzIRvxD9Ywb95c6CGVhvk8Vrat7dffDHrgO4pU6piL5Yr1G6OTQjEJAYoIbBvHzISRiTr5Zeze7jcAbD9xfvrr2STSun1n2Rmzg9TAkbSoOIS9cAi4CCvZGXtN1li0YNUz8GDwd27ym06uRmMRsdttxHigA16LKEkty2t9pqDQAxi8PnwzBG90tvsjoEDy9UWyIwUwUkLYDDI/YfV+qndZgyTgdVqPeGEE0455ZST2GwZXq2DNMiPvLTIYJiSmS6FV4oBgqDHE9i8JcbL1CVbOne2tG3n3bDBu2BB6lrVWkotBBDjo1y+bdv8ixYJBJUOAYnjmqoo7SWwit8PeflhCxkZ+3R6azCQW6fOhRdeeP755zds2LCoqGjlypVz5879448/uMeeBLV8ard3LXad4XbF2sHA3iAagb3EJhlFJ5JzS7hi+3X9Pb/O83z9ta1nz+Q0ksJaEVxjzj+l3RDhS7D5lZuztMTf/f8YxDBvXuDIEUlK4dSoq69OaGtLMOibPx9wwBZW2WzfWywmv79u/fp33333ddddRxQlAanu3bv37dv3nXfe+eKLL44cOWI0GPbqdJMz0h/zuGPtQCUyhY/4A243/IQAllAFwWgs4Ysje1L2ATj9RJ+T45nzPSfNGVIYE434+5zZVf6hdcGgdACS0wlAiFFCIEMpUr/Hg+pPZH8S2aJIVZITrtUqedMQFbeoiC8rBWFQBb2FGxM4BxowGXSBEJY0zglICAdS9jGS01B0YmDNVTTHEpvt8ssSaTqYX+ANG1sgoemOtIPBYN2srAceeODGG29UFT/55JMfe+yxunXrvv766wUFBRaDYbbF8g+bvZWrOCpzCO3cybIXMfsOHToE/cBSqBDRy+FwQGM2my0tfHEPkajaqsZHYkDZunRhtSGwbp0hZWEhfT7n6687Bt1qOunE+GMB713Tp7s/+YT5y9G7j7lzJ/YYeufNN5zY0H7xJWwr9+NtOXo0W2qlMId33hksLPD+Mi/octkuush6wQVy5E/OlWSllRD/5vbtcWUnP3OcmZDp3btLZHNcX1Gwh/2+BERi1JKDauvWxNtKBAKBjRuCe/ZKarHF8oPVYg4Gb7jhBnhC1LKg8l133cX5Da+99prX6z1iNH6elnam2xXVVuPfs8dqsdSvX79evXrFxcX79u3bvHnz2rVrt2/fDi1BALVr10YnadSoEb/p6ekZGRn80kTUpiufqDdgSHB99ZXnt99SFiPVt3Gjc+xYU6NGprgO8wyKmZv4/oXDHg64XQSQtZzbmTVTz/c/FDzwoHfmt9Km1nbtsGPgdMjhF5ZOnaSzVfMLDl13nXvy5JyJE61C9sMRa/LkwkcfJd6P/YorJHZEMIfNmw8PHpw5YoRkYk7s6IzKA7lGS0YhBuJBBDdvlmQkoNajh94Ehpd/oT2HfF4Uhnl2+za//7wOHYYMGRJHjAGJoQfQ+ssvv8TSOtdmvdFqbep2RzKH0IGD0q43difrOXwnLS98devWzel0rl+/ftGiRYsXL54zZw4cAxpAR2/evPnpp59OrqysLPR1iiSw2F3+AMlhPf98xA/fL7/oynXQSqi+8jMR3YypuviDD+w3XK+3l3OGC8GgDHVyOS5VhPAAce19+hSNG8cyKIskRKYyIu3QpuCfxDTp2tWUleXftcv16RRBDN4VK6AEvBLtAwaUCGYsMfXrV/jkk/lPPW0666z427nKH8+xnSMKMRANCe4poEZ00QT771uxgpxevf67sACDqsCEHb8saIochUq9geAUZvMsh6NZhP8P3QgU5EuhUSN8okD9s8PXTTfd9Oeff/4cvhYuXDhr1iyz2dy4ceOWLVu2adOGX1hKbm4uzcXvT7lvjXl5pmanSlEt6E+pFlRuqUpnQKZHXwIpEVq8CxchzJRTVdhGp8wTstvFpBY6cEBKL5uByQX1iymPPd/S21Co+J0JwQMHOBjSUL++lBK+jLVqGRs3CS5ZTNhmW48e5WsvpQX/dv9HIQYfi74CCpytlsCqs5SXsGJr1sBB1lmty0Ohnt26de3aVVQS/7dp06Z33nnnww8/DAefbbP1N1my/V71gnORE8nNGEEMcs3o0meFr/79+0MR33zzzZIlS9atW7dq1SrUdKxYbdu2Pe+88yAMZK0czomrrHkEtmA5txO7ugnlbWrSRO5Akm44X4Iog54ZM1h55GxItuAliohigNi1YfJ4WOXkGE87Te4kFghkJAiDqFCIUripc2Qwb/Eo8/zyMzfSidpWxTky8PecbHa+excsJKQatCFXdZzdINeoL//atSRJMlLz5sawIUKdI+I5VORkLw51/W61etPSbhk4kLk5Ilf0hCuvvPLcc8/ltKuNev0Chy2yWKjYxRwZvXDZVKb/q6666r///e+///1vjLk88uFRLT777LPhw4cPHTp04sSJK1asQAsvW64CT1iZWfoATStQpnJZide0axfrGygqVOCa8Y0wMYvKYE2hI0eO/pXlqDB2joH0b9+OIYQIhYQZp56jveAQ7l27UAuLXn5Zhxh52232a67hrXQQvTiI1WIhVujR/NyFReXQkcOhw5UHXZkKj8mHsmOmi1jownZ9CQLYTBKbRAN79wX37Ufc/9lgOKdjx3POOSfxwSK93HrrrViF/KHQLJsNQUtdFnNqRcISo0D/4x//gCTQ4BHVUBiwOGGWhQxGjx59zz33vP/++xs3bvRXKjQTAcb1Oj0GJXUnq/sZWxCLG3qDAVkf6Z8zwTgLRm4EH0rnxIlF777LHze+5cvlV9xI5z7+9ZdvwQJT8+ZEB8wcNcqgUHzhAMEdO4iriTEALYJTxUrO1EMrEzbWstIUFYaCUrhl6UBKcxRRQtn03/peTQzB/COBHTsEPia41sb4CZZoKC7aaLGsTU+/Z/Bg5JYKAQVtuE/fvhgH51ssK+12FXNgIU+YzytUJ9LRf/7zn5deeomVb/Ae0QhmxYX49MwzzwwaNGjChAmVYBGmpk0NWZn+VUmO3BEK4fIoCZ9//onRwNK5C19EOmllxw4BBCYs4mH6Fi+W/pYsgYcogYMmbW7XznbVVRnDhnFgl3TAqeLCXI41KePfjziuu47iR265Basr79HKzG3bIRHgcgKjPloCscrpJN3EUZTH9blbEcRwJF9XWAggpAM58/KOQiTuHTISa8nLDMaGLVq0b9cubt4oL8HRfv36YRAtDAZ/ttnVfULWcRVHKVZeErIua3zgPTeSoBy+uIdXsAQ+duzYSZMmYastr5oy7zmshNj0/m1by6RW94MfD4B163CbR0uRLGgDB4DQgS1b5X2wtt69Mx9/POOJJ/jjxnrhhVIXZKZqMEqzeOSKZKkuIeWFXbKcajJxDJ9wryS//frrWE8M7t4dPHRQqjB8hZyFge079Bar/frrVXRVmuU4+V+NeMGCfCROBqfPzNLXq5fgKP1bt4JrS8ymHj17IqUkWEqZDe22Xdu2Aa/3V6vliImVz6MXNYfcJWexHU1N7A6G0Lt3b7hEoOy5CpDfgQMHxo0bh002sZpKcoFkhgYNQRem7QoVrEBmn0/S0desMTZpgmGHdR7UBta/EGBdEydK55cyVdWpQzpsSvpr1kwcOxQ4sF/4EfrXr4uyXZawyqxAY507eFBwWsI8G085hWFw5p0kGweDHEacdvMtiJSeb2aWBHFjaWL2nKCz0HFdf1hNBUbxN8yqxLpw9wudAAUA6WvlsM8rwRGFtm7DmXNHrdoXd+uWYBFVNpaTr7jiCgTSTQbDXxar2stCybVVJct7xHzEgoPMGeTsLHRADziGsF4hJyZyY6xfj7M6Ed4SyVyJPCy0+VesCLo9BFXA9YMaCF3O6W+Wtm0Zhee3+WjPUaoNBHzLlhubNiVUuLRsvGQJCrEym49T5PR6KoFypOidwSA3aYMHWzufSzZi7uOCgR0p7YH7Mx54ALmX8zdQPLAjY11Mu2tIxogRKBjKCo+/e7U+JLGF8JzH2rvk35LIhQvd7l3bdLqMM1ucceqpiZSImgdrbIMTTti2f//vdlvH4jLmozIibNTCsRN37drFonXUdTd0G7RqzE1nJOCgLrcAZCTDC24/CVvM5LKJ3FCt46abkHkk+IcFGxQGx+2DdT4vn0byU4p2MX8ZGzZEZJKK8AVtNpVjI8oxlgqpKJUI3yocNwYMMHFEPOsMVptoixibnEkpnaHBEkTArzPo2etLnmo5uD5ax4+hNDUxcEaBYP/S4GUZNH6Hmbb37fvLYGh93nl4C8XPG+ct/hSYobZ88cUCs7mY00/CDKokf2U5A6rzJ598AjGgKkRt2u12V5Qz4AYnEWfSOAMhwflT9hbys13cU5kSeY/EH9/gIWQqVUGpZtbRyl6QiiVsD4T7SYpHgmhQtpL4T/jR/P7773wUvnjVF0NpC18EFl6bNGnCGmul15EixKRSUdiQ8HotrJwwkpszMs5lVagKF6Dp0aMHJu6NRuO2SEmp4jXj4jp9+nQMqbGKIhzXqlULl8FYGaKmS2vPUAKz5jF2QdisM2ISwOmLm4oSeeRopOPIkkAJNPTrr78+8cQTTz75JJw5st2KpvAd33rrrf/7v//DKOKKKkMmVmMEMcisv6w9Lk5tyAyugoLivLyWFRE2olbIPFGvbt3DweBKa4TaELVA7ERcXOEJL774ImJSLLYAtWDVxb0vdjXR3pQf1iNaqeSnrV69GgwDvZgmuVlwDO9Dglzz8/MxbeOmWXXAoEpB+VQIw4lUDhOvP0JMYvURqZIKEv/k+fkH3e7sNm1yE1uujtM58LJVq1bb5sxZarH8kzmplE3FKRL5CviCEN9++y0ugDt27MBwFJmHFCihRYsWt9xyS0VXRfBlkKZMQ3S5K2pbqUmE5oWEIBAi1hSQms7EbwWfg8cffxwbRuvqOBaekd52223Uye4AeedM/A5EfasmBkk6ggxYg/Qqll2iFi1N1Ofn7wmGTu7YgU9RmlbJ/4FO586dZ8yatcZuyTcYHQHp0MHELxxX//rrL3z1vv/+e1xZERiiUgK4gi5x6qmn3n///ZX4GJIxB2KIQWOJ9zZWTvqGMy/zHEo/F064KnJlWkU+RjZgIPgjIh3twRBkMEDeeGcxLkxzgsgBAoiCRxaA3bYNG4cOw3ezZs2gGVphsYUiFCQF/smOEdIzMzNJAXRC3qAqrAt79+4lA8VpMS8vT3bB5EizrVjVwxfrFuAiOUmkBvpMW7RCKQRRpcGdPExSyPe8YqRUiHMxtu9NmzYxweN/yYiY0ZgZKUjPd+7cuXv3buqkHaolP3koKy5RkIZwVSYDTp9kYLCwHYZDCpIwbTG6LVu2kI38VIKrTgMOHiiLsRHEgDmVz+zxBBNf5zpy5IDNelqbtqXdq9L/HTp0yHA4duJTZDa3CPhLmGhcNgXgAJbwzEM2QFzGZgoSAMfIrgAOYNGxY0fQ5dJLLwXEkXnip2BX1TkcSTIl0TTfD3Y/depUkJUh4NhLb5Vd4ns/99xzYEz79u0HDhwI1n788cdgFSjCoEBK9nKw7v7VV18tW7YM1y+wAaR/4403wMJevXpBLaKVTz/9FFideeaZDz30EHWyJE/TbMYiAwBE1gKY1IZjC+RHVbNnz6YeRFmc8wU6Akycjr/++mtwi2VTKBPp9NVXX4WS8Zy8/vrrQW5qBgvRa7t06SKXwp+S3b/gIo4zlOILTps2jUS6B/kxIsiYD/rPf/6TyZFHvMvoD51hhwxe+kpocM8kiImcGQEq/de//kUK3WDrGN2AMG6++WYaoqtMlB999BGEwVIsxKmiBEqp0UWfnWVIzwgQXDVh6zvas6te/cZlDSCq7ib+eNpppzVs0GDd1q3r7LZWJqMxM1Nfty6Tm6oGPhtDZfzMTODBmjVrmCwBOmgEfkdlCICD8QN69ARQBKqLBIeqlaiPLHuxApM8YoAAmKpxO2dNkD4zQbIiKY+IiQ0sAU3BbJwR69Spw0IK6DJz5kwQDjxGTgACJ554IpAEpXBypwZRCgMO3rtiULQC6PDwhW+AGUyTvAV6EAMIROvM1qAy1YpJGs9fkP6HH34A1BQBKakBMiMdtZUiyJzYhbihYz/++CN4D9ZSli81Y8YMcJ0ikC55qJxOUhWDAndZBcLLGB8ZPgdbIKkT2qOTCLrkgRjEmik9ASyMUVCU/GmY9Ujn08+bN4/ZgXs6xlwAETJ8WqRLZKYV6oe/4cqJOAD1yjXIN2piMGRk6vHRPXhAWldCOI5hkZTLc+M5fNh8+mm5mGKr44JNX9uv3/qtW0/KyABw1jp1CIKPexxSAbybr7V//37ALcgAEHDBRiEMvjdwkZFG7gvplGWyBCh8uYsuugj48j3kDBW7wS96124WgCugU1WsAew3kqzCBExvmY/ZnsHcJotzzNlwNggAaQRsY7xcoDsEABqBpoLCAR14D/cAOUT7YDxYImMS2bgnBaQHbhADjQrBEkzlYpYVEpeAHkRFNxA/IKFXXnmF/MyvNA12XnLJJSzzC6McfUBY+umnn3gFzLmgZAgMLgHNYD0np2hUZBCtY1xi4mfORnyCvGEOTFXs/WI/I52nM9ADAyQzN/RWBVEGS+dJZ4xcvKUbwkeTfvKWFLgHOMNmAdEBVQ3iUU0M2A2NDRuwno8PsBSHXSGcRS1PoquoKLtlS2vF5Y1YFV53/fWFTic21l3BYIHLhdHh8Lx5iIDQABcSEb+QBClMIUw8QAFIcYkKSRHyNI98DIALlJm32rVrB0qJeSJW0+Wm4/Lp37nDWjq/lpu/0hnAGAQPmAAjRQoC5wQSgI7yEBimqJ8hRzZEfqXVWORR5lSmQBtcVCJ+uWGKgcb69OkDDEXlYDn+xQgk+Py+8MILVI61g1fQLfxW5OGXnsv34gbMpiwsBSkFyoGY5W6IG74RGM9In3/+eUgOVRh6gJhBfVGDnJ8hCziompAzRE2HwcL3QIOLL744sntyEXW/AYa5ZSvP3LmB/QeCrFUlQAxFPl9D9tTGuOgl8xNTDhdMkwu5k4sbUJlXsHguODIXWo7yKnA6i4lj53KRkyIMiYsKucLfrkRfJ1GgBfTAl2PC4zvxedCo0D7hmEwSTBXAN0YfK5Ac3LUrsHMXB/5WoEylsjJevhyc4cMPP8RGzHwGikD/QAz5B3aXSK0ASpWNFLls5FugyleADNhMiyQ2cuRIWI1cA5/s8ssvR59GZyAD+0NgEagcsCnwW84WWS2zNUyMaX7p0qVMZIhwcmZxw+iQat5+++3vvvuOIUMGUB0yD5WrclbuEQKGMyCSwY7i1BBBDFB2i+YUCBUX4TtpPPnkOIXFK5/NVjt2NuALdMBXiIFvefjwYZQbfrnnQuzh4gPQV0iCLy2Ri5e4MFJgGOrHYsJ/VMHkzyODAeOZG7jhYjoBxYE1uM7sAg0wmcEZuYckSOeXPOUOIfEM/g3rdX4fUmriRSqXE6CBYQgYrBsiBOJg26lTJ0QUsErmgRWtGbghVTJHAlsqEWYGVSV8GtgRUj43URuCJtHpEe6Z6Z9++mnUZT6EqpLIR3RfEvmyfOXItwg5bHhkaGAtuh+aDH24/fbbr2UvR5hfRRZJMAUYQoEvv/wygjGKosxUoxaPQgzEBUFVkCaQ9et1F14YtZgyUZ+bm92ggTJFdQ8ggBcDBlMlpqC4IBLaCeO/9MMb8cuUs3T1qr46Q0eP20fo32HDLGFhUZABI4QDcIHoonJSuLjn4iaRz6PqZIKP3mXL4Uoqd4kEy1YoG0gANLDJoCULzRWTMSnwOqaVqFWVizfQAPMFDFMUR6eUuYRIgQLJQKP8oqvwVimTiHkNsGPkwWjx5ptvYv9BXkINK7dpZjeaEPNXZOf56LSIZYmmEaU+//xzFhCfffZZeA5iVWT+xFMYEXMiv9jNkMHGjBkTR0CIQgxMe+wHJ5i2d/nyRAQLYkfa4/q3MsFwxQKEGBjfiR6LX25++eWX35Yvr20I9S0sdMN52I3VpAkQly9RJ7+kJA6aquf0/fYboWmMChG56nVGrQGMRziEtmEOLJvARZne2M4KGIGPqggISiKkwq8SIMp7ivAWbRKhURRn1lDVwyNVwWbFBXhRUZhx4LS8oktCGYWK0G43bdqEwQejJ6xeZfxVVQuuIx3ROrJrVDMOQhfpiH+o6QhmqHZ4aqBMs00XSos1tTFe+kApVXPKR2ZbGr333nvZ6QWPRcYTtldlHvm+ROmUn7lhxzdqA/BmMyH8Qfkq6r2jcWMMB1FfJZ4I3JWzPrMXotEe1gqCQWKDOcIRX6BpwQr4YACI/KqPnXhzlcspRVZetMjYvEUKXDgRnbF+0E9sX6Aa+CTMR6LnYuDy8PnGYDbYA+7KQwNRoqK7nCHqDSgr0mHj1I/GAq6LFCZX5DRxjywKZaLWI2uRzueLWptIROahM+RB7BFSq9xzcUPPYQhkJg9KMzEXL7vsMnAdh2LmR9Ll/MpW8DNgmlCmRN5TECDAyqgTgRxuhrk2MptIiTYGlg8vOJ/XgbV/SbtYyrlCaY0bR+1rOeXivsYgCL7v0ethriG2Akebw+JWkJSX/jWrcfq3djoneXZV0W/sKiy6Me/yyGTMZm5uEBhQgbhhhsbMwJyHN67IjzqB0oniO2rUKJbqQF8UA4z9sl2VbOTnErglSvGIIMTFIzobFykyWjOXI6yCoyIF1oR7C8Z+kZ8iUOCjjz4Kn6GgqJBf6seWLzi8SGQs8DRKoRVg4xeJ0DZtge78koKFB6UIVUG8RbDBCItkhYgo2AITATVQrbAFURyhEb1FhgBclKpkhYSa0XnIT+vUibh13333IYNBzFgFAJFoSPVrfOKJJ1RJPOJ7437/fQz7BBExx2VDUl4L+lM1yyqMHHsiXkB9i4octWo7ht6T6OaKyMFUX0rR+Hews6UPH26uwrYN0R3Jcu3zRS4m8pZ5FPMRK7tgPNgPWqBZYmxh/yqyBN+bBSw+Jx+Yz4+tTKxhgZq8ohT6Ir/gLgJGXl6emKcojqEGxEKogNWQCPagJYNV1IlOzHowpZCOmOx5NX/+fFCf5QIogcUycJHPAbNicoU46Q/TrZjFYdcgHFOvwFq0CBoiETsm2Vg9QOKlFaxDV199tRC3sMyywZCqhJUPMQaFAYpCT2DIYDAoSwb6iTBGl1g5JuQPkIEdITIwdpqge3AbVrWxmLPcBvHTKPIbjAWexkRAolhoY8ik0FbTpk2hEGGXR6xg1YIiSuyQTD3KZ3GPE+CBTp28q1cTZjCLgCIpv4BU14suOrRjx5R9+/NOO7XW8hV6ieRq8sJCfKDLeRy4WHfVKtaoqtgVtpIR/4b9a5H1IHggIIGRoCwfDGIA86AQ0IsbCAAkAGl4y8W3B5OohOkDYYNFGExzIAFoxyuBoLyFV2BHAs+oEJwghXqwdTL7UicpoIgQh0A+SkFXglEwE6OyUyc1k5kWMYRgG0VSFT2H6miXPIKBcE9VvELbgVzpFReYR39IEUXASAYIhfCI1ASmgpSUoipS6A/9ZPj0BOynRUgR8Y9EOgbpUpC+kYGaycAwkaYoSwYy0ygVwiQpJZojjzAQwy4gM0xzdBU4MIkkRAzUkv/ggxxsTuik3AULUhl0WgyAgV3Ru/fihQuRWNud3SZ74QLERvFK9ctHFfTML0DnIgOwY7risynlBFEQWPDV+a58G76QEDxUdUZ95GSGAxdeaO3atfb06YkG84paUTgxDjEwdrLwwRgR92JE3POlRX3iq4t70gUWyq8E8ikTeUU2kYFfuR5Rp3gl7nlF5SJFrkEkUlDuEjdyJXK14kb0jbdUIu7leuScch5SlPc88jVJ4Qa8l5uQ84g6ecsr8Vb8kkFuRdyLIuTkopT8Vk4R2URxkchvFGuSeGfr09v5yiu+DRuIJlISfEEulPwbes+M+MuCBfl6A/FAY1ECcyRuZHSHAYPciHwIkZMnTxauO7hwYkYQnQXKJCIMwHOZepkkADdzA7LENddcw2xU7phcU6Zw+qgU0ivCHaDcshXKIH85PpWgBIorP5ucQZXOI6+Ub+V2lcVVieKVnCFqcTmRbHKX5HqUN4nklPNQUHnPY9TlYTlPrNblDHKFyhR5aHI/Y9UTkxgsbdpaWrUi7hpIkHpioN8nNmqEfpcPHmTH9HpClMQmDcuGaaJfIibiq4hMiYrJgPGKEeOHAN59912EV0gFnsDcCfHwCtCjhyES4A0vQyrqDXqz+/MvjFlZxI+ImkFLPA4gEM2aFB4W4Xps/fuDMuhZqhhVqRk2nIF5o8BoQNOJ2iITPCYXpnwoAeQGy/F8xP9RCJQohaznUxDHY1ZMUUnR24QRhkRIhYuySFPYMWT5MmpDJLqnTfNv30aQRnPCsaRiVaWlH7MQiEkM9Nh+5ZWmExr4d+wgDmHqB4AaBLMrDAQ5azRq6xgcMFYI4ZI5HjLgUcz6sHJkJJQz1m4xwGFgYfqHYJCOyMCv4AzQA8XRLJXm+ci2CEZU/M47LLnY+/eXNnto13EKgXjEQJRC+9VXgQSuCRODZYPwpAAaGElYaiiymPXh5U9ViyA3e1NQg0Q6czyzO9iPTowtBQEJB2PsgxiVcRwgDxl4hXc7uw1vuukmaEDQA6+gDcQqVf3KR8/Uqd4VKy2nNI0MJKHMpt3/3SEQU2eQBka8wUGDij/6yLdyBQf7SfNiCi9sZDY2PREDPRpnYAGfC5ymRyA6RiHcsC644ALscZjeMJwhEUEJaNgwDVJYcGE/F16QmMlBfezuqBDozZAEv9BPrJEFDh1yvvpqyOux9bvm+I40GgsC/zvpcYkBo2/LlgS0KnzxxcJRo6xskowhvicDXiA0TqcYk9nppqofhjB+/HiYA6ozYg+ojE2J1UrMxkhW4DcXLiiYj0B0KAG3e9bhsdMLS4iwtbMuI4gBjhHpVCy3WDR2rGfpUlP9+gSfi2XUkjNrN39rCMQTk6SB4TF6552ggg8TzYQJqRwqmJ2VmcmGZV0EZ8AZhnldFnXwwSLgEmv44DpqAPSAIwM7gAWuw2FwUmBzidImiPItrG+QCuyCFYmoQ/MShuiNN/RoCwMHGlHoteu4hkB5xID98eST0+66C82haOzLyvMykg0WUBkc9bFgHhGBBtMQS9RgM6jcrVs3fAHILPcHKQgDK5oAhIGhafDgwagQ3MsZWE/FaV6IWPAQtAvlWzkbm9qcjz5G3FJijKbffjumLfmVdnNcQiCBD2wwICEgL/l2bHeOHMkCV8oAkU3YErbmlJ22WfDHRiTYAvoAuwSFI6TcK2yp7ATnFboEu3gHEE607EZElA0sSNAS4haL+ay7yWWVN1iQ3N/OZD3PMXgwAbGVr7T74xICCRADy4S5uZwDAPagTLu/mp4yQCAmmdjfXTbGPfIPnifIPMz9TPm4cyn7AwHgaIkiwWRPBpzD8GZRZoAA3nvvPcE3WJrAVRgbrjKDuCf6NAo40YU50TDtjjs0thAJouMvJSFiQHG0X3YZZ1Xgx1owYgQrD6kBBJzBgl211MGLRrERTZkyRcz0oDUOlSpfKxzaWFQWfAMtgm3EKhEIjwyc4BGrKI7qjJlVKA/KEeFSWjB0qLTUiF/aIyOi+pYq82v3xwcEEiMGxmqzEe7c3KyZ96+/CocPr0qM+MQBVwsnW6ZthbiPCQhvC9gCcz++lkQBU9WGC7FwSxQiEB7OygysN7OZEIYAhfBL/BLkKGUG7tmvXTB8uPf33xGQ7L162fr1U3ZAlVl7PJ4gkDAxYFhq3DhzzBi2b7q++MKZEr9ufNDTFUIOIhAbr4QIhGbMThFWFVQf47fffhMzPdl4K7Ypijwo1qy4sT0KxoKYhNcxLklKE5PI5nz++eIPP5Q2G9SrlzHy6RSc96wagvZYUxCoADEgN9vZbDVsGMFGi0Y+45o6Ndmdzq1dO0dh0GRzCXs4hISDwylGJJUIxGTPKpvAb0iCNWnWIkQn2X41bNgwfJl4iwWJSh555JFIbaFowgTnqFHsJcNhGjXJ3DzpIWGSDUOt/sQhUM6im7oiqzXj/vuJWFv82WcF993Hiqz13HPVearvmXk9V7Hihm82OgO2I1CcAFssoqmawkUPGUlQCEiPxxFLEHjssfmDLYWENhH5YQuEHI60qOLgUcjx7IQ156ScGwdwqk2yvbVV/dceaxYCFSQG/D2zshCWAhy4vXBhweDBWR98YDnrrCSNwZGWJosxGENZSmPJmXkdzRhxP1LxJTOJghj4JSf+S2ySRL6CAHjk4p7NuFzyXi3ReTzV84cODR44ACVY2rfPQkAquycwSWPUqj12IFARMam01xz7lf3GGyjTnj/+yB80iAPwSt9U8/+4Y2DwEZWydYGdgeA6C21M9nLsUWWTeCix75YMIhF6QHNAVSAFMuAX6YhomzgpqTa4cbpm/t13c5Y4lMBKc9ZrrxGkQVmzdv+/AIHKEAPWFeLN5owfb2rUyLN8+ZEbB3gWLUoGsHAiEht88Z5g1ZkmmNdBcUIJifVjVaNoxoMGDWLKR3nAmsQFDfCLtg1VEBIUD6U77rijjPNFKITnVf7994tjYYkBk/3665azz9YsSCrY/i88Rg8IkNDI2VUzd+7hm24O7Nltbto0c+xYDqNPqGDCmdANwG/wni3kLA5IUk5Y98UTSWkmUtYHGRD0gXPc8EvlHsEJ3ySiDvfs2ZPTRKEumIOcn40KhY8/XjxxIuHtpUSHI/u11xw455budpdzVvtNnD3Q1d6WVmGCEKgCMdCCz+f56afDt96KCsHKVMZjj0munUm4mN2Vwo9K3Fc1CB/Acwlmgg8SqC95v2Zw/olDjs4g8uN6WPDww54ffyRmkJRis+H76hg4MDW2VI0YVF/tWHisGjEwgmDQt3Ll4QEDcPA02Gz2AQOyRo6MdVZxKgcMDxHNCX1a1XTRu+/CEwihiVZBPo4qyB43zsH6Wqo2smnEoPoix8JjpXQGZccJotqqVa2pU+3du7MNGZHjwOWXIz4ps9TIPTQgLlXrRB06PPCm/CFD4GaCEtg8lDNpUiopQdUl7fEYgUCViYFxGAymvLycyZMlGQkT5uLFh668Mn/ECEL7HSODFN1grdA5btyBHj2KJ3/EOSyCJxIbL+fzz+29e6eMJxxTMNE6o4RAlcUkRWXSyvSECYWPPsoRWERHNZ5+evqDDzquuabmI0MGg64ZM5wvvOBbsABHVMZMr/mHxp81dqyJCHNJDoWkAFLJLaftSRH1SoPZRGbQUlIPgeokBqn36LmLFxcMG+b59Vc4BmRg6dQp7V//svW6XG8+asZJ2TjZk+SZM6folVdQlCUyCAfZlZQEmy3t3nszHn5YiqetcARMWcc4FSnkcRtPPCllLWoNlQuB6iYGGsT0wyb6sWPZPSzF1GArJiRxzjkcTWzjmIXYW+/L7WuFMnAGqXvmTFbTvPPmSWQQjvZMDVACwdEyRj1ju6h7CkyoMfss9PuaoMOYXfqff5EEYhAw9Xg4yqDwmWfASCkBkrBYEEisV/a1971SHA6UDOCzzuxbtoxA1Z7p09GVZW5AW5CBARvrHXem3zsUj9TUi0bJGK9WZzVCIGnEQB9ZAGbZbOrUohde9C5bSgJ79dFTMeSbzz7b2rMnUSs50xYErfp44EW+las8P3zv+eEHzumGJFDl6YCoWZKLDAb4UvpDD1natVPuFqp601oNxw0EkkkMAkg+HwfeuD7/vPiNN73Ll5HGznziZRPLjlMgOEDR3KqlqW079lgb8/I4qxWTf7nAxcWCNePA7j2BTRtZ3/AvWYJ/FIsGeGuw64hA0nINEhkYjQRIRW8hgDaqApqM/Fa70SCghEDyiUG0BkkUFLi/neV6b5Ln559ZkSBZildBmCMIA2MODqfp6fiEc5ycsU5dQ51cziaAMGAjLBdIbhjsMSgsDB06FNi/LwgZ7N0reZi63ajInE0gacalq2zUCg1IdWdl2S65xHHzzZYuXSSLVtmwAOEs2o8GgaMQSBUxiBbxo0amX75ckum/+YZ9EWKdWKIKcUEb6JRM3uEFM7WdR6KJkCT8cFhB+Le0WMn/ggYgLXQSa58+9j59TKeeKpFByi2nqo5pj38LCKSWGARIwGOvN+h0+pYudX//vfenn/x//gnfkOF1lDbkpBg3AvvFS0NWtrnlmRbOE+F8yNatpRgz+FZoQlEM0GnJkRCoCWKQe4Fsg/jEMXubN/tXreKkXf/q1YFNmxCBJIkovCYg51XdMP0biKpUvz4xzkwtW6KR41VuPPFEVBFJHNJYgQpe2mMCEKhRYpD7h/AD6qP+4jbndgU52nHf/iC6wcFDKMqhomJdQDoTUmcy69McaAJ6TmLOzTXUq2uoVVtSKpj+BQFoZnsZpNpNxSFwbBCDqt+lioGkE4s/OQPoLv7CeoVaqZCzaTcaBCoOgWOSGCo+DK2EBoGqQ0AzulcdhloNxwkENGI4Tj6kNoyqQ0AjhqrDUKvhOIHA/wO8sWqz6NOTUQAAAABJRU5ErkJggg==';
+
+// Sistem meta (v: alt-tip anahtarı; subs: alt-tip seçenekleri; l: etiket; std: standart)
+const SYS_META = {
+  sprinkler:    { l: 'Sprinkler Sistemi',            std: 'NFPA 25/13', subs: [{v:'islak',l:'Islak Borulu'},{v:'kuru',l:'Kuru Borulu'},{v:'ontepkili',l:'Ön Tepkili / Deluge'}] },
+  pompa:        { l: 'Yangın Pompası',               std: 'NFPA 25/20', subs: [{v:'elektrik',l:'Elektrikli'},{v:'dizel',l:'Dizel'}] },
+  hidrant_dolap:{ l: 'Hidrant ve Yangın Dolabı',     std: 'NFPA 25/14', subs: [] },
+  su_deposu:    { l: 'Su Deposu',                    std: 'NFPA 25',    subs: [] },
+  kopuk:        { l: 'Köpüklü Söndürme',             std: 'NFPA 25/11', subs: [] },
+  algilama:     { l: 'Yangın Algılama ve Alarm',     std: 'NFPA 72',    subs: [] },
+  gazli:        { l: 'Gazlı Söndürme',               std: 'NFPA 2001',  subs: [] },
+  davlumbaz:    { l: 'Davlumbaz / Mutfak Söndürme',  std: 'NFPA 96/17A',subs: [] }
+};
+const FREQ_META = { haftalik:'Haftalık', aylik:'Aylık', '3aylik':'3 Aylık', '6aylik':'6 Aylık', yillik:'Yıllık', '5yillik':'5 Yıllık' };
+const FORMTYPE_META = { ariza:'Arıza / Servis Formu', devreye:'Test / Devreye Alma Formu', bakim:'Periyodik Bakım Formu' };
+
+// Şablon verisi fonksiyon-sarmalı (Node test harness yalnız function çıkarabilir).
+function _clTemplates(){ return {
+  ariza: {
+    sprinkler: [
+      {kod:'spr_a1', label:'Arıza bildirimi / şikâyet konusu teyit edildi'},
+      {kod:'spr_a2', label:'İlgili kontrol vanası konumu ve etiketi kontrol edildi'},
+      {kod:'spr_a3', label:'Sızıntı / hasarlı başlık veya boru tespiti yapıldı'},
+      {kod:'spr_a4', label:'Manometre basınç değerleri okundu ve kaydedildi'},
+      {kod:'spr_a5', label:'Arıza giderildi; değişen malzeme kaydedildi'},
+      {kod:'spr_a6', label:'Ana drenaj (main drain) testi ile sistem doğrulandı'},
+      {kod:'spr_a7', label:'Alarm / akış anahtarı fonksiyonu tekrar test edildi'},
+      {kod:'spr_a8', label:'Sistem servise alındı; vanalar açık ve mühürlü'}
+    ],
+    pompa: [
+      {kod:'pmp_a1', label:'Arıza / alarm sebebi teyit edildi'},
+      {kod:'pmp_a2', label:'Emiş ve basma basınçları okundu'},
+      {kod:'pmp_a3', label:'Pano gösterge / arıza lambaları incelendi'},
+      {kod:'pmp_a4', label:'Salmastra / conta / rulman durumu kontrol edildi'},
+      {kod:'pmp_a5', label:'Arıza giderildi; değişen parça kaydedildi'},
+      {kod:'pmp_a6', label:'Test çalıştırması ile pompa doğrulandı'}
+    ],
+    hidrant_dolap: [
+      {kod:'hyd_a1', label:'Arıza konusu (kaçak / basınç / donanım) teyit edildi'},
+      {kod:'hyd_a2', label:'Hortum, lans ve vana durumu kontrol edildi'},
+      {kod:'hyd_a3', label:'Arıza giderildi; değişen malzeme kaydedildi'},
+      {kod:'hyd_a4', label:'Akış / basınç ile fonksiyon doğrulandı'}
+    ],
+    su_deposu: [
+      {kod:'tnk_a1', label:'Arıza konusu (seviye / kaçak / ısıtma) teyit edildi'},
+      {kod:'tnk_a2', label:'Su seviyesi ve göstergeler kontrol edildi'},
+      {kod:'tnk_a3', label:'Arıza giderildi; müdahale kaydedildi'}
+    ],
+    kopuk: [
+      {kod:'fom_a1', label:'Arıza konusu teyit edildi'},
+      {kod:'fom_a2', label:'Köpük konsantre seviyesi ve oranlayıcı kontrol edildi'},
+      {kod:'fom_a3', label:'Arıza giderildi; değişen malzeme kaydedildi'}
+    ],
+    algilama: [
+      {kod:'alr_a1', label:'Panelde arıza / alarm kaydı teyit edildi'},
+      {kod:'alr_a2', label:'İlgili dedektör / buton / siren test edildi'},
+      {kod:'alr_a3', label:'Arıza giderildi; değişen cihaz kaydedildi'},
+      {kod:'alr_a4', label:'Panel normal duruma alındı; olay kaydı temizlendi'}
+    ],
+    gazli: [
+      {kod:'gas_a1', label:'Arıza / alarm sebebi teyit edildi'},
+      {kod:'gas_a2', label:'Tüp basıncı ve tartım değerleri kontrol edildi'},
+      {kod:'gas_a3', label:'Boşaltma devresi (blok) durumu kontrol edildi'},
+      {kod:'gas_a4', label:'Arıza giderildi; sistem tekrar devreye alındı'}
+    ],
+    davlumbaz: [
+      {kod:'kit_a1', label:'Arıza konusu teyit edildi'},
+      {kod:'kit_a2', label:'Nozul, tüp ve tetik mekanizması kontrol edildi'},
+      {kod:'kit_a3', label:'Arıza giderildi; değişen parça kaydedildi'},
+      {kod:'kit_a4', label:'Manuel tetik / gaz kesme entegrasyonu doğrulandı'}
+    ]
+  },
+  devreye: {
+    sprinkler: [
+      {kod:'spr_d1', label:'Malzeme onayları / uygunluk belgeleri kontrol edildi'},
+      {kod:'spr_d2', label:'Boru hattı yıkama (flushing) yapıldı'},
+      {kod:'spr_d3', label:'Hidrostatik basınç testi (200 psi / 1 saat) yapıldı'},
+      {kod:'spr_d4', label:'Askı ve destekler standarda uygun (NFPA 13)'},
+      {kod:'spr_d5', label:'Sprinkler tipi / sıcaklık / koruma alanı proje ile uyumlu'},
+      {kod:'spr_d6', label:'Kontrol vanaları açık, kilitli / denetim anahtarlı'},
+      {kod:'spr_d7', label:'Ana drenaj testi statik ve akış basıncı kaydedildi'},
+      {kod:'spr_d8', label:'Su akış alarmı 90 sn içinde çalıştı'},
+      {kod:'spr_d9', label:'Yedek sprinkler başlığı ve anahtarı temin edildi'},
+      {kod:'spr_d10',label:'İşveren eğitimi verildi; devreye alma tutanağı imzalandı'}
+    ],
+    pompa: [
+      {kod:'pmp_d1', label:'Malzeme / kapasite onayları proje ile uyumlu'},
+      {kod:'pmp_d2', label:'Emiş hattı ve vanalar standarda uygun'},
+      {kod:'pmp_d3', label:'Kapalı vana (churn), %100 ve %150 debi testi yapıldı'},
+      {kod:'pmp_d4', label:'Pompa eğrisi imalatçı verisi ile karşılaştırıldı'},
+      {kod:'pmp_d5', label:'Otomatik start basınç ayarı doğrulandı'},
+      {kod:'pmp_d6', label:'Dizel: yakıt, akü, egzoz ve soğutma kontrol edildi'},
+      {kod:'pmp_d7', label:'Jokey pompa çalışma aralığı ayarlandı'},
+      {kod:'pmp_d8', label:'Devreye alma tutanağı imzalandı'}
+    ],
+    hidrant_dolap: [
+      {kod:'hyd_d1', label:'Yerleşim ve erişilebilirlik projeye uygun'},
+      {kod:'hyd_d2', label:'Statik ve artık basınç ölçüldü'},
+      {kod:'hyd_d3', label:'Akış testi (flow test) yapıldı ve kaydedildi'},
+      {kod:'hyd_d4', label:'Hortum, lans ve nozul mevcut ve sağlam'},
+      {kod:'hyd_d5', label:'Devreye alma tutanağı imzalandı'}
+    ],
+    su_deposu: [
+      {kod:'tnk_d1', label:'Kapasite ve malzeme proje ile uyumlu'},
+      {kod:'tnk_d2', label:'Otomatik dolum ve seviye şalteri test edildi'},
+      {kod:'tnk_d3', label:'Isıtma / donma koruması doğrulandı'},
+      {kod:'tnk_d4', label:'Sızdırmazlık ve taşma hattı kontrol edildi'},
+      {kod:'tnk_d5', label:'Devreye alma tutanağı imzalandı'}
+    ],
+    kopuk: [
+      {kod:'fom_d1', label:'Köpük konsantre tipi / oranı proje ile uyumlu'},
+      {kod:'fom_d2', label:'Oranlayıcı (proportioner) debisi doğrulandı'},
+      {kod:'fom_d3', label:'Köpük numunesi laboratuvar kalite testine uygun'},
+      {kod:'fom_d4', label:'Boşaltma testi yapıldı; müdahale süresi kaydedildi'},
+      {kod:'fom_d5', label:'Devreye alma tutanağı imzalandı'}
+    ],
+    algilama: [
+      {kod:'alr_d1', label:'Panel, batarya ve besleme projeye uygun'},
+      {kod:'alr_d2', label:'Tüm dedektörler tek tek test edildi (adresli doğrulama)'},
+      {kod:'alr_d3', label:'Manuel butonlar ve sirenler test edildi'},
+      {kod:'alr_d4', label:'Çevre birim entegrasyonları (asansör, damper, gaz) doğrulandı'},
+      {kod:'alr_d5', label:'Sesli / ışıklı uyarı ses seviyesi ölçüldü'},
+      {kod:'alr_d6', label:'Devreye alma tutanağı ve as-built imzalandı'}
+    ],
+    gazli: [
+      {kod:'gas_d1', label:'Gaz tipi / miktarı hesap raporu ile uyumlu'},
+      {kod:'gas_d2', label:'Mahal sızdırmazlık (door fan / room integrity) testi yapıldı'},
+      {kod:'gas_d3', label:'Boşaltma devresi ve gecikme süresi doğrulandı'},
+      {kod:'gas_d4', label:'Manuel / otomatik tetik ve abort butonu test edildi'},
+      {kod:'gas_d5', label:'Uyarı ve blokaj sinyalleri doğrulandı'},
+      {kod:'gas_d6', label:'Devreye alma tutanağı imzalandı'}
+    ],
+    davlumbaz: [
+      {kod:'kit_d1', label:'Nozul tipi / konumu ocak yerleşimi ile uyumlu'},
+      {kod:'kit_d2', label:'Boşaltma testi (fonksiyon) yapıldı'},
+      {kod:'kit_d3', label:'Gaz / elektrik otomatik kesme entegrasyonu doğrulandı'},
+      {kod:'kit_d4', label:'Manuel tetik istasyonu erişilebilir ve etiketli'},
+      {kod:'kit_d5', label:'Devreye alma tutanağı imzalandı'}
+    ]
+  },
+  bakim: {
+    sprinkler: [
+      {kod:'spr_m1',  freq:'aylik',   label:'Kontrol vanaları açık, kilitli / denetim anahtarlı'},
+      {kod:'spr_m2',  freq:'aylik',   label:'Manometreler iyi durumda, normal basınç gösteriyor'},
+      {kod:'spr_m3',  freq:'3aylik',  label:'Su akış alarm cihazları test edildi (test vanası)'},
+      {kod:'spr_m4',  freq:'3aylik',  label:'Denetim (supervisory) anahtarları test edildi'},
+      {kod:'spr_m5',  freq:'3aylik',  label:'Hidrolik bilgi levhası mevcut ve okunur'},
+      {kod:'spr_m6',  freq:'yillik',  label:'Sprinkler başlıkları: korozyon / boya / yük / sızıntı yok'},
+      {kod:'spr_m7',  freq:'yillik',  label:'Boru ve bağlantılar: hasar / korozyon / kaçak yok, hizada'},
+      {kod:'spr_m8',  freq:'yillik',  label:'Askı ve sismik destekler sağlam'},
+      {kod:'spr_m9',  freq:'yillik',  label:'Ana drenaj (main drain) tam akış testi yapıldı'},
+      {kod:'spr_m10', freq:'yillik',  label:'Yangın pompası / su kaynağı bağlantısı doğrulandı'},
+      {kod:'spr_m11', freq:'5yillik', label:'Boru iç muayenesi (yabancı madde / tıkanma) yapıldı'},
+      {kod:'spr_m12', freq:'5yillik', label:'Gate valf iç aksam / basınç azaltma vanası testi'},
+      {kod:'spr_w1', sub:'islak', freq:'aylik', label:'Islak sistem: ısıtma sağlanıyor, donma riski yok (min 4°C)'},
+      {kod:'spr_k1', sub:'kuru', freq:'haftalik', label:'Kuru sistem hava / azot basıncı normal aralıkta'},
+      {kod:'spr_k2', sub:'kuru', freq:'3aylik',   label:'Kuru vana priming su seviyesi kontrol edildi'},
+      {kod:'spr_k3', sub:'kuru', freq:'yillik',   label:'Kuru vana trip testi (kısmi akış) yapıldı'},
+      {kod:'spr_k4', sub:'kuru', freq:'yillik',   label:'Düşük nokta drenajları (soğuk hava öncesi) boşaltıldı'},
+      {kod:'spr_p1', sub:'ontepkili', freq:'aylik',  label:'Ön tepkili panel gösterge / arıza lambaları normal'},
+      {kod:'spr_p2', sub:'ontepkili', freq:'yillik', label:'Deluge / ön tepkili vana full trip testi yapıldı'},
+      {kod:'spr_p3', sub:'ontepkili', freq:'yillik', label:'Algılama-vana entegrasyonu (release) test edildi'}
+    ],
+    pompa: [
+      {kod:'pmp_m1', freq:'haftalik', label:'Elektrikli pompa çalıştırma (no-flow) testi yapıldı'},
+      {kod:'pmp_m2', sub:'dizel', freq:'haftalik', label:'Dizel pompa çalıştırma testi (min 30 dk) yapıldı'},
+      {kod:'pmp_m3', freq:'haftalik', label:'Emiş / basma basınçları normal aralıkta'},
+      {kod:'pmp_m4', sub:'dizel', freq:'haftalik', label:'Yakıt seviyesi, akü ve şarj durumu kontrol edildi'},
+      {kod:'pmp_m5', freq:'aylik',   label:'Pompa dairesi sıcaklığı ve havalandırma uygun'},
+      {kod:'pmp_m6', freq:'aylik',   label:'Salmastra sızıntısı normal, titreşim / ses yok'},
+      {kod:'pmp_m7', freq:'yillik',  label:'Yıllık debi testi (churn / %100 / %150) yapıldı'},
+      {kod:'pmp_m8', freq:'yillik',  label:'Pompa eğrisi kabul değerleri ile karşılaştırıldı'},
+      {kod:'pmp_m9', sub:'dizel', freq:'yillik', label:'Dizel: yakıt filtresi, kayış, egzoz bakımı yapıldı'}
+    ],
+    hidrant_dolap: [
+      {kod:'hyd_m1', freq:'aylik',  label:'Yangın dolapları erişilebilir, hortum ve lans yerinde'},
+      {kod:'hyd_m2', freq:'3aylik', label:'Hidrant kapakları, çıkışlar ve vanalar sızıntısız'},
+      {kod:'hyd_m3', freq:'yillik', label:'Hidrant akış / basınç testi yapıldı ve kaydedildi'},
+      {kod:'hyd_m4', freq:'yillik', label:'Hortumlar basınç testine tabi tutuldu / gözden geçirildi'},
+      {kod:'hyd_m5', freq:'yillik', label:'Kuru hidrant tahliyesi yapıldı (donma öncesi)'}
+    ],
+    su_deposu: [
+      {kod:'tnk_m1', freq:'aylik',  label:'Su seviyesi normal, otomatik dolum çalışıyor'},
+      {kod:'tnk_m2', freq:'aylik',  label:'Isıtma sistemi çalışıyor, donma riski yok'},
+      {kod:'tnk_m3', freq:'3aylik', label:'Seviye alarm / şalter fonksiyonu test edildi'},
+      {kod:'tnk_m4', freq:'yillik', label:'Depo iç / dış korozyon ve çökelti muayenesi yapıldı'},
+      {kod:'tnk_m5', freq:'5yillik',label:'Depo boşaltıldı, iç muayene ve temizlik yapıldı'}
+    ],
+    kopuk: [
+      {kod:'fom_m1', freq:'aylik',   label:'Köpük konsantre seviyesi ve tank durumu kontrol edildi'},
+      {kod:'fom_m2', freq:'3aylik',  label:'Oranlayıcı ve vanalar fonksiyon kontrolü yapıldı'},
+      {kod:'fom_m3', freq:'yillik',  label:'Köpük numunesi kalite (laboratuvar) testine gönderildi'},
+      {kod:'fom_m4', freq:'yillik',  label:'Boşaltma / oran testi yapıldı ve kaydedildi'}
+    ],
+    algilama: [
+      {kod:'alr_m1', freq:'aylik',  label:'Panel normal durumda, arıza / alarm yok, batarya OK'},
+      {kod:'alr_m2', freq:'3aylik', label:'Örnek dedektör / buton / siren fonksiyon testi yapıldı'},
+      {kod:'alr_m3', freq:'yillik', label:'Tüm dedektörler test / temizlik yapıldı'},
+      {kod:'alr_m4', freq:'yillik', label:'Aküler kapasite / gerilim testine tabi tutuldu'},
+      {kod:'alr_m5', freq:'yillik', label:'Çevre birim entegrasyonları (damper, asansör) doğrulandı'}
+    ],
+    gazli: [
+      {kod:'gas_m1', freq:'aylik',  label:'Tüp basınç / seviye göstergeleri normal aralıkta'},
+      {kod:'gas_m2', freq:'3aylik', label:'Panel, tetik devresi ve uyarılar fonksiyon kontrolü'},
+      {kod:'gas_m3', freq:'6aylik', label:'Tüp tartımı yapıldı (ağırlık kaybı sınır içinde)'},
+      {kod:'gas_m4', freq:'yillik', label:'Boşaltma nozulları ve boru hattı muayene edildi'},
+      {kod:'gas_m5', freq:'yillik', label:'Mahal sızdırmazlık kontrolü ve tutanak güncellendi'}
+    ],
+    davlumbaz: [
+      {kod:'kit_m1', freq:'aylik',  label:'Nozul kapakları takılı, yağ / tıkanma yok'},
+      {kod:'kit_m2', freq:'6aylik', label:'Sistem fonksiyon kontrolü ve tüp basıncı OK'},
+      {kod:'kit_m3', freq:'6aylik', label:'Gaz / elektrik otomatik kesme testi yapıldı'},
+      {kod:'kit_m4', freq:'yillik', label:'Tüp tartım / hidrostatik durumu kontrol edildi'},
+      {kod:'kit_m5', freq:'yillik', label:'Nozul temizlik / değişimi (imalatçı süresine göre) yapıldı'}
+    ]
+  }
+}; }
+
+// Belirli form + sistem (+ alt-tip) için madde listesi. Bilinmeyen → [] (patlamaz).
+function clItems(formType, sysKey, subType){
+  var T = _clTemplates()[formType]; if(!T) return [];
+  var arr = T[sysKey]; if(!arr) return [];
+  if(formType !== 'bakim') return arr.map(function(x){ return x; });
+  return arr.filter(function(i){ return !i.sub || i.sub === subType; });
+}
+// Frekans sırası (sık→seyrek). Ziyaret frekansı F seçilince rank(item) <= rank(F) gösterilir.
+function clFreqRank(f){ return ({haftalik:0, aylik:1, '3aylik':2, '6aylik':3, yillik:4, '5yillik':5})[f]; }
+function clVisitItems(system){
+  var items = clItems('bakim', system.sysKey, system.subType || '');
+  var vf = system.visitFreq; if(vf === undefined || vf === '') return items;
+  var vr = clFreqRank(vf); if(vr === undefined) return items;
+  return items.filter(function(i){ var r = clFreqRank(i.freq); return r !== undefined && r <= vr; });
+}
+// Sonraki bakım vadesi (Faz 3b _addMonth/_addDay desenleri; timezone-safe).
+function clComputeNextDue(baseISO, visitFreq){
+  if(!baseISO) return '';
+  if(visitFreq === 'haftalik') return _addDay(baseISO, 7);
+  var m = ({aylik:1, '3aylik':3, '6aylik':6, yillik:12})[visitFreq];
+  if(!m) return '';
+  return _addMonth(baseISO, m);
+}
+// Kayıt okuma-anı default'ları (mevcut kayıtları bozmaz).
+function normChecklist(c){
+  c = c || {};
+  return Object.assign({
+    id: c.id, formType: 'bakim', customerId: '', siteName: '', projectId: '',
+    linkType: '', linkId: '', systems: [],
+    staffSign: {name:'',dataURL:'',at:''}, custSign: {name:'',dataURL:'',at:''},
+    status: 'taslak', createdAt: (c.createdAt || today())
+  }, c, {
+    systems: Array.isArray(c.systems) ? c.systems : [],
+    staffSign: Object.assign({name:'',dataURL:'',at:''}, c.staffSign || {}),
+    custSign: Object.assign({name:'',dataURL:'',at:''}, c.custSign || {})
+  });
+}
+
 // Vade durumu: geciken (<0) / yaklasan (0–15 gün) / planli (>15) / '' (takipsiz).
 function maintDueStatus(m){
   if(!maintIsTracked(m)) return '';
@@ -6936,7 +7407,8 @@ function buildBakimModal(maintId){
     ...rows,
     h('div',{style:{marginTop:'12px'}}, btn('Kapat',()=>setState({modal:null}),'#21262d','#8b949e','10px 18px',{fontSize:'14px'}))
   );
-  return modal('🕘 Bakım Geçmişi', content, ()=>setState({modal:null}), '520px');
+  content.appendChild(clListBlock({ linkType:'maintenance', linkId:m.id, newOpts:{ formType:'bakim', customerId:m.customerId||'', siteName:(cust&&cust.firmName)||'', linkType:'maintenance', linkId:m.id } }));
+  return modal('🕘 Bakım Geçmişi', content, ()=>setState({modal:null}), '600px');
 }
 // ================= /FAZ 3b =================
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
@@ -7575,6 +8047,7 @@ function buildProjeModal(oppId){
     strip, actBar,
     h('div',{style:{borderTop:'1px solid #e2e8f0',paddingTop:'12px'}}, tasksBox)
   );
+  content.appendChild(clListBlock({ linkType:'project', linkId:o.id, newOpts:{ formType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
   return modal((o.title||'Proje')+' — İcra', content, ()=>setState({modal:null}), '720px');
 }
 function projFilterMgr(list, isAdmin){
@@ -8152,6 +8625,7 @@ function render() {
     else if(type==='proje') m=buildProjeModal(state.modal.oppId);
     else if(type==='ariza') m=buildArizaModal(state.modal.serviceId);
     else if(type==='bakim') m=buildBakimModal(state.modal.maintId);
+    else if(type==='checklist') m=buildChecklistModal(item);
     else if(type==='opportunity') m=buildOppModal(item);
     else if(type==='serviceopp') m=buildServiceOppModal(item);
     else if(type==='proposal') m=buildPropModal(item);
