@@ -5826,6 +5826,7 @@ function renderAppointments() {
   ) : h('span');
 
   const APPT_COLORS={Planlandı:{bg:'#f5f3ff',c:'#7c3aed'},Tamamlandı:{bg:'#f0fdf4',c:'#16a34a'},İptal:{bg:'#fef2f2',c:'#dc2626'},Ertelendi:{bg:'#fffbeb',c:'#d97706'}};
+  const isMobA = window.innerWidth <= 768;
 
   const list=h('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}});
   if(!filtered.length){
@@ -5965,6 +5966,7 @@ function renderVisits() {
 
 
 
+  const isMobV = window.innerWidth <= 768;
   const list = h('div',{style:{display:'flex',flexDirection:'column',gap:'12px'}});
   if(!filtered.length){
     list.appendChild(h('div',{style:{padding:'44px',textAlign:'center',color:T4,background:G2,borderRadius:'12px',border:`1px solid ${G3}`}},
