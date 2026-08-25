@@ -364,7 +364,11 @@ function tpValueEur(d) {
 // Not: _editedBy'ye dokunulmaz (sistem işlemi — düzenleyen alanı korunur).
 async function clearDeletedQuotationLink(qid) {
   if (!qid) return false;
-  const clr = obj => ({ ...obj, quotationId: '', quotationUrl: '', quotationStatus: '' });
+  // quotationId KORUNUR, yalnızca "silinmiş" olarak işaretlenir. Teklif programındaki silme
+  // geri alınabilir (soft delete) — bağlantıyı yok edersek teklif geri geldiğinde CRM onu
+  // bir daha bulamıyor ve buton kalıcı olarak "Teklif Oluştur"da kalıyordu. İşaret sayesinde
+  // buton yine "Teklif Oluştur"a döner, ama teklif geri alınırsa senkronda bağlantı kendiliğinden onarılır.
+  const clr = obj => ({ ...obj, quotationDeleted: true, quotationStatus: '' });
   const oppTargets  = (state.opportunities || []).filter(o => o.quotationId === qid);
   const propTargets = (state.proposals || []).filter(p => p.quotationId === qid);
   if (oppTargets.length === 0 && propTargets.length === 0) return false;
@@ -4986,7 +4990,7 @@ function renderOpportunities() {
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},o._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},o._editedBy),h('br'),h('span',{style:{color:T4}},o._editedAt||'')):h('span',{style:{color:T4}},'—')),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},
         btn('Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),
-        (()=>{const lp=state.proposals.find(p=>p.opportunityId===o.id&&p.quotationId);const qId=o.quotationId||(lp&&lp.quotationId);if(!qId)return btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','6px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'});const crmSent=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];const qStatus=o.quotationStatus||(lp&&lp.quotationStatus);const isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);return isDraft?btn('✏️ Taslağı Aç',()=>openQuotationWithSSO(qId),'#fffbeb','#b45309','6px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn('🔗 Teklif Programı',()=>openQuotationWithSSO(qId),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});})(),
+        (()=>{const lp=state.proposals.find(p=>p.opportunityId===o.id&&p.quotationId&&!p.quotationDeleted);const qId=(o.quotationDeleted?'':o.quotationId)||(lp&&lp.quotationId);if(!qId)return btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','6px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'});const crmSent=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];const qStatus=o.quotationStatus||(lp&&lp.quotationStatus);const isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);return isDraft?btn('✏️ Taslağı Aç',()=>openQuotationWithSSO(qId),'#fffbeb','#b45309','6px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn('🔗 Teklif Programı',()=>openQuotationWithSSO(qId),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});})(),
         (_CARRY_OPEN_STAGES.indexOf(o.stage)>=0)?btn('↦ '+(recFY(o)+1),()=>carryOverOpp(o),'#fef3c7','#92400e','6px 10px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',whiteSpace:'nowrap'}):h('span'),
         btn('Sil',()=>delItem('opportunities',o.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})
       ))
@@ -5019,7 +5023,7 @@ function renderOpportunities() {
           ),
           o.dueDate?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'📅 Sipariş: '+_toTR(o.dueDate)):h('span'),
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
-            (()=>{const lp=state.proposals.find(p=>p.opportunityId===o.id&&p.quotationId);const qId=o.quotationId||(lp&&lp.quotationId);if(!qId)return btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','7px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'});const crmSent=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];const qStatus=o.quotationStatus||(lp&&lp.quotationStatus);const isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);return isDraft?btn('✏️ Taslağı Aç',()=>openQuotationWithSSO(qId),'#fffbeb','#b45309','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn('🔗 Teklif Programı',()=>openQuotationWithSSO(qId),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'});})(),
+            (()=>{const lp=state.proposals.find(p=>p.opportunityId===o.id&&p.quotationId&&!p.quotationDeleted);const qId=(o.quotationDeleted?'':o.quotationId)||(lp&&lp.quotationId);if(!qId)return btn('📋 Teklif Oluştur',()=>{const cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert('Müşteri bulunamadı.');},'#ecfdf5','#15803d','7px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'});const crmSent=['Gönderildi','Revize','Randevu','Onaylandı','Reddedildi'];const qStatus=o.quotationStatus||(lp&&lp.quotationStatus);const isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);return isDraft?btn('✏️ Taslağı Aç',()=>openQuotationWithSSO(qId),'#fffbeb','#b45309','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn('🔗 Teklif Programı',()=>openQuotationWithSSO(qId),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'});})(),
             btn('✏️ Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#fff3cd','#d97706','7px 14px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',flex:'1'}),
             (_CARRY_OPEN_STAGES.indexOf(o.stage)>=0)?btn('↦ '+(recFY(o)+1),()=>carryOverOpp(o),'#fef3c7','#92400e','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):h('span'),
             h('span'),
@@ -9280,10 +9284,11 @@ async function syncQuotationRefs() {
       ...(state.opportunities || []).filter(o => o.quotationId).map(o => o.quotationId),
       ...(state.proposals || []).filter(p => p.quotationId).map(p => p.quotationId),
     ])];
-    if (ids.length === 0) return;
+    // ids boş olsa bile devam: aşağıdaki REF. kurtarma adımı bağlantısı kopmuş
+    // fırsatları yeniden eşleştirebilir.
     let updatedOpps = [...state.opportunities];
     let updatedProps = [...state.proposals];
-    let changed = false, clearedCount = 0;
+    let changed = false, clearedCount = 0, restoredCount = 0, relinkedCount = 0;
     for (const qid of ids) {
       const res = await fetch(
         `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?id=${encodeURIComponent(qid)}`,
@@ -9299,22 +9304,36 @@ async function syncQuotationRefs() {
       // → CRM bağlantısını otomatik temizle: buton "📋 Teklif Oluştur"a döner.
       // Fırsat/teklif talebi kaydı korunur, yalnız teklif bağlantı alanları sıfırlanır.
       if (d.exists === false) {
-        for (const o of updatedOpps.filter(x => x.quotationId === qid)) {
-          const upd = { ...o, quotationId: '', quotationUrl: '', quotationStatus: '' };
+        for (const o of updatedOpps.filter(x => x.quotationId === qid && !x.quotationDeleted)) {
+          const upd = { ...o, quotationDeleted: true, quotationStatus: '' };
           await saveDoc('opportunities', o.id, upd);
           updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
           changed = true;
+          clearedCount++;
         }
-        for (const p of updatedProps.filter(x => x.quotationId === qid)) {
-          const upd = { ...p, quotationId: '', quotationUrl: '', quotationStatus: '' };
+        for (const p of updatedProps.filter(x => x.quotationId === qid && !x.quotationDeleted)) {
+          const upd = { ...p, quotationDeleted: true, quotationStatus: '' };
           await saveDoc('proposals', p.id, upd);
           updatedProps = updatedProps.map(x => x.id === p.id ? upd : x);
           changed = true;
         }
-        clearedCount++;
         continue;
       }
       if (d.exists !== true) continue; // beklenmeyen yanıt → dokunma
+
+      // Teklif (yeniden) mevcut → daha önce "silinmiş" işareti konduysa bağlantıyı onar.
+      for (const o of updatedOpps.filter(x => x.quotationId === qid && x.quotationDeleted)) {
+        const upd = { ...o, quotationDeleted: false };
+        await saveDoc('opportunities', o.id, upd);
+        updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
+        changed = true; restoredCount++;
+      }
+      for (const p of updatedProps.filter(x => x.quotationId === qid && x.quotationDeleted)) {
+        const upd = { ...p, quotationDeleted: false };
+        await saveDoc('proposals', p.id, upd);
+        updatedProps = updatedProps.map(x => x.id === p.id ? upd : x);
+        changed = true;
+      }
 
       const ref   = tpRefWithRev(d);     // revizyon ≥2 → "...-R2"
       const total = tpValueEur(d);       // daima EUR
@@ -9341,6 +9360,28 @@ async function syncQuotationRefs() {
         changed = true;
       }
     }
+
+    // Bağlantısı tamamen kopmuş fırsatları REF. numarasından kurtar.
+    // (Eski sürüm, teklif silindiğinde quotationId'yi siliyordu; teklif geri alınsa bile
+    // CRM onu bulamıyordu. Elde yalnızca REF. numarası kalıyor — onunla eşleştiriyoruz.)
+    const orphans = updatedOpps.filter(o => !o.quotationId && o.tenderRef);
+    for (const o of orphans) {
+      const num = String(o.tenderRef).trim().replace(/-R\d+$/i, ''); // "-R2" revizyon eki
+      if (!/^[\w.-]{3,60}$/.test(num) || !/-T-\d/.test(num)) continue; // serbest metin REF.'leri atla
+      const r = await fetch(
+        `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?number=${encodeURIComponent(num)}`,
+        { headers: { 'x-crm-key': TEKLIF_API_KEY } }
+      ).catch(() => null);
+      if (!r || !r.ok) continue;
+      const rd = (await r.json().catch(() => null))?.data;
+      if (rd?.exists !== true || !rd.id) continue;
+      const upd = { ...o, quotationId: rd.id, quotationDeleted: false,
+        ...(rd.status ? { quotationStatus: rd.status } : {}) };
+      await saveDoc('opportunities', o.id, upd);
+      updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
+      changed = true; relinkedCount++;
+    }
+
     if (changed) {
       const _scrollSave = [...document.querySelectorAll('.apro-no-sb')].map(el => el.scrollLeft);
       setState({ opportunities: updatedOpps, proposals: updatedProps });
@@ -9348,7 +9389,9 @@ async function syncQuotationRefs() {
         [...document.querySelectorAll('.apro-no-sb')].forEach((el, i) => { if (_scrollSave[i]) el.scrollLeft = _scrollSave[i]; });
       });
     }
-    if (clearedCount > 0) showToast('🧹 ' + clearedCount + ' silinmiş teklifin CRM bağlantısı otomatik temizlendi (buton "Teklif Oluştur"a döndü).');
+    if (clearedCount > 0) showToast('🧹 ' + clearedCount + ' teklif teklif programında silinmiş — buton "Teklif Oluştur"a döndü. Teklif geri alınırsa bağlantı kendiliğinden onarılır.');
+    if (restoredCount > 0) showToast('↩️ ' + restoredCount + ' teklif geri alınmış — CRM bağlantısı otomatik onarıldı.');
+    if (relinkedCount > 0) showToast('🔗 ' + relinkedCount + ' fırsat REF. numarasından mevcut teklifle yeniden eşleştirildi.');
   } catch {}
 }
 
