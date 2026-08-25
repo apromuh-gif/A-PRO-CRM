@@ -9279,16 +9279,37 @@ function mailBody(icon, title, details) {
 async function syncQuotationRefs() {
   try {
     if (typeof TEKLIF_APP_URL === 'undefined' || typeof TEKLIF_API_KEY === 'undefined' || !TEKLIF_API_KEY) return;
-    // Hem fırsatlardan hem teklif taleplerinden benzersiz quotationId topla
-    const ids = [...new Set([
-      ...(state.opportunities || []).filter(o => o.quotationId).map(o => o.quotationId),
-      ...(state.proposals || []).filter(p => p.quotationId).map(p => p.quotationId),
-    ])];
-    // ids boş olsa bile devam: aşağıdaki REF. kurtarma adımı bağlantısı kopmuş
-    // fırsatları yeniden eşleştirebilir.
     let updatedOpps = [...state.opportunities];
     let updatedProps = [...state.proposals];
     let changed = false, clearedCount = 0, restoredCount = 0, relinkedCount = 0;
+
+    // Bağlantısı tamamen kopmuş fırsatları REF. numarasından kurtar.
+    // (Eski sürüm, teklif silindiğinde quotationId'yi siliyordu; teklif geri alınsa bile
+    // CRM onu bulamıyordu. Elde yalnızca REF. numarası kalıyor — onunla eşleştiriyoruz.)
+    const orphans = updatedOpps.filter(o => !o.quotationId && o.tenderRef);
+    for (const o of orphans) {
+      const num = String(o.tenderRef).trim().replace(/-R\d+$/i, ''); // "-R2" revizyon eki
+      if (!/^[\w.-]{3,60}$/.test(num) || !/-T-\d/.test(num)) continue; // serbest metin REF.'leri atla
+      const r = await fetch(
+        `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?number=${encodeURIComponent(num)}`,
+        { headers: { 'x-crm-key': TEKLIF_API_KEY } }
+      ).catch(() => null);
+      if (!r || !r.ok) continue;
+      const rd = (await r.json().catch(() => null))?.data;
+      if (rd?.exists !== true || !rd.id) continue;
+      const upd = { ...o, quotationId: rd.id, quotationDeleted: false,
+        ...(rd.status ? { quotationStatus: rd.status } : {}) };
+      await saveDoc('opportunities', o.id, upd);
+      updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
+      changed = true; relinkedCount++;
+    }
+
+    // Bağlı tekliflerin benzersiz id'leri — kurtarma adımında yeniden bağlananlar dahil,
+    // böylece onların durum/tutar bilgisi de bu turda tazelenir.
+    const ids = [...new Set([
+      ...updatedOpps.filter(o => o.quotationId).map(o => o.quotationId),
+      ...updatedProps.filter(p => p.quotationId).map(p => p.quotationId),
+    ])];
     for (const qid of ids) {
       const res = await fetch(
         `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?id=${encodeURIComponent(qid)}`,
@@ -9359,27 +9380,6 @@ async function syncQuotationRefs() {
         updatedProps = updatedProps.map(x => x.id === p.id ? pupd : x);
         changed = true;
       }
-    }
-
-    // Bağlantısı tamamen kopmuş fırsatları REF. numarasından kurtar.
-    // (Eski sürüm, teklif silindiğinde quotationId'yi siliyordu; teklif geri alınsa bile
-    // CRM onu bulamıyordu. Elde yalnızca REF. numarası kalıyor — onunla eşleştiriyoruz.)
-    const orphans = updatedOpps.filter(o => !o.quotationId && o.tenderRef);
-    for (const o of orphans) {
-      const num = String(o.tenderRef).trim().replace(/-R\d+$/i, ''); // "-R2" revizyon eki
-      if (!/^[\w.-]{3,60}$/.test(num) || !/-T-\d/.test(num)) continue; // serbest metin REF.'leri atla
-      const r = await fetch(
-        `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?number=${encodeURIComponent(num)}`,
-        { headers: { 'x-crm-key': TEKLIF_API_KEY } }
-      ).catch(() => null);
-      if (!r || !r.ok) continue;
-      const rd = (await r.json().catch(() => null))?.data;
-      if (rd?.exists !== true || !rd.id) continue;
-      const upd = { ...o, quotationId: rd.id, quotationDeleted: false,
-        ...(rd.status ? { quotationStatus: rd.status } : {}) };
-      await saveDoc('opportunities', o.id, upd);
-      updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
-      changed = true; relinkedCount++;
     }
 
     if (changed) {
