@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 30 Temmuz 2026 (Servis Faz 3a arıza icra + Faz 3b periyodik bakım vade takibi; servis menü etiketleri; prim bordrosu çıktısı)
+> Son güncelleme: 26 Ağustos 2026 (teklif silme/geri alma bağlantı koruması + REF. ile yeniden eşleştirme; yeni fırsat varsayılan aşaması KAZANILDI → TEKLİF)
 
 ---
 
@@ -575,3 +575,19 @@ Yasal zorunlu (BYKHY) tekrarlayan bakım. Aşama motoru YOK; **vade/tekrar (due-
 - **CRUD tutarlılığı:** Periyodik bakım Yaklaşan/Geciken satırlarına eksik olan **Sil** butonu eklendi (her görünümde kaydet/düzenle/sil tam).
 
 **Durum:** Tümü canlı (son commit `dd545eb`).
+
+---
+
+## 🔗 Teklif Bağlantı Koruması + Yeni Fırsat Varsayılanı (26 Ağustos 2026)
+
+### Teklif bağlantısını yok eden temizlik — ✅ kritik düzeltme
+CRM, bağlı teklifi periyodik olarak `crm/quotation-status`'tan sorguluyor; `exists:false` dönünce bunu **kalıcı** silme sanıp fırsattaki `quotationId`'yi tamamen temizliyordu (`clearDeletedQuotationLink` + toplu senkron). Teklif Programı tarafı ise **soft delete** kullanıyor ve silinen teklif geri alınabiliyor (bkz. Teklif Programı `progress.md`) — ama geri alındığında CRM artık hangi teklif olduğunu bilmiyordu, buton kalıcı olarak "📋 Teklif Oluştur"da kalıyor ve tıklanınca **kopya teklif** açıyordu. Gerçek olay: Borusan Balabanlı RES teklifi yanlışlıkla silinip geri alındı, CRM bağlantısı bir daha kurulamadı.
+- **Bağlantı artık silinmiyor**, `quotationDeleted` bayrağıyla işaretleniyor. Buton davranışı aynı ("Teklif Oluştur"a döner) ama kimlik korunuyor.
+- Teklif geri alınırsa bir sonraki senkronda bayrak kalkıyor, bağlantı **kendiliğinden onarılıyor**.
+- Bağlantısı zaten tamamen kopmuş fırsatlar için **REF. numarasından kurtarma**: `-R2` gibi revizyon eki atılıp `crm/quotation-status?number=...` ile aranıyor (Teklif Programı tarafına yeni eklenen `number` parametresi); bulunursa yeniden bağlanıyor. Bu adım, ~36 teklifi tek tek sorgulayan döngüden **önce** çalışacak şekilde konumlandı — aksi halde sonucu görmek ~1 dakika sürüyordu.
+- Bildirimler: 🧹 (silinmiş, buton geri döndü) / ↩️ (geri alınmış, otomatik onarıldı) / 🔗 (REF.'ten yeniden eşleştirildi).
+
+### Yeni fırsat varsayılan aşaması KAZANILDI'ydı — ✅ düzeltme
+"+ Yeni Fırsat" formu aşamayı `STAGES` listesindeki **ilk** değer olan `KAZANILDI` ile açıyordu. Aşamayı elle değiştirmeden kaydedilen her fırsat "kazanılmış" sayılıyor, hem kazanılan ciro raporlarını şişiriyor hem de `saveOpp` içindeki kural gereği bağlı teklifi Teklif Programı'nda **kendiliğinden APPROVED**'a çekiyordu. Kazanıldı/Kaçtı kararı her zaman elle verilmeli — varsayılan, teklif talebi formuyla aynı olacak şekilde **`TEKLİF`**'e çekildi. (Mevcut hatalı kayıtlı fırsatların aşaması geriye dönük düzeltilmedi — elle kontrol gerekir.)
+
+**Not:** Bu iki değişiklik `APRO_CRM_Firebase.html` üzerinde yapıldı, `index.html`'e senkronlandı (proje kuralı: ana dosya `APRO_CRM_Firebase.html`, GitHub Pages `index.html`'i okur).
