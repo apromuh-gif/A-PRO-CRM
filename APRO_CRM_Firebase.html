@@ -1693,7 +1693,11 @@ function usersWithTargets() {
 }
 
 function buildOppModal(item) {
-  const f = item ? JSON.parse(JSON.stringify(item)) : {title:'',customerId:'',contractorId:'',adminId:'',value:'',stage:'KAZANILDI',jobStatus:JOB_ST[0],sector:SEC_O[0],assignedTo:'',dueDate:'',tenderRef:'',probability:50,notes:'',createdAt:today()};
+  // Yeni fırsat "TEKLİF" aşamasında başlar (teklif talebi formuyla aynı).
+  // Varsayılan KAZANILDI idi: kullanıcı aşamayı değiştirmezse fırsat kazanılmış sayılıyor,
+  // kazanılan ciroyu şişiriyor ve saveOpp içindeki kural bağlı teklifi kendiliğinden
+  // APPROVED'a çekiyordu. Kazanıldı/Kaçtı kararı her zaman elle verilir.
+  const f = item ? JSON.parse(JSON.stringify(item)) : {title:'',customerId:'',contractorId:'',adminId:'',value:'',stage:'TEKLİF',jobStatus:JOB_ST[0],sector:SEC_O[0],assignedTo:'',dueDate:'',tenderRef:'',probability:50,notes:'',createdAt:today()};
   const custOpts = [{v:'',l:'Seçin…'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))];
 
   const fTitle=inp('Proje adı',f.title,v=>f.title=v);
