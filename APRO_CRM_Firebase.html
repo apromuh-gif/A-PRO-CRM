@@ -5730,15 +5730,7 @@ function _clSelect(opts, val, onch){
 }
 function _clRerender(){ setState({modal: state.modal}); }
 
-async function clSave(c){
-  var missing = [];
-  if(!c.customerId) missing.push('Müşteri');
-  if(!(c.staffSign && c.staffSign.name)) missing.push('A-Pro Yetkilisi adı');
-  if(!(c.staffSign && c.staffSign.dataURL)) missing.push('A-Pro Yetkilisi imzası');
-  if(!(c.custSign && c.custSign.name)) missing.push('Müşteri İlgilisi adı');
-  if(!(c.custSign && c.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
-  if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
-  c.status = 'tamam';
+async function _clPersist(c, toastMsg){
   c._editedBy = (state.currentUser && state.currentUser.displayName) || '';
   c._editedAt = today();
   if(!c.createdAt) c.createdAt = today();
@@ -5748,7 +5740,22 @@ async function clSave(c){
   var i = list.findIndex(function(x){ return x.id===c.id; });
   if(i>=0) list[i]=c; else list.push(c);
   setState({checklists:list, modal:null, saving:false});
-  showToast('✅ Checklist kaydedildi');
+  showToast(toastMsg);
+}
+async function clSave(c){
+  var missing = [];
+  if(!c.customerId) missing.push('Müşteri');
+  if(!(c.staffSign && c.staffSign.name)) missing.push('A-Pro Yetkilisi adı');
+  if(!(c.staffSign && c.staffSign.dataURL)) missing.push('A-Pro Yetkilisi imzası');
+  if(!(c.custSign && c.custSign.name)) missing.push('Müşteri İlgilisi adı');
+  if(!(c.custSign && c.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
+  if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
+  c.status = 'tamam';
+  await _clPersist(c, '✅ Checklist kaydedildi');
+}
+async function clSaveDraft(c){
+  c.status = 'taslak';
+  await _clPersist(c, '📝 Taslak olarak kaydedildi');
 }
 // İlgili kayda bağlı, personel+müşteri tarafından imzalanarak 'tamam' durumuna
 // getirilmiş en güncel checklist'in tarihini döndürür (yoksa null).
@@ -5808,16 +5815,8 @@ function sfHasFreshCompleted(linkType, linkId, sinceISO){
   var latest = sfLatestCompletedAt(linkType, linkId);
   return !!latest && (!sinceISO || latest >= sinceISO);
 }
-async function sfSave(sf){
-  var missing = [];
-  if(!sf.customerId) missing.push('Müşteri');
-  if(!(sf.staffSign && sf.staffSign.name)) missing.push('A-Pro Yetkilisi adı');
-  if(!(sf.staffSign && sf.staffSign.dataURL)) missing.push('A-Pro Yetkilisi imzası');
-  if(!(sf.custContact && sf.custContact.name)) missing.push('Müşteri İlgilisi adı');
-  if(!(sf.custSign && sf.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
-  if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
-  sf.custSign.name = sf.custContact.name;
-  sf.status = 'tamam';
+async function _sfPersist(sf, toastMsg){
+  if(sf.custContact) sf.custSign.name = sf.custContact.name;
   sf._editedBy = (state.currentUser && state.currentUser.displayName) || '';
   sf._editedAt = today();
   if(!sf.createdAt) sf.createdAt = today();
@@ -5827,7 +5826,22 @@ async function sfSave(sf){
   var i = list.findIndex(function(x){ return x.id===sf.id; });
   if(i>=0) list[i]=sf; else list.push(sf);
   setState({serviceForms:list, modal:null, saving:false});
-  showToast('✅ Servis Formu kaydedildi');
+  showToast(toastMsg);
+}
+async function sfSave(sf){
+  var missing = [];
+  if(!sf.customerId) missing.push('Müşteri');
+  if(!(sf.staffSign && sf.staffSign.name)) missing.push('A-Pro Yetkilisi adı');
+  if(!(sf.staffSign && sf.staffSign.dataURL)) missing.push('A-Pro Yetkilisi imzası');
+  if(!(sf.custContact && sf.custContact.name)) missing.push('Müşteri İlgilisi adı');
+  if(!(sf.custSign && sf.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
+  if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
+  sf.status = 'tamam';
+  await _sfPersist(sf, '✅ Servis Formu kaydedildi');
+}
+async function sfSaveDraft(sf){
+  sf.status = 'taslak';
+  await _sfPersist(sf, '📝 Taslak olarak kaydedildi');
 }
 async function sfDelete(id){
   const sf = (state.serviceForms||[]).find(x=>x.id===id);
@@ -5935,6 +5949,7 @@ function buildServiceFormModal(sf){
   var isExisting = (state.serviceForms||[]).some(function(x){ return x.id===sf.id; });
   var footer = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
     btn('💾 Kaydet', function(){ sfSave(sf); }, '#16a34a'),
+    btn('📝 Taslak Kaydet', function(){ sfSaveDraft(sf); }, '#64748b'),
     btn('🖨️ PDF / Yazdır', function(){ printServiceForm(sf); }, '#0891b2'),
     isExisting ? btn('🗑 Sil', function(){ sfDelete(sf.id); }, '#dc2626') : '',
     btn('Kapat', function(){ setState({modal:null}); }, '#64748b'));
@@ -6143,6 +6158,7 @@ function buildChecklistModal(c){
   var isExisting = (state.checklists||[]).some(function(x){ return x.id===c.id; });
   var footer = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
     btn('💾 Kaydet', function(){ clSave(c); }, '#16a34a'),
+    btn('📝 Taslak Kaydet', function(){ clSaveDraft(c); }, '#64748b'),
     btn('🖨️ PDF / Yazdır', function(){ printChecklist(c); }, '#0891b2'),
     isExisting ? btn('🗑 Sil', function(){ clDelete(c.id); }, '#dc2626') : '',
     btn('Kapat', function(){ setState({modal:null}); }, '#64748b'));
