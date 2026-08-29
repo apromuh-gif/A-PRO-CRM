@@ -2094,6 +2094,7 @@ async function maintVisitDone(m){
   if(!maintHasSystems(m)){ showToast('⚠️ Önce sistem ve periyot ekleyin.','#d97706'); return; }
   const recordDue = mtRecordNextDue(m.mtSystems);
   if(!recordDue){ showToast('⚠️ Geçerli vade bulunamadı.','#d97706'); return; }
+  if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   const dueList = mtSystemsDueOn(m.mtSystems, recordDue);
   const names = dueList.map(s=>SYS_META[s.sysKey]?SYS_META[s.sysKey].l:s.sysKey).join(', ');
   const note = prompt('Ziyaret tamamlandı ('+_toTR(recordDue)+')\nServis edilen sistemler: '+names+'\n\nYapılan işlem / not (opsiyonel):', '');
@@ -5691,6 +5692,19 @@ async function clSave(c){
   setState({checklists:list, modal:null, saving:false});
   showToast('✅ Checklist kaydedildi');
 }
+// İlgili kayda bağlı, personel+müşteri tarafından imzalanarak 'tamam' durumuna
+// getirilmiş en güncel checklist'in tarihini döndürür (yoksa null).
+function clLatestCompletedAt(linkType, linkId){
+  var list = (state.checklists||[]).filter(function(x){ return x.linkType===linkType && x.linkId===linkId && x.status==='tamam'; });
+  if(!list.length) return null;
+  return list.map(function(x){ return x.createdAt; }).sort().pop();
+}
+// sinceISO verilirse (periyodik bakımda bir önceki ziyaretten SONRA) taze bir checklist
+// tamamlanmış olmalı — eski bir ziyaretin checklist'i bir sonraki ziyareti geçerli kılmaz.
+function clHasFreshCompleted(linkType, linkId, sinceISO){
+  var latest = clLatestCompletedAt(linkType, linkId);
+  return !!latest && (!sinceISO || latest >= sinceISO);
+}
 async function clDelete(id){
   if(!confirm('Bu checklist kalıcı olarak silinsin mi?')) return;
   await deleteDoc('checklists', id);
@@ -7328,6 +7342,7 @@ async function servAdvance(s){
 }
 // Arızayı kapat (kapanış notu iste — R7).
 async function servClose(s){
+  if(!clHasFreshCompleted('service', s.id, '')){ showToast('⚠️ Arıza kapatılmadan önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   const note=prompt('Kapanış — yapılan işlem + değişen parça (opsiyonel):', s.execCloseNote||'');
   if(note===null) return;
   const upd=Object.assign({}, s, { execClosedAt:today(), execCloseNote:note });
@@ -7689,6 +7704,7 @@ function maintDaysLeft(m){ return maintIsTracked(m) ? _diffDays(maintNextDue(m))
 // durumu yeni döngü için "Henüz Verilmedi"ye geri al. Kayıt: saveMaint deseni.
 async function maintDone(m){
   if(!maintIsTracked(m)){ showToast('⚠️ Önce periyot ve ilk vade tarihi girin.','#d97706'); return; }
+  if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   const note = prompt('Bakım tamamlandı — yapılan işlem / not (opsiyonel):', '');
   if(note === null) return;
   const me = (state.currentUser && state.currentUser.displayName) || '';
