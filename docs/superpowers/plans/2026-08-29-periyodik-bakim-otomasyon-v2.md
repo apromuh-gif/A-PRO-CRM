@@ -471,12 +471,14 @@ async function maintAddManualHistory(m, f){
 
   const me = (state.currentUser && state.currentUser.displayName) || '';
   const hist = [...maintHistory(m), {at:iso, by:me, note:note||'', systems:label, occurrence: occurrence||null}];
-  const data = {...m, mtSystems, mtHistory:hist, mtNextDue: mtRecordNextDue(mtSystems), ...stamp()};
+  const data = {...m, mtSystems, mtHistory:hist, mtNextDue: sys ? mtRecordNextDue(mtSystems) : m.mtNextDue, ...stamp()};
   await persistMaint(data);
   setState({modal:null});
   showToast('✅ Geçmiş kayıt eklendi: '+_toTR(iso));
 }
 ```
+
+(Düzeltme, commit `39ce4b5`: `sys` yoksa — yani legacy tek-periyot kayıt veya sıfır sistem — `mtRecordNextDue(mtSystems)` boş diziden `''` döner ve `persistMaint`→`maintSyncTask` zinciri üzerinden bağlı görevi yanlışlıkla kapatırdı. Kod kalitesi incelemesi bunu yakaladı; `sys ? ... : m.mtNextDue` guard'ı yukarıdaki aynı desenle tutarlı hale getirildi.)
 
 - [ ] **Step 5: JS syntax kontrolü** — Task 1 Step 5'teki komutu çalıştır. Expected: `✅ SYNTAX OK`
 
