@@ -128,6 +128,10 @@ Ekran başında tek cümlelik not: "Periyodik Bakım = yasal zorunlu tekrarlayan
 
 - Arıza icrası (Faz 3a — tamamlandı).
 - `serviceOpps` / `services` değişiklikleri.
-- Oto-görev üreticisi aktivasyonu (madde 2 / öneri b — dokunulmaz).
+- ~~Oto-görev üreticisi aktivasyonu (madde 2 / öneri b — dokunulmaz).~~ **GEÇERSİZ — bkz. §13.**
 - Aşama motoru / kanban (bakımda doğrusal aşama yok).
 - Yapısal parça/stok/maliyet/fatura modülü.
+
+## 13. Karar Revizyonu (2026-08-29)
+
+§5'teki "oto-görev üreticisi dokunulmaz" kararı **tersine çevrildi**. Gerekçe: bu oturumda, tek kanala (bildirim+mail) güvenmenin canlıda sessizce başarısız olduğu tespit edildi (§5'teki `mtNextDue` bağlama hatası — mail hiç gitmiyordu). Yasal zorunlu/güvenlik kritik bir işte tek kanal yetersiz görüldü. Yeni tasarım: `docs/superpowers/specs/2026-08-29-periyodik-bakim-otomasyon-v2-design.md`.
