@@ -5864,6 +5864,46 @@ function buildServiceFormModal(sf){
     signs, footer);
   return modal(SF_DOCTYPE_META[sf.docType]||'Servis-Devreye Alma Formu', body, function(){ setState({modal:null}); }, '820px');
 }
+function printServiceForm(sf){
+  sf = normServiceForm(sf);
+  var cust = (state.customers||[]).find(function(x){ return x.id===sf.customerId; });
+  var proj = sf.projectId ? (state.opportunities||[]).find(function(x){ return x.id===sf.projectId; }) : null;
+  function infoRow(lbl, val){ return '<tr><td class="lbl">'+escapeHtml(lbl)+'</td><td>'+escapeHtml(val||'—')+'</td></tr>'; }
+  var infoGrid = '<table class="infogrid"><tbody>'
+    + infoRow('Müşteri', cust?(cust.firmName||'—'):'—')
+    + infoRow('Saha / Bina', sf.siteName)
+    + infoRow('Proje', proj?(proj.title||'—'):'—')
+    + infoRow('Tarih', _toTR(sf.createdAt||today()))
+    + infoRow('Referans', String(sf.id).slice(-8).toUpperCase())
+    + '</tbody></table>';
+  var sysLabels = (sf.systemsPresent||[]).map(function(k){ return (SYS_META[k]&&SYS_META[k].l)||k; });
+  function signBox(s, role){
+    var img = s.dataURL ? '<img src="'+s.dataURL+'" class="sig"/>' : '<div class="sig"></div>';
+    return '<div class="signbox"><div class="role">'+role+'</div>'+img+'<div class="sigline">Ad Soyad: '+escapeHtml(s.name||'')+'</div><div class="sigline">Tarih: '+escapeHtml(s.at?_toTR(s.at):'')+'</div><div class="sigline">İmza (ıslak): ______________________</div></div>';
+  }
+  var html = ''
+   + '<style>@media print{.no-print{display:none!important;}} @page{margin:14mm;} body{font-family:Arial,Helvetica,sans-serif;color:#111;} .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #c00000;padding-bottom:10px;margin-bottom:14px;} .hd img{height:56px;} .letterhead{text-align:right;font-size:11px;color:#333;line-height:1.6;} .letterhead b{display:block;font-size:13px;color:#111;margin-bottom:2px;} .secbar{background:#c00000;color:#fff;font-weight:700;font-size:12px;padding:6px 10px;text-transform:uppercase;letter-spacing:.03em;margin:14px 0 8px;} .infogrid{width:100%;border-collapse:collapse;margin-bottom:6px;} .infogrid td{border:1px solid #e2e8f0;padding:7px 10px;font-size:12px;} .infogrid td.lbl{background:#f5f5f5;font-weight:700;color:#333;width:22%;} .badges{font-size:12px;} .badge{display:inline-block;background:#fdecec;color:#7a0e0e;border:1px solid #f3b8b8;border-radius:14px;padding:3px 10px;margin:0 6px 6px 0;font-weight:700;} .desc{font-size:12.5px;white-space:pre-wrap;line-height:1.6;} .parties{display:flex;gap:20px;} .parties>div{flex:1;} .signs{display:flex;gap:24px;margin-top:26px;page-break-inside:avoid;} .signbox{flex:1;} .role{font-weight:700;font-size:13px;margin-bottom:4px;} img.sig,.sig{display:block;width:220px;height:80px;border:1px solid #cbd5e1;border-radius:6px;object-fit:contain;} .sigline{font-size:12px;margin-top:4px;} .foot{margin-top:24px;font-size:10px;color:#94a3b8;text-align:center;}</style>'
+   + '<div class="hd"><img src="'+APRO_LOGO_DATAURI+'"/><div class="letterhead">' + APRO_LETTERHEAD.map(function(l,i){ return i===0?('<b>'+escapeHtml(l)+'</b>'):escapeHtml(l)+'<br/>'; }).join('') + '</div></div>'
+   + '<h1 style="font-size:16px;margin:0 0 10px;color:#0f1f35;">'+escapeHtml(SF_DOCTYPE_META[sf.docType]||'Servis-Devreye Alma Formu')+'</h1>'
+   + infoGrid
+   + '<div class="secbar">Hizmet Türü</div><div class="badges"><span class="badge">'+escapeHtml(SF_DOCTYPE_META[sf.docType]||sf.docType)+'</span></div>'
+   + '<div class="secbar">Tesisteki Sistemler</div><div class="badges">'+(sysLabels.length?sysLabels.map(function(l){return '<span class="badge">'+escapeHtml(l)+'</span>';}).join(''):'<span style="color:#94a3b8;font-size:12px;">Belirtilmedi</span>')+'</div>'
+   + '<div class="secbar">Yapılan Hizmet</div><div class="desc">'+escapeHtml(sf.description||'—')+'</div>'
+   + '<div class="secbar">Taraflar</div><div class="parties">'
+     + '<div><b style="font-size:12px;">Müşteri İlgilisi</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.custContact.name||'—')+(sf.custContact.phone?(' · '+escapeHtml(sf.custContact.phone)):'')+'</div></div>'
+     + '<div><b style="font-size:12px;">Servis Personeli</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.staffContact.name||'—')+(sf.staffContact.phone?(' · '+escapeHtml(sf.staffContact.phone)):'')+'</div></div>'
+   + '</div>'
+   + '<div class="signs">'+signBox(sf.staffSign,'A-Pro Yetkilisi')+signBox(sf.custSign,'Müşteri Yetkilisi')+'</div>'
+   + '<div class="foot">A-PRO Mühendislik · Hizmet teslim formu · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
+  var ep = document.getElementById('print-overlay'); if(ep) ep.remove();
+  var po = document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
+  var bar = document.createElement('div'); bar.className='no-print'; bar.style.cssText='display:flex;gap:8px;padding:10px;border-bottom:1px solid #e2e8f0;';
+  var pb = document.createElement('button'); pb.textContent='🖨️ Yazdır'; pb.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;'; pb.onclick=function(){ window.print(); };
+  var cb = document.createElement('button'); cb.textContent='✕ Kapat'; cb.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;'; cb.onclick=function(){ po.remove(); };
+  bar.appendChild(pb); bar.appendChild(cb);
+  var content = document.createElement('div'); content.style.cssText='overflow:auto;padding:24px;'; content.innerHTML=html;
+  po.appendChild(bar); po.appendChild(content); document.body.appendChild(po);
+}
 async function clDelete(id){
   if(!confirm('Bu checklist kalıcı olarak silinsin mi?')) return;
   await deleteDoc('checklists', id);
