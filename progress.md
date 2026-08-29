@@ -590,4 +590,45 @@ CRM, bağlı teklifi periyodik olarak `crm/quotation-status`'tan sorguluyor; `ex
 ### Yeni fırsat varsayılan aşaması KAZANILDI'ydı — ✅ düzeltme
 "+ Yeni Fırsat" formu aşamayı `STAGES` listesindeki **ilk** değer olan `KAZANILDI` ile açıyordu. Aşamayı elle değiştirmeden kaydedilen her fırsat "kazanılmış" sayılıyor, hem kazanılan ciro raporlarını şişiriyor hem de `saveOpp` içindeki kural gereği bağlı teklifi Teklif Programı'nda **kendiliğinden APPROVED**'a çekiyordu. Kazanıldı/Kaçtı kararı her zaman elle verilmeli — varsayılan, teklif talebi formuyla aynı olacak şekilde **`TEKLİF`**'e çekildi. (Mevcut hatalı kayıtlı fırsatların aşaması geriye dönük düzeltilmedi — elle kontrol gerekir.)
 
+---
+
+## 🔁 Periyodik Bakım v2 + Servis-Devreye Alma Formu (29 Ağustos 2026)
+
+Faz 3b'nin (30 Temmuz) üzerine, gerçek kullanımda ortaya çıkan boşluklar kapatıldı: sabit takvimli çoklu-ziyaret programı, kanıt/imza zorunluluğu, ve yeni bir müşteri-teslim belgesi. İki ayrı spec+plan+8-task döngüsüyle uygulandı (`docs/superpowers/specs/2026-08-29-*`, `docs/superpowers/plans/2026-08-29-*`).
+
+### Sunucu tarafı — ölü mail düzeltmesi (`nextaura-admin`)
+7-gün-önce bakım hatırlatma maili hiç göndermiyordu: `crm-reminders.ts` var olmayan `m.appointmentDate` alanını okuyordu. Gerçek alan `m.mtNextDue`'ya bağlandı, alıcı hedefi `serviceContact || preparedBy` yapıldı. Ayrıca **geciken bakım için 2 günde bir tekrarlayan mail** eklendi (1, 3, 5... gün gecikmede; dedup key güne özel).
+
+### Sabit takvime çapalı çoklu-ziyaret programı
+- `mtGenerateSchedule(base,end,freq)` — Bitiş Tarihi girilince sözleşme dönemindeki **tüm** ziyaret tarihlerini üretir, **en fazla 1 yılla sınırlı** (aylık≤12, 3 aylık≤4, 6 aylık≤2, yıllık≤1).
+- Her sistemde `doneCount` alanı — bir ziyaret tamamlanınca sıradaki vade **sabit programdan** (`schedule[doneCount]`) alınır, `sys.due`'dan değil. Müşteri talebiyle bir ziyaretin tarihi kayması sonraki ziyaretlerin planını **bozmaz**.
+- Vade tarihi kalıcı olarak elle de değiştirilebilir (devam eden/negotiated işler için); planlanan tarihten **>3 gün** sapınca bilgilendirici "⚠️ Plandan N gün kaydı" rozeti çıkar.
+- Numaralı planlanan liste ("2. Bakım: ...", "3. Bakım: ...") + **"+ Geçmiş Kayıt Ekle"** artık "kaçıncı bakım tamamlandı?" soruyor — `doneCount`'u o numaraya ayarlayıp sıradaki vadeyi sabit programdan alıyor, geri kalan tarihler yeniden hesaplanmıyor. Bu akış bilinçli olarak Checklist/Servis Formu zorunluluğuna tabi değil (sistem-öncesi geçmiş ziyaretler için).
+- **Bug düzeltmesi:** Baz/Bitiş/Vade tarihi alanları her tuş vuruşunda tüm modalı yeniden çiziyordu (native tarih widget'ının odağı sıfırlanıyor, yarım yıl gibi "0020" kaydedilebiliyordu) → `input` yerine `change` olayına + yıl 2015-2100 aralık kontrolüne geçirildi.
+- İşlevsiz "Randevu Tarihi Aralığı" (appointmentStart/End) formdan ve liste sütunlarından kaldırıldı — hiçbir hesaplamada kullanılmıyordu.
+
+### Görev senkronu — `persistMaint` / `maintSyncTask`
+`maintenances` koleksiyonuna yazan tüm yollar (`saveMaint`, `maintVisitDone`, `maintDone`, geri dönük giriş) artık tek geçit olan `persistMaint`'ten geçiyor. Her bakım kaydı için deterministik id'li (`auto_maint_<id>`) **tek kayan görev** tutuluyor: vade değiştikçe güncellenir (görev başlığında "kaçıncı bakım" etiketiyle), ilgili kişi değişince **otomatik devredilir** (`assignmentHistory`'e "sistem" kaynaklı iz + bildirim), sözleşme bitince kapatılır, kayıt silinince `cascadeDeleteTasksFor` ile temizlenir. Görevler artık ayrı bir **"🔁 Bakım"** sekmesinde doğru filtreleniyor (önceden yanlışlıkla "Şirket" rozetiyle görünüp hiçbir sekmede filtrelenmiyordu).
+
+### Checklist + Servis Formu — kapatma kilidi
+Mevcut NFPA Checklist sistemi (personel+müşteri imzası) vardı ama hiçbir tamamlama eylemine bağlı değildi. Ayrıca **yeni, bağımsız bir "A-PRO Servis-Devreye Alma Formu"** kuruldu (`serviceForms` koleksiyonu, checklist'in `cl*` desenlerinin `sf*` paraleli): hizmet türü + tesisteki sistemler (kırmızı kart seçimi), yapılan hizmet açıklaması, müşteri ilgilisi/servis personeli bilgisi, iki dijital imza, Teklif Programı PDF görsel diliyle (A-PRO logolu üst bilgi, kırmızı bölüm başlıkları) çıktı.
+
+**Amaç ayrımı:** Checklist = iş doğru yapıldı mı (iç teknik kontrol); Servis Formu = hizmet müşteriye verildiğinin delili.
+
+Nihai kilit kararı:
+| Eylem | Checklist | Servis Formu |
+|---|---|---|
+| Arızayı Kapat | zorunlu değil | **zorunlu** |
+| Ziyareti/Bakımı Tamamla | zorunlu | **zorunlu** |
+| Projeyi Kapat (Devreye Alma) | **zorunlu (yeni)** | **zorunlu (yeni)** |
+
+### Erken/geç tamamlama disiplini
+- "Ziyareti Tamamla" → **"N. Servis Hizmetini Tamamla"** (kaçıncı hizmet olduğu görünür, kafa karıştıran "ziyaret" terimi kaldırıldı).
+- Vade gelmeden buton **pasif/gri** — daha önce 3 ay sonrası bir ziyaret bugün "tamamlandı" işaretlenebiliyordu. Admin girişinde buton turuncu/aktif kalır, tıklanınca onay penceresiyle erken tamamlamaya izin verilir (`maintVisitDone`/`maintDone` içinde de aynı admin+onay kontrolü var, yalnız arayüz değil).
+
+### Prim kriteri düzeltmesi — "Periyodik bakım zamanında"
+Teknik Servis departmanının **%20 ağırlıklı** kriteri kırıktı: yanlış alan adları (`m.assignedTo`/`m.dueDate`) ve eşleşmeyen durum kontrolü kullanıyordu, hiçbir zaman veri üretmiyordu. `mtHistory`'ye `dueAt` (vade) + `completedOn` (fiili tamamlama tarihi) eklendi; kriter artık gerçek veriden, kim yaptıysa ona, vade ile fiili tarih arası ≤3 gün toleransla hesaplanıyor. Bu düzeltmeden önceki kayıtlar (alan yok) iyi niyetle zamanında sayılıyor.
+
+**Durum:** Tümü canlı — CRM son commit `82436ac`, nextaura-admin son commit `811d12d`.
+
 **Not:** Bu iki değişiklik `APRO_CRM_Firebase.html` üzerinde yapıldı, `index.html`'e senkronlandı (proje kuralı: ana dosya `APRO_CRM_Firebase.html`, GitHub Pages `index.html`'i okur).
