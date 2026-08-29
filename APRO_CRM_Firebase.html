@@ -197,6 +197,7 @@ const TASK_CONTEXTS = [
   { v:'sirket', l:'🏢 Şirket', c:'#b45309' },
   { v:'proje',  l:'📋 Proje',  c:'#1e3a6e' },
   { v:'servis', l:'🔧 Servis', c:'#0e7490' },
+  { v:'bakim',  l:'🔁 Bakım',  c:'#15803d' },
 ];
 const TASK_CONTEXT_META = Object.fromEntries(TASK_CONTEXTS.map(x=>[x.v,x]));
 // Durum akışı: yapilacak → devam ⇄ beklemede → tamamlandi → (onaylandi | revizyon→devam)
@@ -1873,7 +1874,7 @@ function buildServModal(item) {
 }
 
 function buildMaintModal(item) {
-  const f = item ? JSON.parse(JSON.stringify(item)) : {jobName:'',customerId:'',serviceContact:'',amount:'',status:'Hizmet Henüz Verilmedi',appointmentStart:'',appointmentEnd:'',notes:'',mtPeriod:'',mtPeriodDays:'',mtNextDue:'',createdAt:today()};
+  const f = item ? JSON.parse(JSON.stringify(item)) : {jobName:'',customerId:'',serviceContact:'',amount:'',status:'Hizmet Henüz Verilmedi',notes:'',mtPeriod:'',mtPeriodDays:'',mtNextDue:'',createdAt:today()};
   const custOpts = [{v:'',l:'Seçin…'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))];
   const fJob=inp('İşin adını girin',f.jobName,v=>f.jobName=v);
   const fCust=sel(custOpts,f.customerId,v=>f.customerId=v);
@@ -1882,8 +1883,6 @@ function buildMaintModal(item) {
   const fContact=sel(_staffOpts(f.serviceContact),f.serviceContact,v=>f.serviceContact=v);
   const fAmt=inp('0',f.amount,v=>f.amount=v,'number');
   const fSt=sel(MAINT_ST,f.status,v=>f.status=v);
-  const fStart=inp('',f.appointmentStart||'',v=>f.appointmentStart=v,'date');
-  const fEnd=inp('',f.appointmentEnd||'',v=>f.appointmentEnd=v,'date');
   const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
   const fSrvRef=h('input',{placeholder:'REF-2024-001 veya https://sunucu/dosya.pdf',value:f.tenderRef||'',
@@ -1894,10 +1893,6 @@ function buildMaintModal(item) {
     field('Müşteri',fCust),
     row(field('Teknik Servis İlgilisi',fContact,true),field('Tutar (€)',fAmt,true)),
     field('Durum',fSt),
-    h('div',{style:{background:G,border:`1px solid ${G3}`,borderRadius:'10px',padding:'14px',marginBottom:'11px'}},
-      lbl('Randevu Tarihi Aralığı'),
-      row(field('Başlangıç',fStart,true),field('Bitiş',fEnd,true))
-    ),
     maintSysSection(f),
     field('Notlar',fNotes),
     (item && maintHasSystems(f)) ? h('div',{style:{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}},
@@ -2007,6 +2002,17 @@ function maintSysSection(f){
 // Bir bakım kaydına bağlı tek "kayan" görevi (varsa) senkronlar: oluştur/güncelle,
 // vade değiştiyse yeniden aç, ilgili kişi değiştiyse otomatik devret + bildir.
 function maintTaskId(m){ return 'auto_maint_'+m.id; }
+// Sıradaki vadeye denk gelen sistem(ler)in kaçıncı bakım olduğunu etiketler (ör. "3. Bakım").
+// Program (mtEndDate) girilmemiş kayıtlarda etiket üretilmez (geri uyumlu).
+function maintOccurrenceLabel(m){
+  const due = (m.mtSystems||[]).filter(s=>s.due && s.due===m.mtNextDue);
+  const labels = [];
+  due.forEach(s=>{
+    const schedule = mtGenerateSchedule(m.mtBaseDate, m.mtEndDate, s.freq);
+    if(schedule.length) labels.push(((s.doneCount||0)+1)+'. Bakım');
+  });
+  return [...new Set(labels)].join(' + ');
+}
 async function maintSyncTask(m){
   try{
     const existing = (state.tasks||[]).map(normTask).find(t=>t.id===maintTaskId(m));
@@ -2019,7 +2025,8 @@ async function maintSyncTask(m){
     const person = personelPeople().find(u=>u.displayName===m.serviceContact);
     const dept = person ? person.department : '';
     const cust = (state.customers||[]).find(c=>c.id===m.customerId);
-    const title = '🔁 Periyodik Bakım: '+((cust&&cust.firmName)||'Müşteri')+' — '+(m.jobName||'Bakım');
+    const occ = maintOccurrenceLabel(m);
+    const title = '🔁 Periyodik Bakım'+(occ?(' ('+occ+')'):'')+': '+((cust&&cust.firmName)||'Müşteri')+' — '+(m.jobName||'Bakım');
     if(!existing){
       if(!m.serviceContact) return;
       const t = normTask({
@@ -6239,7 +6246,7 @@ function renderMaintenances() {
       (mf.job||mf.cust)?btn('✕ Temizle',()=>{state.maintFilters={job:'',cust:''};render();},'#fef2f2','#dc2626','7px 12px',{fontSize:'12px',alignSelf:'flex-end',border:'1px solid #fecaca',borderRadius:'8px'}):h('span')
     )
   );
-  const thead=h('thead',{},h('tr',{style:{background:'#1e2d4a'}},...["İşin Adı","Müşteri","T.Servis İlgilisi","Tutar (€)","Durum","Randevu Başlangıç","Randevu Bitiş","Son Düzenleyen","İşlem"].map(t=>h('th',{style:{color:'#ffffff',padding:'11px 13px',fontSize:'12px',fontWeight:'700',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:'.05em',textAlign:'left'}},t))));
+  const thead=h('thead',{},h('tr',{style:{background:'#1e2d4a'}},...["İşin Adı","Müşteri","T.Servis İlgilisi","Tutar (€)","Durum","Son Düzenleyen","İşlem"].map(t=>h('th',{style:{color:'#ffffff',padding:'11px 13px',fontSize:'12px',fontWeight:'700',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:'.05em',textAlign:'left'}},t))));
   const tbody=h('tbody',{});
   maintFiltered.forEach((m,i)=>{
     const c=custById(m.customerId);
@@ -6249,8 +6256,6 @@ function renderMaintenances() {
       h('td',{style:{padding:'10px 11px',fontSize:'12px',color:T2}},m.serviceContact||''),
       h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',color:'#10b981'}},eur(m.amount)),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},badge(m.status,MS[m.status]||T3)),
-      h('td',{style:{padding:'10px 11px',fontSize:'11px',color:m.appointmentStart?'#10b981':T4,fontWeight:m.appointmentStart?'600':'400'}},m.appointmentStart||'-'),
-      h('td',{style:{padding:'10px 11px',fontSize:'11px',color:m.appointmentEnd?'#10b981':T4,fontWeight:m.appointmentEnd?'600':'400'}},m.appointmentEnd||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},m._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},m._editedBy),h('br'),h('span',{style:{color:T4}},m._editedAt||'')):h('span',{style:{color:T4}},'—')),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(m.customerId)||c.name===m.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
