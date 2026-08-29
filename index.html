@@ -1897,12 +1897,18 @@ function buildMaintModal(item) {
   const mtPremature = !!(mtDue && today() < mtDue);
   const mtIsAdmin = !!(state.currentUser && state.currentUser.isAdmin);
   const mtOccNum = item ? maintNextOccurrenceNumber(item) : null;
-  const mtSuffix = mtPremature ? (mtIsAdmin ? (' (vade '+_toTR(mtDue)+' — admin onayıyla erken)') : (' (vade '+_toTR(mtDue)+')')) : '';
-  const mtBtnLabel = '✅ '+(mtOccNum ? (mtOccNum+'. ') : '')+'Servis Hizmetini Tamamla'+mtSuffix;
+  const mtBtnLabel = '✅ '+(mtOccNum ? (mtOccNum+'. ') : '')+'Servis Hizmetini Tamamla';
+  const mtCaption = mtPremature ? ('Vade: '+_toTR(mtDue)+(mtIsAdmin?' — admin onayıyla erken tamamlanabilir':' — henüz gelmedi')) : '';
   const mtPrematureMsg = '⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(mtDue)+'). Erken tamamlama için admin onayı gerekir.';
   const mtBlocked = mtPremature && !mtIsAdmin;
   const mtBtnColor = mtBlocked?'#cbd5e1':(mtPremature?'linear-gradient(135deg,#d97706,#b45309)':'linear-gradient(135deg,#16a34a,#15803d)');
   const mtBtnFg = mtBlocked?'#475569':'#fff';
+  const mtCaptionEl = mtCaption ? h('div',{style:{fontSize:'11px',color:'#92400e',fontWeight:'600',marginBottom:'8px'}}, mtCaption) : h('span');
+  const mtUtilRow = h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
+    btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','8px 12px',{fontSize:'12px',flex:'1 1 150px',border:'1px solid #fde68a'}),
+    btn('🕘 Geçmiş'+(item&&maintHistory(item).length?(' ('+maintHistory(item).length+')'):''),()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','8px 12px',{fontSize:'12px',flex:'1 1 110px',border:'1px solid #bfdbfe'}),
+    btn('📋 Checklist & Servis Formu',()=>setState({modal:{type:'bakimformlar',maintId:item.id}}),'#f0fdf4','#15803d','8px 12px',{fontSize:'12px',flex:'1 1 170px',border:'1px solid #bbf7d0'})
+  );
   const content = h('div',{},
     field('İşin Adı *',fJob),
     field('Müşteri',fCust),
@@ -1910,16 +1916,14 @@ function buildMaintModal(item) {
     statusField,
     mtSection,
     field('Notlar',fNotes),
-    (item && maintHasSystems(f)) ? h('div',{style:{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}},
-      btn(mtBtnLabel, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintVisitDone(item), mtBtnColor, mtBtnFg,'10px 14px',{flex:'1',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer'}),
-      btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','10px 14px',{fontSize:'13px',border:'1px solid #fde68a'}),
-      btn('🕘 Geçmiş'+(maintHistory(item).length?(' ('+maintHistory(item).length+')'):''),()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'}),
-      btn('📋 Checklist & Servis Formu',()=>setState({modal:{type:'bakimformlar',maintId:item.id}}),'#f0fdf4','#15803d','10px 14px',{fontSize:'13px',border:'1px solid #bbf7d0'})
-    ) : (item && maintIsTracked(f)) ? h('div',{style:{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}},
-      btn('✅ Servis Hizmetini Tamamla'+mtSuffix, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintDone(item), mtBtnColor, mtBtnFg,'10px 14px',{flex:'1',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer'}),
-      btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','10px 14px',{fontSize:'13px',border:'1px solid #fde68a'}),
-      btn('🕘 Geçmiş'+(maintHistory(item).length?(' ('+maintHistory(item).length+')'):''),()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'}),
-      btn('📋 Checklist & Servis Formu',()=>setState({modal:{type:'bakimformlar',maintId:item.id}}),'#f0fdf4','#15803d','10px 14px',{fontSize:'13px',border:'1px solid #bbf7d0'})
+    (item && maintHasSystems(f)) ? h('div',{style:{marginBottom:'4px'}},
+      btn(mtBtnLabel, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintVisitDone(item), mtBtnColor, mtBtnFg,'10px 14px',{width:'100%',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer',marginBottom:'4px',boxSizing:'border-box'}),
+      mtCaptionEl,
+      mtUtilRow
+    ) : (item && maintIsTracked(f)) ? h('div',{style:{marginBottom:'4px'}},
+      btn(mtBtnLabel, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintDone(item), mtBtnColor, mtBtnFg,'10px 14px',{width:'100%',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer',marginBottom:'4px',boxSizing:'border-box'}),
+      mtCaptionEl,
+      mtUtilRow
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
       btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); saveMaint({...f,amount:Number(f.amount)||0,mtSystems:sys,mtNextDue:next},!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
