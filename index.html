@@ -2025,15 +2025,17 @@ function maintProgressLabel(m){
   if(!maintHasSystems(m)) return null;
   const totals = m.mtSystems.map(s=>{
     const schedule = mtGenerateSchedule(m.mtBaseDate, m.mtEndDate, s.freq);
-    return schedule.length ? {done:(s.doneCount||0), total:schedule.length} : null;
+    return schedule.length ? {doneCount:(s.doneCount||0), total:schedule.length} : null;
   }).filter(Boolean);
   if(!totals.length) return null;
-  const done = totals.reduce((a,t)=>a+t.done,0);
-  const total = totals.reduce((a,t)=>a+t.total,0);
-  const allDone = totals.every(t=>t.done>=t.total);
-  if(allDone) return {text: done+'/'+total+' Tamamlandı', color:'#16a34a', done:true};
+  const total = Math.max(...totals.map(t=>t.total));
+  const allDone = totals.every(t=>t.doneCount>=t.total);
+  if(allDone) return {text: total+'/'+total+' Tamamlandı', color:'#16a34a', done:true};
+  // Sıradaki (henüz tamamlanmamış) bakımın kaçıncı olduğu — aşağıdaki numaralı
+  // listedeki "N. Bakım" etiketiyle birebir aynı sayı, karışıklık olmasın diye.
+  const occ = Math.max(...totals.filter(t=>t.doneCount<t.total).map(t=>t.doneCount+1));
   const nextDue = mtRecordNextDue(m.mtSystems);
-  return {text: done+'/'+total+' · Sıradaki: '+(nextDue?_toTR(nextDue):'-'), color:'#d97706', done:false};
+  return {text: occ+'/'+total+'. Bakım · '+(nextDue?_toTR(nextDue):'-'), color:'#d97706', done:false};
 }
 async function maintSyncTask(m){
   try{
