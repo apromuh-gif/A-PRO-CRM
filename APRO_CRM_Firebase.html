@@ -5750,6 +5750,57 @@ function sfHasFreshCompleted(linkType, linkId, sinceISO){
   var latest = sfLatestCompletedAt(linkType, linkId);
   return !!latest && (!sinceISO || latest >= sinceISO);
 }
+async function sfSave(sf){
+  sf.status = (sf.staffSign && sf.staffSign.name && sf.custSign && sf.custSign.name) ? 'tamam' : 'taslak';
+  sf._editedBy = (state.currentUser && state.currentUser.displayName) || '';
+  sf._editedAt = today();
+  if(!sf.createdAt) sf.createdAt = today();
+  setState({saving:true});
+  await saveDoc('serviceForms', sf.id, sf);
+  var list = (state.serviceForms||[]).slice();
+  var i = list.findIndex(function(x){ return x.id===sf.id; });
+  if(i>=0) list[i]=sf; else list.push(sf);
+  setState({serviceForms:list, modal:null, saving:false});
+  showToast('✅ Servis Formu kaydedildi');
+}
+async function sfDelete(id){
+  if(!confirm('Bu servis formu kalıcı olarak silinsin mi?')) return;
+  await deleteDoc('serviceForms', id);
+  setState({serviceForms:(state.serviceForms||[]).filter(function(x){ return x.id!==id; }), modal:null});
+  showToast('🗑 Servis formu silindi');
+}
+// Açıcı: opts { docType, customerId, siteName, projectId, linkType, linkId, staffName, id }
+function openServiceForm(opts){
+  opts = opts || {};
+  var existing = opts.id ? (state.serviceForms||[]).find(function(x){ return x.id===opts.id; }) : null;
+  var sf = normServiceForm(existing ? JSON.parse(JSON.stringify(existing)) : {
+    id: genId(),
+    docType: opts.docType || 'ariza',
+    customerId: opts.customerId || '',
+    siteName: opts.siteName || '',
+    projectId: opts.projectId || '',
+    linkType: opts.linkType || '',
+    linkId: opts.linkId || '',
+    staffContact: {name: opts.staffName||'', phone:''},
+    createdAt: today()
+  });
+  setState({modal:{type:'serviceform', item:sf}});
+}
+// Bir kayda bağlı servis formu listesi + yeni buton bloğu (modal içi giriş noktası).
+function sfListBlock(opts){
+  var list = (state.serviceForms||[]).filter(function(x){ return x.linkType===opts.linkType && x.linkId===opts.linkId; });
+  var rows = list.map(function(sf){
+    return h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 8px',border:'1px solid #e2e8f0',borderRadius:'8px',marginBottom:'6px',background:'#fff'}},
+      h('span',{style:{flex:'1',fontSize:'13px'}}, (SF_DOCTYPE_META[sf.docType]||sf.docType)+' · '+_toTR(sf.createdAt)+' · '+(sf.status==='tamam'?'✅ Tamam':'✏️ Taslak')),
+      btn('Aç', function(){ setState({modal:{type:'serviceform', item:sf}}); }, '#2563eb', '#fff', '5px 12px', {fontSize:'12px'}),
+      btn('PDF', function(){ printServiceForm(sf); }, '#0891b2', '#fff', '5px 12px', {fontSize:'12px'}));
+  });
+  return h('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #e2e8f0'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
+      h('div',{style:{fontWeight:'800',fontSize:'14px',flex:'1',color:'#0f1f35'}}, '📝 Servis-Devreye Alma Formu'),
+      btn('+ Yeni Servis Formu', function(){ openServiceForm(opts.newOpts); }, '#dc2626', '#fff', '6px 13px', {fontSize:'12px'})),
+    rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#94a3b8'}}, 'Henüz servis formu yok.'));
+}
 async function clDelete(id){
   if(!confirm('Bu checklist kalıcı olarak silinsin mi?')) return;
   await deleteDoc('checklists', id);
