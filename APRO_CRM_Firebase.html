@@ -2095,6 +2095,7 @@ async function maintVisitDone(m){
   const recordDue = mtRecordNextDue(m.mtSystems);
   if(!recordDue){ showToast('⚠️ Geçerli vade bulunamadı.','#d97706'); return; }
   if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
+  if(!sfHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   const dueList = mtSystemsDueOn(m.mtSystems, recordDue);
   const names = dueList.map(s=>SYS_META[s.sysKey]?SYS_META[s.sysKey].l:s.sysKey).join(', ');
   const note = prompt('Ziyaret tamamlandı ('+_toTR(recordDue)+')\nServis edilen sistemler: '+names+'\n\nYapılan işlem / not (opsiyonel):', '');
@@ -7442,6 +7443,8 @@ async function projAdvance(o){
 }
 // Projeyi kapat (hakediş sonrası).
 async function projClose(o){
+  if(!clHasFreshCompleted('project', o.id, '')){ showToast('⚠️ Proje kapatılmadan önce Devreye Alma Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
+  if(!sfHasFreshCompleted('project', o.id, '')){ showToast('⚠️ Proje kapatılmadan önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   if(!confirm('Proje kapatılsın mı? (Hakediş/kapanış tamamlandı)')) return;
   const upd=Object.assign({}, o, { execClosedAt:today() });
   await personelSaveDoc('opportunities', upd);
@@ -7542,7 +7545,7 @@ async function servAdvance(s){
 }
 // Arızayı kapat (kapanış notu iste — R7).
 async function servClose(s){
-  if(!clHasFreshCompleted('service', s.id, '')){ showToast('⚠️ Arıza kapatılmadan önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
+  if(!sfHasFreshCompleted('service', s.id, '')){ showToast('⚠️ Arıza kapatılmadan önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   const note=prompt('Kapanış — yapılan işlem + değişen parça (opsiyonel):', s.execCloseNote||'');
   if(note===null) return;
   const upd=Object.assign({}, s, { execClosedAt:today(), execCloseNote:note });
@@ -7905,6 +7908,7 @@ function maintDaysLeft(m){ return maintIsTracked(m) ? _diffDays(maintNextDue(m))
 async function maintDone(m){
   if(!maintIsTracked(m)){ showToast('⚠️ Önce periyot ve ilk vade tarihi girin.','#d97706'); return; }
   if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
+  if(!sfHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   const note = prompt('Bakım tamamlandı — yapılan işlem / not (opsiyonel):', '');
   if(note === null) return;
   const me = (state.currentUser && state.currentUser.displayName) || '';
