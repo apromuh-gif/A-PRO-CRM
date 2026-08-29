@@ -6157,6 +6157,7 @@ function buildArizaModal(serviceId){
     h('div',{style:{borderTop:'1px solid #e2e8f0',paddingTop:'12px'}}, tasksBox)
   );
   content.appendChild(clListBlock({ linkType:'service', linkId:s.id, newOpts:{ formType:'ariza', customerId:s.customerId||'', siteName:(cust&&cust.firmName)||'', linkType:'service', linkId:s.id } }));
+  content.appendChild(sfListBlock({ linkType:'service', linkId:s.id, newOpts:{ docType:'ariza', customerId:s.customerId||'', siteName:(cust&&cust.firmName)||'', staffName:s.preparedBy||'', linkType:'service', linkId:s.id } }));
   return modal((s.jobName||'Arıza')+' — İcra', content, ()=>setState({modal:null}), '720px');
 }
 
@@ -7938,6 +7939,7 @@ function buildBakimModal(maintId){
     h('div',{style:{marginTop:'12px'}}, btn('Kapat',()=>setState({modal:null}),'#21262d','#8b949e','10px 18px',{fontSize:'14px'}))
   );
   content.appendChild(clListBlock({ linkType:'maintenance', linkId:m.id, newOpts:{ formType:'bakim', customerId:m.customerId||'', siteName:(cust&&cust.firmName)||'', linkType:'maintenance', linkId:m.id } }));
+  content.appendChild(sfListBlock({ linkType:'maintenance', linkId:m.id, newOpts:{ docType:'bakim', customerId:m.customerId||'', siteName:(cust&&cust.firmName)||'', staffName:m.serviceContact||'', linkType:'maintenance', linkId:m.id } }));
   return modal('🕘 Bakım Geçmişi', content, ()=>setState({modal:null}), '600px');
 }
 // ================= /FAZ 3b =================
@@ -8581,6 +8583,7 @@ function buildProjeModal(oppId){
     h('div',{style:{borderTop:'1px solid #e2e8f0',paddingTop:'12px'}}, tasksBox)
   );
   content.appendChild(clListBlock({ linkType:'project', linkId:o.id, newOpts:{ formType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
+  content.appendChild(sfListBlock({ linkType:'project', linkId:o.id, newOpts:{ docType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
   return modal((o.title||'Proje')+' — İcra', content, ()=>setState({modal:null}), '720px');
 }
 function projFilterMgr(list, isAdmin){
@@ -9159,6 +9162,7 @@ function render() {
     else if(type==='ariza') m=buildArizaModal(state.modal.serviceId);
     else if(type==='bakim') m=buildBakimModal(state.modal.maintId);
     else if(type==='checklist') m=buildChecklistModal(item);
+    else if(type==='serviceform') m=buildServiceFormModal(item);
     else if(type==='opportunity') m=buildOppModal(item);
     else if(type==='serviceopp') m=buildServiceOppModal(item);
     else if(type==='proposal') m=buildPropModal(item);
