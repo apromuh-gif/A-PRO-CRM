@@ -1983,7 +1983,7 @@ async function maintVisitDone(m){
   const note = prompt('Ziyaret tamamlandı ('+_toTR(recordDue)+')\nServis edilen sistemler: '+names+'\n\nYapılan işlem / not (opsiyonel):', '');
   if(note===null) return;
   const me = (state.currentUser && state.currentUser.displayName) || '';
-  const advanced = mtCompleteVisit(m.mtSystems, recordDue);
+  const advanced = mtCompleteVisit(m.mtSystems, recordDue, m.mtBaseDate, m.mtEndDate);
   const nextDue = mtRecordNextDue(advanced);
   const hist = [...maintHistory(m), {at:recordDue, by:me, note:note||'', systems:names}];
   const data = {...m, mtSystems:advanced, mtHistory:hist, mtNextDue:nextDue, mtLastDone:recordDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
@@ -7241,8 +7241,19 @@ function mtFreqMonths(freq){ return ({aylik:1,'3aylik':3,'6aylik':6,yillik:12})[
 function mtSysFirstDue(baseISO, freq){ var m = mtFreqMonths(freq); return (baseISO && m) ? _addMonth(baseISO, m) : ''; }
 function mtRecordNextDue(systems){ var ds = (systems||[]).map(function(s){return s.due;}).filter(Boolean).sort(); return ds.length ? ds[0] : ''; }
 function mtSystemsDueOn(systems, visitISO){ if(!visitISO) return []; return (systems||[]).filter(function(s){ return s.due && s.due <= visitISO; }); }
-function mtAdvanceSystem(sys){ var m = mtFreqMonths(sys.freq); if(!m || !sys.due) return sys; return Object.assign({}, sys, {due:_addMonth(sys.due, m), lastDone:sys.due}); }
-function mtCompleteVisit(systems, visitISO){ return (systems||[]).map(function(s){ return (s.due && visitISO && s.due <= visitISO) ? mtAdvanceSystem(s) : s; }); }
+function mtAdvanceSystem(sys, base, end){
+  var mo = mtFreqMonths(sys.freq);
+  if(!mo || !sys.due) return sys;
+  var schedule = mtGenerateSchedule(base, end, sys.freq);
+  if(schedule.length){
+    var doneCount = (sys.doneCount||0) + 1;
+    return Object.assign({}, sys, {doneCount:doneCount, due:schedule[doneCount]||'', lastDone:sys.due});
+  }
+  return Object.assign({}, sys, {due:_addMonth(sys.due, mo), lastDone:sys.due});
+}
+function mtCompleteVisit(systems, visitISO, base, end){
+  return (systems||[]).map(function(s){ return (s.due && visitISO && s.due <= visitISO) ? mtAdvanceSystem(s, base, end) : s; });
+}
 
 // ═══════════════════════════════════════════════════════
 // NFPA SERVİS CHECKLIST MODÜLÜ (Faz 4)
