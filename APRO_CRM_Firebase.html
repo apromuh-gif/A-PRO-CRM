@@ -1493,6 +1493,7 @@ async function delItem(col, id) {
     if(!confirm('Silmek istiyor musunuz?')) return;
   }
   if(col==='services'){ await cascadeDeleteTasksFor('service', id); }
+  if(col==='maintenances'){ await cascadeDeleteTasksFor('maintenance', id); }
   await deleteDoc(col, id);
   if(col==='customers') setState({customers:state.customers.filter(x=>x.id!==id)});
   else if(col==='opportunities') setState({opportunities:state.opportunities.filter(x=>x.id!==id)});
