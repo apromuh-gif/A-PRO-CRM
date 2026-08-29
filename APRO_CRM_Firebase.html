@@ -1472,9 +1472,8 @@ async function saveMaint(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
   const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
-  await saveDoc('maintenances', id, data);
-  const list = isEdit ? state.maintenances.map(m=>m.id===id?data:m) : [...state.maintenances, data];
-  setState({maintenances:list, modal:null, saving:false});
+  await persistMaint(data);
+  setState({modal:null, saving:false});
   showToast('✅ Periyodik Bakım kaydedildi!');
 }
 async function saveSupplier(form, isEdit) {
@@ -2053,29 +2052,63 @@ async function maintVisitDone(m){
   const hist = [...maintHistory(m), {at:recordDue, by:me, note:note||'', systems:names}];
   const data = {...m, mtSystems:advanced, mtHistory:hist, mtNextDue:nextDue, mtLastDone:recordDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
   setState({saving:true});
-  await saveDoc('maintenances', m.id, data);
-  const list = state.maintenances.map(x=> x.id===m.id ? data : x);
-  setState({maintenances:list, modal:null, saving:false});
+  await persistMaint(data);
+  setState({modal:null, saving:false});
   showToast('✅ Ziyaret tamamlandı — sonraki vade: '+(nextDue?_toTR(nextDue):'-'));
 }
 // Devam eden (zaten süregelen) bakım işleri için geçmişe dönük, elle tarihli kayıt ekler.
 // Vade/programı etkilemez — yalnızca geçmiş ziyaret logunu (mtHistory) besler.
 async function maintAddManualHistory(m, f){
-  const dateStr = prompt('Ziyaret tarihi (GG.AA.YYYY):', _toTR(today()));
+  const systems = (f&&f.mtSystems)||[];
+  const namedSystems = systems.map((s,i)=>({idx:i, sys:s, label: SYS_META[s.sysKey]?SYS_META[s.sysKey].l:(s.sysKey||('Sistem '+(i+1)))}));
+  let target = null;
+  if(namedSystems.length===1){
+    target = namedSystems[0];
+  } else if(namedSystems.length>1){
+    const listStr = namedSystems.map((n,idx)=>(idx+1)+') '+n.label).join('\n');
+    const pick = prompt('Hangi sistem için geçmiş kayıt eklenecek?\n'+listStr+'\n\nNumara girin:', '1');
+    if(pick===null) return;
+    const pickIdx = parseInt(pick.trim(),10)-1;
+    if(!(pickIdx>=0 && pickIdx<namedSystems.length)){ showToast('⚠️ Geçersiz seçim.','#d97706'); return; }
+    target = namedSystems[pickIdx];
+  }
+
+  const sys = target ? target.sys : null;
+  const schedule = sys ? mtGenerateSchedule(f.mtBaseDate, f.mtEndDate, sys.freq) : [];
+
+  let occurrence = null;
+  let plannedDate = '';
+  if(sys && schedule.length){
+    const doneCount = sys.doneCount||0;
+    if(doneCount>=schedule.length){ showToast('⚠️ Bu sistemin tüm planlanan bakımları zaten tamamlanmış.','#d97706'); return; }
+    const optsStr = schedule.map((d,idx)=> idx>=doneCount ? (idx+1)+') '+_toTR(d) : null).filter(Boolean).join('\n');
+    const pickN = prompt('Kaçıncı bakım tamamlandı?\n'+optsStr+'\n\nNumara girin:', String(doneCount+1));
+    if(pickN===null) return;
+    occurrence = parseInt(pickN.trim(),10);
+    if(!(occurrence>=doneCount+1 && occurrence<=schedule.length)){ showToast('⚠️ Geçersiz bakım numarası.','#d97706'); return; }
+    plannedDate = schedule[occurrence-1];
+  }
+
+  const dateStr = prompt('Gerçekleşen ziyaret tarihi (GG.AA.YYYY):', plannedDate ? _toTR(plannedDate) : _toTR(today()));
   if(dateStr===null) return;
   const iso = _toISO(dateStr.trim());
   if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)){ showToast('⚠️ Geçersiz tarih formatı. GG.AA.YYYY girin.','#d97706'); return; }
-  const sysNames = ((f&&f.mtSystems)||[]).filter(s=>s.sysKey).map(s=>SYS_META[s.sysKey]?SYS_META[s.sysKey].l:s.sysKey);
-  const names = sysNames.length ? sysNames.join(', ') : '-';
-  const note = prompt('Yapılan işlem / not (opsiyonel) — Sistemler: '+names, '');
+
+  const label = target ? target.label : '-';
+  const note = prompt('Yapılan işlem / not (opsiyonel) — Sistem: '+label, '');
   if(note===null) return;
+
+  const mtSystems = sys ? systems.map((s,i)=> i===target.idx ? Object.assign({}, s, {
+    doneCount: occurrence!==null ? occurrence : (s.doneCount||0),
+    due: (occurrence!==null && schedule.length) ? (schedule[occurrence]||'') : s.due,
+    lastDone: iso
+  }) : s) : systems;
+
   const me = (state.currentUser && state.currentUser.displayName) || '';
-  const hist = [...maintHistory(m), {at:iso, by:me, note:note||'', systems:names}];
-  const data = {...m, mtHistory:hist, ...stamp()};
-  setState({saving:true});
-  await saveDoc('maintenances', m.id, data);
-  const list = state.maintenances.map(x=> x.id===m.id ? data : x);
-  setState({maintenances:list, modal:null, saving:false});
+  const hist = [...maintHistory(m), {at:iso, by:me, note:note||'', systems:label, occurrence: occurrence||null}];
+  const data = {...m, mtSystems, mtHistory:hist, mtNextDue: mtRecordNextDue(mtSystems), ...stamp()};
+  await persistMaint(data);
+  setState({modal:null});
   showToast('✅ Geçmiş kayıt eklendi: '+_toTR(iso));
 }
 
@@ -7611,9 +7644,8 @@ async function maintDone(m){
   const nextDue = computeNextDue(now, maintPeriod(m), maintPeriodDays(m));
   const data = {...m, mtLastDone:now, mtHistory:hist, mtNextDue:nextDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
   setState({saving:true});
-  await saveDoc('maintenances', m.id, data);
-  const list = state.maintenances.map(x => x.id===m.id ? data : x);
-  setState({maintenances:list, modal:null, saving:false});
+  await persistMaint(data);
+  setState({modal:null, saving:false});
   showToast('✅ Bakım tamamlandı — sonraki vade: ' + (nextDue ? _toTR(nextDue) : '-'));
 }
 // Bakım geçmişi modalı (tamamlanan bakımlar).
