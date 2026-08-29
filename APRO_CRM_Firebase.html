@@ -1307,7 +1307,7 @@ async function loadAllData() {
     loadCollection('customers'), loadCollection('opportunities'),
     loadCollection('proposals'), loadCollection('services'), loadCollection('maintenances'),
     loadCollection('suppliers'), loadCollection('serviceOpps'), loadCollection('visits'), loadCollection('appointments'),
-    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('prim'), loadCollection('checklists')
+    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('prim'), loadCollection('checklists'), loadCollection('serviceForms')
   ]);
   setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim, checklists});
   if(Array.isArray(state.tasks)) setState({ tasks: state.tasks.map(normTask) });
@@ -5703,6 +5703,51 @@ function clLatestCompletedAt(linkType, linkId){
 // tamamlanmış olmalı — eski bir ziyaretin checklist'i bir sonraki ziyareti geçerli kılmaz.
 function clHasFreshCompleted(linkType, linkId, sinceISO){
   var latest = clLatestCompletedAt(linkType, linkId);
+  return !!latest && (!sinceISO || latest >= sinceISO);
+}
+// ── Servis-Devreye Alma Formu (Checklist'ten AYRI, paralel sistem) ─────────
+const SF_DOCTYPE_META = { ariza:'Arıza Servis Formu', devreye:'Devreye Alma Servis Formu', bakim:'Periyodik Bakım Servis Formu' };
+const APRO_LETTERHEAD = [
+  'A-PRO MÜHENDİSLİK LTD. ŞTİ.',
+  'Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye',
+  'Tel: +90 (312) 481 25 00',
+  'E-posta: info@a-pro.com.tr',
+  'www.a-pro.com.tr'
+];
+// Tıklanınca tamamı kırmızı dolan seçilebilir kart (hizmet türü + tesis sistemleri seçimi için).
+function clRedCard(label, selected, onClick){
+  return h('div',{onClick:onClick, style:{
+    padding:'10px 14px', borderRadius:'8px',
+    border:'1.5px solid '+(selected?'#dc2626':'#cbd5e1'),
+    background:selected?'#dc2626':'#fff', color:selected?'#fff':'#334155',
+    fontWeight:'700', fontSize:'12.5px', cursor:'pointer', textAlign:'center',
+    userSelect:'none', flex:'1 1 auto', minWidth:'110px'
+  }}, label);
+}
+function normServiceForm(sf){
+  sf = sf || {};
+  return Object.assign({
+    id: sf.id, docType: 'ariza', customerId: '', siteName: '', projectId: '',
+    linkType: '', linkId: '', systemsPresent: [],
+    description: '', custContact: {name:'',phone:''}, staffContact: {name:'',phone:''},
+    staffSign: {name:'',dataURL:'',at:''}, custSign: {name:'',dataURL:'',at:''},
+    status: 'taslak', createdAt: (sf.createdAt || today())
+  }, sf, {
+    systemsPresent: Array.isArray(sf.systemsPresent) ? sf.systemsPresent : [],
+    custContact: Object.assign({name:'',phone:''}, sf.custContact || {}),
+    staffContact: Object.assign({name:'',phone:''}, sf.staffContact || {}),
+    staffSign: Object.assign({name:'',dataURL:'',at:''}, sf.staffSign || {}),
+    custSign: Object.assign({name:'',dataURL:'',at:''}, sf.custSign || {})
+  });
+}
+// clLatestCompletedAt/clHasFreshCompleted ile BİREBİR aynı mantık, state.serviceForms üzerinde.
+function sfLatestCompletedAt(linkType, linkId){
+  var list = (state.serviceForms||[]).filter(function(x){ return x.linkType===linkType && x.linkId===linkId && x.status==='tamam'; });
+  if(!list.length) return null;
+  return list.map(function(x){ return x.createdAt; }).sort().pop();
+}
+function sfHasFreshCompleted(linkType, linkId, sinceISO){
+  var latest = sfLatestCompletedAt(linkType, linkId);
   return !!latest && (!sinceISO || latest >= sinceISO);
 }
 async function clDelete(id){
