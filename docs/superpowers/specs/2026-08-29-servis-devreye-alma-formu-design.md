@@ -100,7 +100,15 @@ Sırasıyla:
 ## 6. PDF — `printServiceForm(sf)`
 
 `printChecklist`'in print-overlay + `window.print()` deseni birebir izlenir (yeni bir yazdırma altyapısı kurulmaz):
-- Üst bilgi: `APRO_LOGO_DATAURI` + **"Teklif formatındaki gibi"** — logo yanında şirket adı satırı eklenir ("A-PRO Mühendislik Yangından Korunma Sistemleri") ve `SF_DOCTYPE_META[sf.docType]` başlığı. Adres/telefon/vergi no gibi ayrıntılar şu an CRM içinde sabit bir yerde tanımlı değil (Teklif Programı ayrı bir Next.js projesi, PDF şablonu koda gömülü değil, buraya kopyalanmadı) — **kullanıcıdan tam metni istenip** sabit bir sabitte (`APRO_LETTERHEAD_TEXT` gibi) tutulacak; onay aşamasında sorulacak.
+- Üst bilgi: Teklif Programı PDF'indeki gibi — solda `APRO_LOGO_DATAURI` (mevcut, checklist'te zaten kullanılan logo), sağda şirket bilgi bloğu (yeni sabit `APRO_LETTERHEAD`):
+  ```
+  A-PRO MÜHENDİSLİK LTD. ŞTİ.
+  Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye
+  Tel: +90 (312) 481 25 00
+  E-posta: info@a-pro.com.tr
+  www.a-pro.com.tr
+  ```
+  Altında kırmızı (#dc2626 veya mevcut marka kırmızısı) ayırıcı çizgi — Teklif PDF'indeki desenle aynı. Başlık (`SF_DOCTYPE_META[sf.docType]`) bu üst bilginin altında, kayıt bilgi tablosunun üstünde yer alır.
 - Müşteri/proje/saha bilgi satırı.
 - Hizmet türü + tesisteki sistemler (seçili olanlar) — rozet/etiket olarak.
 - Yapılan hizmet açıklaması.
@@ -137,7 +145,7 @@ Mevcut `clListBlock` çağrılarının yanına, aynı yerde, aynı desende `sfLi
 - JS syntax: `node vm.Script` → `✅ SYNTAX OK` (her değişiklikten sonra).
 - Manuel: Arıza kaydı aç → Servis Formu doldur (docType=Arıza, sistem seç, açıklama yaz, iki imza at) → Kaydet → Arızayı Kapat artık engellenmiyor. Aynı işlemi imzasız dener → engelleniyor. Periyodik bakımda hem Checklist hem Servis Formu imzalanmadan Ziyareti Tamamla engelleniyor. Devreye almada Projeyi Kapat için aynı iki kilit. PDF çıktısı: logo + başlık + seçili kartlar + imza blokları doğru görünüyor.
 
-## 11. Kapsam Dışı / Açık Sorular (onay gerekiyor)
+## 11. Kapsam Dışı
 
-- **Şirket üst bilgi metni** (adres/telefon/vergi no) — kullanıcıdan tam metin istenecek, spec'e girilmedi (placeholder değil, gerçek onay bekleyen açık madde).
 - Servis Formu'nun kendi içinde ayrıca bir NFPA-tarzı tik tablosu **yoktur** — bu bilinçli bir sınır, checklist'in işi bu, tekrar edilmiyor.
+- Şirket üst bilgi metni kullanıcıdan alınıp §6'ya işlendi (Teklif Programı PDF ekran görüntüsünden) — açık soru kalmadı.
