@@ -5689,7 +5689,7 @@ function arizaAwaitingRow(s){
   );
 }
 function arizaListRow(s, isAdmin){
-  const st=servExecStage(s), meta=SERVICE_STAGE_META[st], open=servOpenCount(s, st);
+  const st=servExecStage(s), meta=SERVICE_STAGE_META[st], open=servTotalOpenCount(s);
   const cust=(state.customers||[]).find(c=>c.id===s.customerId)||null;
   const attn=servIsOverdue(s)||s.execUrgency==='acil';
   return h('div',{style:{background:'#fff',border:'1px solid '+(attn?'#fca5a5':'#d0daea'),borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'},onclick:()=>setState({modal:{type:'ariza',serviceId:s.id}})},
@@ -7520,6 +7520,8 @@ function projStageTasks(o, stage){
     ((t.execStage||projStage(o))===stage));
 }
 function projOpenCount(o, stage){ return projStageTasks(o,stage).filter(t=>!taskIsClosed(t)).length; }
+// Kayda bağlı TÜM aşamalardaki açık görev toplamı (liste rozeti için — Kanban hâlâ aşama-bazlı projOpenCount kullanır).
+function projTotalOpenCount(o){ return PROJECT_STAGES.reduce((sum,st)=>sum+projOpenCount(o,st),0); }
 function _projStageIndex(s){ const i=PROJECT_STAGES.indexOf(s); return i<0?0:i; }
 
 // Aşamaya geçince o aşamanın şablon görevlerini öner (Faz 1 confirm-akışıyla aynı; kör üretim yok).
@@ -7571,6 +7573,8 @@ async function projAdvance(o){
 async function projClose(o){
   if(!clHasFreshCompleted('project', o.id, '')){ showToast('⚠️ Proje kapatılmadan önce Devreye Alma Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   if(!sfHasFreshCompleted('project', o.id, '')){ showToast('⚠️ Proje kapatılmadan önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
+  const openTasks = projTotalOpenCount(o);
+  if(openTasks>0 && !confirm('Bu projede '+openTasks+' açık görev var. Yine de kapatılsın mı?')) return;
   if(!confirm('Proje kapatılsın mı? (Hakediş/kapanış tamamlandı)')) return;
   const upd=Object.assign({}, o, { execClosedAt:today() });
   await personelSaveDoc('opportunities', upd);
@@ -7624,6 +7628,8 @@ function servStageTasks(s, stage){
     ((t.execStage||servExecStage(s))===stage));
 }
 function servOpenCount(s, stage){ return servStageTasks(s,stage).filter(t=>!taskIsClosed(t)).length; }
+// Kayda bağlı TÜM aşamalardaki açık görev toplamı (liste rozeti için — Kanban hâlâ aşama-bazlı servOpenCount kullanır).
+function servTotalOpenCount(s){ return SERVICE_STAGES.reduce((sum,st)=>sum+servOpenCount(s,st),0); }
 function _servStageIndex(st){ const i=SERVICE_STAGES.indexOf(st); return i<0?0:i; }
 async function suggestServStageTasks(s, stage, opts){
   const manual = !!(opts && opts.manual);
@@ -7672,6 +7678,8 @@ async function servAdvance(s){
 // Arızayı kapat (kapanış notu iste — R7).
 async function servClose(s){
   if(!sfHasFreshCompleted('service', s.id, '')){ showToast('⚠️ Arıza kapatılmadan önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
+  const openTasks = servTotalOpenCount(s);
+  if(openTasks>0 && !confirm('Bu arızada '+openTasks+' açık görev var. Yine de kapatılsın mı?')) return;
   const note=prompt('Kapanış — yapılan işlem + değişen parça (opsiyonel):', s.execCloseNote||'');
   if(note===null) return;
   const upd=Object.assign({}, s, { execClosedAt:today(), execCloseNote:note });
@@ -8752,7 +8760,7 @@ function projFilterMgr(list, isAdmin){
   return list;
 }
 function projListRow(o, isAdmin){
-  const st=projStage(o), meta=PROJECT_STAGE_META[st], open=projOpenCount(o, st);
+  const st=projStage(o), meta=PROJECT_STAGE_META[st], open=projTotalOpenCount(o);
   const cust=(state.customers||[]).find(c=>c.id===o.customerId)||null;
   return h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'},onclick:()=>setState({modal:{type:'proje',oppId:o.id}})},
     h('div',{style:{flex:'1',minWidth:'160px'}},
