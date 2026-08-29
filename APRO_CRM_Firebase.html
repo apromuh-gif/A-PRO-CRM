@@ -1909,7 +1909,7 @@ function buildMaintModal(item) {
       maintHistory(item).length ? btn('🕘 Geçmiş ('+maintHistory(item).length+')',()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'}) : h('span')
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next=mtRecordNextDue(sys); saveMaint({...f,amount:Number(f.amount)||0,mtSystems:sys,mtNextDue:next},!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); saveMaint({...f,amount:Number(f.amount)||0,mtSystems:sys,mtNextDue:next},!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
