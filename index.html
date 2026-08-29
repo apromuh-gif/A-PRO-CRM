@@ -1895,9 +1895,14 @@ function buildMaintModal(item) {
     : field('Durum',fSt);
   const mtDue = item ? maintNextDue(item) : '';
   const mtPremature = !!(mtDue && today() < mtDue);
+  const mtIsAdmin = !!(state.currentUser && state.currentUser.isAdmin);
   const mtOccNum = item ? maintNextOccurrenceNumber(item) : null;
-  const mtBtnLabel = '✅ '+(mtOccNum ? (mtOccNum+'. ') : '')+'Servis Hizmetini Tamamla'+(mtPremature?(' (vade '+_toTR(mtDue)+')'):'');
-  const mtPrematureMsg = '⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(mtDue)+'). Erken tamamlanamaz — gerçekten erken yapıldıysa vade tarihini yukarıdan elle güncelleyin.';
+  const mtSuffix = mtPremature ? (mtIsAdmin ? (' (vade '+_toTR(mtDue)+' — admin onayıyla erken)') : (' (vade '+_toTR(mtDue)+')')) : '';
+  const mtBtnLabel = '✅ '+(mtOccNum ? (mtOccNum+'. ') : '')+'Servis Hizmetini Tamamla'+mtSuffix;
+  const mtPrematureMsg = '⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(mtDue)+'). Erken tamamlama için admin onayı gerekir.';
+  const mtBlocked = mtPremature && !mtIsAdmin;
+  const mtBtnColor = mtBlocked?'#cbd5e1':(mtPremature?'linear-gradient(135deg,#d97706,#b45309)':'linear-gradient(135deg,#16a34a,#15803d)');
+  const mtBtnFg = mtBlocked?'#475569':'#fff';
   const content = h('div',{},
     field('İşin Adı *',fJob),
     field('Müşteri',fCust),
@@ -1906,11 +1911,11 @@ function buildMaintModal(item) {
     mtSection,
     field('Notlar',fNotes),
     (item && maintHasSystems(f)) ? h('div',{style:{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}},
-      btn(mtBtnLabel, mtPremature ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintVisitDone(item), mtPremature?'#cbd5e1':'linear-gradient(135deg,#16a34a,#15803d)', mtPremature?'#475569':'#fff','10px 14px',{flex:'1',fontSize:'13px',opacity:mtPremature?'0.75':'1',cursor:mtPremature?'not-allowed':'pointer'}),
+      btn(mtBtnLabel, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintVisitDone(item), mtBtnColor, mtBtnFg,'10px 14px',{flex:'1',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer'}),
       btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','10px 14px',{fontSize:'13px',border:'1px solid #fde68a'}),
       maintHistory(item).length ? btn('🕘 Geçmiş ('+maintHistory(item).length+')',()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'}) : h('span')
     ) : (item && maintIsTracked(f)) ? h('div',{style:{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}},
-      btn('✅ Servis Hizmetini Tamamla'+(mtPremature?(' (vade '+_toTR(mtDue)+')'):''), mtPremature ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintDone(item), mtPremature?'#cbd5e1':'linear-gradient(135deg,#16a34a,#15803d)', mtPremature?'#475569':'#fff','10px 14px',{flex:'1',fontSize:'13px',opacity:mtPremature?'0.75':'1',cursor:mtPremature?'not-allowed':'pointer'}),
+      btn('✅ Servis Hizmetini Tamamla'+mtSuffix, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintDone(item), mtBtnColor, mtBtnFg,'10px 14px',{flex:'1',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer'}),
       btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','10px 14px',{fontSize:'13px',border:'1px solid #fde68a'}),
       maintHistory(item).length ? btn('🕘 Geçmiş ('+maintHistory(item).length+')',()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'}) : h('span')
     ) : h('span'),
@@ -2110,7 +2115,11 @@ async function maintVisitDone(m){
   if(!maintHasSystems(m)){ showToast('⚠️ Önce sistem ve periyot ekleyin.','#d97706'); return; }
   const recordDue = mtRecordNextDue(m.mtSystems);
   if(!recordDue){ showToast('⚠️ Geçerli vade bulunamadı.','#d97706'); return; }
-  if(today() < recordDue){ showToast('⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(recordDue)+'). Erken tamamlanamaz.','#d97706'); return; }
+  if(today() < recordDue){
+    const isAdmin = !!(state.currentUser && state.currentUser.isAdmin);
+    if(!isAdmin){ showToast('⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(recordDue)+'). Erken tamamlama için admin onayı gerekir.','#d97706'); return; }
+    if(!confirm('Bu ziyaretin vadesi '+_toTR(recordDue)+'. Erken tamamlanacak — admin onayıyla devam edilsin mi?')) return;
+  }
   if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   if(!sfHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   const dueList = mtSystemsDueOn(m.mtSystems, recordDue);
@@ -7935,7 +7944,11 @@ function maintDaysLeft(m){ return maintIsTracked(m) ? _diffDays(maintNextDue(m))
 // durumu yeni döngü için "Henüz Verilmedi"ye geri al. Kayıt: saveMaint deseni.
 async function maintDone(m){
   if(!maintIsTracked(m)){ showToast('⚠️ Önce periyot ve ilk vade tarihi girin.','#d97706'); return; }
-  if(today() < maintNextDue(m)){ showToast('⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(maintNextDue(m))+'). Erken tamamlanamaz.','#d97706'); return; }
+  if(today() < maintNextDue(m)){
+    const isAdmin = !!(state.currentUser && state.currentUser.isAdmin);
+    if(!isAdmin){ showToast('⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(maintNextDue(m))+'). Erken tamamlama için admin onayı gerekir.','#d97706'); return; }
+    if(!confirm('Bu ziyaretin vadesi '+_toTR(maintNextDue(m))+'. Erken tamamlanacak — admin onayıyla devam edilsin mi?')) return;
+  }
   if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   if(!sfHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
   const note = prompt('Bakım tamamlandı — yapılan işlem / not (opsiyonel):', '');
