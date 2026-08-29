@@ -5731,7 +5731,14 @@ function _clSelect(opts, val, onch){
 function _clRerender(){ setState({modal: state.modal}); }
 
 async function clSave(c){
-  c.status = (c.staffSign && c.staffSign.name && c.custSign && c.custSign.name) ? 'tamam' : 'taslak';
+  var missing = [];
+  if(!c.customerId) missing.push('Müşteri');
+  if(!(c.staffSign && c.staffSign.name)) missing.push('A-Pro Yetkilisi adı');
+  if(!(c.staffSign && c.staffSign.dataURL)) missing.push('A-Pro Yetkilisi imzası');
+  if(!(c.custSign && c.custSign.name)) missing.push('Müşteri İlgilisi adı');
+  if(!(c.custSign && c.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
+  if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
+  c.status = 'tamam';
   c._editedBy = (state.currentUser && state.currentUser.displayName) || '';
   c._editedAt = today();
   if(!c.createdAt) c.createdAt = today();
@@ -5802,7 +5809,15 @@ function sfHasFreshCompleted(linkType, linkId, sinceISO){
   return !!latest && (!sinceISO || latest >= sinceISO);
 }
 async function sfSave(sf){
-  sf.status = (sf.staffSign && sf.staffSign.name && sf.custSign && sf.custSign.name) ? 'tamam' : 'taslak';
+  var missing = [];
+  if(!sf.customerId) missing.push('Müşteri');
+  if(!(sf.staffSign && sf.staffSign.name)) missing.push('A-Pro Yetkilisi adı');
+  if(!(sf.staffSign && sf.staffSign.dataURL)) missing.push('A-Pro Yetkilisi imzası');
+  if(!(sf.custContact && sf.custContact.name)) missing.push('Müşteri İlgilisi adı');
+  if(!(sf.custSign && sf.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
+  if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
+  sf.custSign.name = sf.custContact.name;
+  sf.status = 'tamam';
   sf._editedBy = (state.currentUser && state.currentUser.displayName) || '';
   sf._editedAt = today();
   if(!sf.createdAt) sf.createdAt = today();
@@ -5898,8 +5913,14 @@ function buildServiceFormModal(sf){
   var descBox = h('textarea',{placeholder:'Yapılan hizmetin açıklaması...', style:Object.assign(_clInputStyle(),{minHeight:'90px',resize:'vertical'})}, sf.description||'');
   descBox.addEventListener('input', function(e){ sf.description=e.target.value; });
 
+  var custContactsList = (function(){
+    var cust = (state.customers||[]).find(function(x){ return x.id===sf.customerId; });
+    return (cust && Array.isArray(cust.contacts)) ? cust.contacts.map(function(ct){ return ct.name; }).filter(Boolean) : [];
+  })();
   var custContactRow = h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'6px'}},
-    h('div',{style:{flex:'1 1 200px'}}, h('input',{value:sf.custContact.name||'', placeholder:'Müşteri İlgilisi - Ad Soyad', oninput:function(e){ sf.custContact.name=e.target.value; }, style:_clInputStyle()})),
+    h('div',{style:{flex:'1 1 200px'}},
+      h('input',{value:sf.custContact.name||'', placeholder:'Müşteri İlgilisi - Ad Soyad (listeden seçin veya yazın)', list:'sf-cust-contacts', oninput:function(e){ sf.custContact.name=e.target.value; sf.custSign.name=e.target.value; }, onblur:function(){ rerender(); }, style:_clInputStyle()}),
+      custContactsList.length ? h('datalist',{id:'sf-cust-contacts'}, ...custContactsList.map(function(n){ return h('option',{value:n}); })) : h('datalist',{id:'sf-cust-contacts'})),
     h('div',{style:{flex:'1 1 160px'}}, h('input',{value:sf.custContact.phone||'', placeholder:'Telefon', oninput:function(e){ sf.custContact.phone=e.target.value; }, style:_clInputStyle()})));
   var staffContactRow = h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'14px'}},
     h('div',{style:{flex:'1 1 200px'}}, h('input',{value:sf.staffContact.name||'', placeholder:'Servis Personeli - Ad Soyad', oninput:function(e){ sf.staffContact.name=e.target.value; }, style:_clInputStyle()})),
@@ -5909,7 +5930,7 @@ function buildServiceFormModal(sf){
     h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}}, 'İmzalar (dijital + ıslak)'),
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
       clSignPad(sf, sf.staffSign, 'A-Pro Yetkilisi', 'sfsig-staff', (state.users||[]).filter(function(u){return u.active!==false;}).map(function(u){return u.displayName;}).sort(function(a,b){return a.localeCompare(b,'tr');})),
-      clSignPad(sf, sf.custSign, 'Müşteri Yetkilisi', 'sfsig-cust')));
+      clSignPad(sf, sf.custSign, 'Müşteri İlgilisi', 'sfsig-cust', null, true)));
 
   var isExisting = (state.serviceForms||[]).some(function(x){ return x.id===sf.id; });
   var footer = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
@@ -5957,7 +5978,7 @@ function printServiceForm(sf){
      + '<div><b style="font-size:12px;">Müşteri İlgilisi</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.custContact.name||'—')+(sf.custContact.phone?(' · '+escapeHtml(sf.custContact.phone)):'')+'</div></div>'
      + '<div><b style="font-size:12px;">Servis Personeli</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.staffContact.name||'—')+(sf.staffContact.phone?(' · '+escapeHtml(sf.staffContact.phone)):'')+'</div></div>'
    + '</div>'
-   + '<div class="signs">'+signBox(sf.staffSign,'A-Pro Yetkilisi')+signBox(sf.custSign,'Müşteri Yetkilisi')+'</div>'
+   + '<div class="signs">'+signBox(sf.staffSign,'A-Pro Yetkilisi')+signBox(sf.custSign,'Müşteri İlgilisi')+'</div>'
    + '<div class="foot">A-PRO Mühendislik · Hizmet teslim formu · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
   var ep = document.getElementById('print-overlay'); if(ep) ep.remove();
   var po = document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
@@ -6069,7 +6090,7 @@ function clSystemCard(c, sys, idx){
     h('textarea',{oninput:function(e){ sys.extraNotes=e.target.value; }, style:Object.assign(_clInputStyle(),{minHeight:'46px',resize:'vertical'})}, sys.extraNotes||''));
   return h('div',{style:{border:'1px solid #e2e8f0',borderRadius:'12px',padding:'12px',marginBottom:'12px',background:'#f8fafc'}}, head, due, ...rows, extra);
 }
-function clSignPad(c, sign, label, canvasId, nameList){
+function clSignPad(c, sign, label, canvasId, nameList, skipNameInput){
   setTimeout(function(){
     var cv = document.getElementById(canvasId); if(!cv) return;
     var ctx = cv.getContext('2d'); ctx.lineWidth=2; ctx.lineCap='round'; ctx.strokeStyle='#0f172a';
@@ -6084,9 +6105,11 @@ function clSignPad(c, sign, label, canvasId, nameList){
   }, 0);
   var _listId = canvasId+'-names';
   var _hasList = Array.isArray(nameList) && nameList.length;
-  var _nameInput = _hasList
-    ? h('input',{value:sign.name||'', placeholder:'Ad Soyad (listeden seçin veya yazın)', list:_listId, oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})})
-    : h('input',{value:sign.name||'', placeholder:'Ad Soyad', oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})});
+  var _nameInput = skipNameInput
+    ? h('div',{style:{fontSize:'12px',color:sign.name?'#334155':'#dc2626',marginBottom:'6px',fontWeight:'600'}}, sign.name ? ('İmzalayan: '+sign.name) : 'Önce yukarıdan ad soyad girin')
+    : (_hasList
+      ? h('input',{value:sign.name||'', placeholder:'Ad Soyad (listeden seçin veya yazın)', list:_listId, oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})})
+      : h('input',{value:sign.name||'', placeholder:'Ad Soyad', oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})}));
   return h('div',{style:{flex:'1 1 240px',minWidth:'220px'}},
     h('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'4px',color:'#334155'}}, label),
     _nameInput,
@@ -6116,7 +6139,7 @@ function buildChecklistModal(c){
     h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}}, 'İmzalar (dijital + ıslak)'),
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
       clSignPad(c, c.staffSign, 'A-Pro Yetkilisi', 'sig-staff', (state.users||[]).filter(function(u){return u.active!==false;}).map(function(u){return u.displayName;}).sort(function(a,b){return a.localeCompare(b,'tr');})),
-      clSignPad(c, c.custSign, 'Müşteri Yetkilisi', 'sig-cust')));
+      clSignPad(c, c.custSign, 'Müşteri İlgilisi', 'sig-cust')));
   var isExisting = (state.checklists||[]).some(function(x){ return x.id===c.id; });
   var footer = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
     btn('💾 Kaydet', function(){ clSave(c); }, '#16a34a'),
@@ -6151,7 +6174,7 @@ function printChecklist(c){
    + '<div class="hd"><img src="'+APRO_LOGO_DATAURI+'"/><h1>'+escapeHtml(FORMTYPE_META[c.formType]||'Servis Checklist')+'</h1></div>'
    + '<div class="meta"><b>Müşteri:</b> '+escapeHtml(cust?(cust.firmName||'—'):'—')+' &nbsp;·&nbsp; <b>Saha / Bina:</b> '+escapeHtml(c.siteName||'—')+' &nbsp;·&nbsp; <b>Tarih:</b> '+escapeHtml(_toTR(c.createdAt||today()))+'</div>'
    + sysHtml
-   + '<div class="signs">'+signBox(c.staffSign,'A-Pro Yetkilisi')+signBox(c.custSign,'Müşteri Yetkilisi')+'</div>'
+   + '<div class="signs">'+signBox(c.staffSign,'A-Pro Yetkilisi')+signBox(c.custSign,'Müşteri İlgilisi')+'</div>'
    + '<div class="foot">A-PRO Mühendislik · NFPA temelli servis checklist · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
   var ep = document.getElementById('print-overlay'); if(ep) ep.remove();
   var po = document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
