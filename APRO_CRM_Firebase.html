@@ -1913,11 +1913,11 @@ function buildMaintModal(item) {
     (item && maintHasSystems(f)) ? h('div',{style:{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}},
       btn(mtBtnLabel, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintVisitDone(item), mtBtnColor, mtBtnFg,'10px 14px',{flex:'1',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer'}),
       btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','10px 14px',{fontSize:'13px',border:'1px solid #fde68a'}),
-      maintHistory(item).length ? btn('🕘 Geçmiş ('+maintHistory(item).length+')',()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'}) : h('span')
+      btn('🕘 Geçmiş / Checklist / Servis Formu'+(maintHistory(item).length?(' ('+maintHistory(item).length+')'):''),()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'})
     ) : (item && maintIsTracked(f)) ? h('div',{style:{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}},
       btn('✅ Servis Hizmetini Tamamla'+mtSuffix, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintDone(item), mtBtnColor, mtBtnFg,'10px 14px',{flex:'1',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer'}),
       btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','10px 14px',{fontSize:'13px',border:'1px solid #fde68a'}),
-      maintHistory(item).length ? btn('🕘 Geçmiş ('+maintHistory(item).length+')',()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'}) : h('span')
+      btn('🕘 Geçmiş / Checklist / Servis Formu'+(maintHistory(item).length?(' ('+maintHistory(item).length+')'):''),()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'})
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
       btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); saveMaint({...f,amount:Number(f.amount)||0,mtSystems:sys,mtNextDue:next},!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
