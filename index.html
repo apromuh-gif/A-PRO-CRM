@@ -1488,6 +1488,12 @@ async function saveSupplier(form, isEdit) {
 }
 
 async function delItem(col, id) {
+  if(col==='maintenances' || col==='services'){
+    const linkType = col==='maintenances' ? 'maintenance' : 'service';
+    const signed = (state.checklists||[]).some(x=>x.linkType===linkType && x.linkId===id && x.status==='tamam')
+      || (state.serviceForms||[]).some(x=>x.linkType===linkType && x.linkId===id && x.status==='tamam');
+    if(signed){ showToast('⛔ Bu kayda imzalı Checklist/Servis Formu bağlı — hukuki delil olduğu için hiç kimse (admin dahil) silemez.','#d97706'); return; }
+  }
   if(col==='proposals') {
     if(!confirm('Bu teklif taslağını silmek istediğinizden emin misiniz?')) return;
   } else {
@@ -5797,6 +5803,9 @@ async function sfSave(sf){
   showToast('✅ Servis Formu kaydedildi');
 }
 async function sfDelete(id){
+  const sf = (state.serviceForms||[]).find(x=>x.id===id);
+  if(sf && sf.status==='tamam'){ showToast('⛔ İmzalı servis formu hukuki delildir — hiç kimse (admin dahil) silemez.','#d97706'); return; }
+  if(!(state.currentUser && state.currentUser.isAdmin)){ showToast('⚠️ Servis formu silme yetkisi yalnız admin’de.','#d97706'); return; }
   if(!confirm('Bu servis formu kalıcı olarak silinsin mi?')) return;
   await deleteDoc('serviceForms', id);
   setState({serviceForms:(state.serviceForms||[]).filter(function(x){ return x.id!==id; }), modal:null});
@@ -5939,6 +5948,9 @@ function printServiceForm(sf){
   po.appendChild(bar); po.appendChild(content); document.body.appendChild(po);
 }
 async function clDelete(id){
+  const cl = (state.checklists||[]).find(x=>x.id===id);
+  if(cl && cl.status==='tamam'){ showToast('⛔ İmzalı checklist hukuki delildir — hiç kimse (admin dahil) silemez.','#d97706'); return; }
+  if(!(state.currentUser && state.currentUser.isAdmin)){ showToast('⚠️ Checklist silme yetkisi yalnız admin’de.','#d97706'); return; }
   if(!confirm('Bu checklist kalıcı olarak silinsin mi?')) return;
   await deleteDoc('checklists', id);
   setState({checklists:(state.checklists||[]).filter(function(x){ return x.id!==id; }), modal:null});
