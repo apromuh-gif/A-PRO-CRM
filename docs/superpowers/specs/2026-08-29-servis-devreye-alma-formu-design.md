@@ -99,8 +99,9 @@ Sırasıyla:
 
 ## 6. PDF — `printServiceForm(sf)`
 
-`printChecklist`'in print-overlay + `window.print()` deseni birebir izlenir (yeni bir yazdırma altyapısı kurulmaz):
-- Üst bilgi: Teklif Programı PDF'indeki gibi — solda `APRO_LOGO_DATAURI` (mevcut, checklist'te zaten kullanılan logo), sağda şirket bilgi bloğu (yeni sabit `APRO_LETTERHEAD`):
+`printChecklist`'in print-overlay + `window.print()` deseni birebir izlenir (yeni bir yazdırma altyapısı kurulmaz). **Görsel dil, kullanıcının paylaştığı Teklif Programı PDF ekran görüntüsü baz alınır** — checklist'in şu anki sade (yalnız logo+başlık) üst bilgisinden daha zengin:
+
+- **Üst bilgi (header):** solda `APRO_LOGO_DATAURI` (mevcut, checklist'te zaten kullanılan logo), sağda sağa-yaslı şirket bilgi bloğu (yeni sabit `APRO_LETTERHEAD`, bold şirket adı + 4 satır adres/tel/e-posta/web):
   ```
   A-PRO MÜHENDİSLİK LTD. ŞTİ.
   Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye
@@ -108,13 +109,23 @@ Sırasıyla:
   E-posta: info@a-pro.com.tr
   www.a-pro.com.tr
   ```
-  Altında kırmızı (#dc2626 veya mevcut marka kırmızısı) ayırıcı çizgi — Teklif PDF'indeki desenle aynı. Başlık (`SF_DOCTYPE_META[sf.docType]`) bu üst bilginin altında, kayıt bilgi tablosunun üstünde yer alır.
-- Müşteri/proje/saha bilgi satırı.
-- Hizmet türü + tesisteki sistemler (seçili olanlar) — rozet/etiket olarak.
-- Yapılan hizmet açıklaması.
-- Müşteri ilgilisi / servis personeli bilgi satırları.
-- İmza blokları — `printChecklist`teki `signBox` aynen kullanılır (dijital imza görseli + ıslak imza satırı).
-- `@media print` ile buton/gölge gizlenir (mevcut desen).
+  Altında kalın kırmızı (#c00000 — Teklif PDF'indeki tam ton) yatay ayırıcı çizgi.
+- **Kayıt bilgi grid'i** — Teklif PDF'indeki "Firma / Tarih / İlgili / Referans" 2×N tablosuyla birebir aynı görsel desen (açık gri etiket hücresi + beyaz değer hücresi, ince kenarlık): Müşteri / Saha·Bina / Tarih / Proje (varsa) / Referans (kayıt id'sinin kısaltması) satırları.
+  ```css
+  .infogrid{width:100%;border-collapse:collapse;margin-bottom:14px;}
+  .infogrid td{border:1px solid #e2e8f0;padding:7px 10px;font-size:12px;}
+  .infogrid td.lbl{background:#f5f5f5;font-weight:700;color:#333;width:22%;}
+  ```
+- **Kırmızı bölüm başlıkları** — Teklif PDF'indeki dolu kırmızı zeminli "TEKLİF ÖZETİ" / "TİCARİ AÇIKLAMALAR" bar deseni, üç bölüm için aynen kullanılır: **"HİZMET TÜRÜ"**, **"TESİSTEKİ SİSTEMLER"**, **"YAPILAN HİZMET"**.
+  ```css
+  .secbar{background:#c00000;color:#fff;font-weight:700;font-size:12px;padding:6px 10px;text-transform:uppercase;letter-spacing:.03em;margin:14px 0 0;}
+  ```
+  - HİZMET TÜRÜ altında: seçili `docType`'ın etiketi kalın/vurgulu tek satır (PDF statik olduğu için kart değil, düz metin — "Seçilen: Periyodik Bakım" gibi).
+  - TESİSTEKİ SİSTEMLER altında: seçili sistemlerin adları (SYS_META etiketleri), virgülle ayrılmış liste ya da küçük rozet dizisi.
+  - YAPILAN HİZMET altında: `description` serbest metni, satır sonları korunarak.
+- **Taraflar** — "MÜŞTERİ İLGİLİSİ" ve "SERVİS PERSONELİ" iki küçük bilgi grid'i (aynı `.infogrid` stiliyle: ad + telefon satırları), yan yana (`display:flex;gap:20px`).
+- **İmza blokları** — `printChecklist`teki `signBox` fonksiyonu aynen çağrılır (dijital imza görseli + ıslak imza satırı), sayfa altında.
+- `@media print` ile buton/gölge gizlenir (mevcut desen, `.no-print` class'ı).
 
 ## 7. Giriş Noktaları
 
