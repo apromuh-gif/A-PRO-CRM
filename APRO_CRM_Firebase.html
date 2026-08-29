@@ -5801,6 +5801,69 @@ function sfListBlock(opts){
       btn('+ Yeni Servis Formu', function(){ openServiceForm(opts.newOpts); }, '#dc2626', '#fff', '6px 13px', {fontSize:'12px'})),
     rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#94a3b8'}}, 'Henüz servis formu yok.'));
 }
+function buildServiceFormModal(sf){
+  sf = normServiceForm(sf); state.modal.item = sf;
+  var rerender = _clRerender;
+  var custOpts = [{v:'',l:'Müşteri seçin…'}].concat(
+    [].concat(state.customers||[]).sort(function(a,b){ return (a.firmName||'').localeCompare(b.firmName||'','tr'); })
+      .map(function(x){ return {v:x.id, l:x.firmName||'(isimsiz)'}; }));
+
+  var docTypeCards = h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}},
+    ...[{v:'ariza',l:'Arıza / Servis'},{v:'devreye',l:'Devreye Alma'},{v:'bakim',l:'Periyodik Bakım'}].map(function(o){
+      return clRedCard(o.l, sf.docType===o.v, function(){ sf.docType=o.v; rerender(); });
+    }));
+
+  var header = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px',marginBottom:'12px'}},
+    h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Müşteri'),
+      _clSelect(custOpts, sf.customerId, function(v){ sf.customerId=v; })),
+    h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Saha / Bina Adı'),
+      h('input',{value:sf.siteName||'', placeholder:'Örn. Merkez Bina, A Blok', oninput:function(e){ sf.siteName=e.target.value; }, style:_clInputStyle()})),
+    h('div',{style:{flex:'0 0 150px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Tarih'),
+      h('input',{type:'date', value:sf.createdAt||today(), oninput:function(e){ sf.createdAt=e.target.value; }, style:_clInputStyle()})));
+
+  var sysCards = h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}},
+    ...Object.keys(SYS_META).map(function(k){
+      var on = (sf.systemsPresent||[]).indexOf(k)>=0;
+      return clRedCard(SYS_META[k].l, on, function(){
+        var idx = sf.systemsPresent.indexOf(k);
+        if(idx>=0) sf.systemsPresent.splice(idx,1); else sf.systemsPresent.push(k);
+        rerender();
+      });
+    }));
+
+  var descBox = h('textarea',{placeholder:'Yapılan hizmetin açıklaması...', style:Object.assign(_clInputStyle(),{minHeight:'90px',resize:'vertical'})}, sf.description||'');
+  descBox.addEventListener('input', function(e){ sf.description=e.target.value; });
+
+  var custContactRow = h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'6px'}},
+    h('div',{style:{flex:'1 1 200px'}}, h('input',{value:sf.custContact.name||'', placeholder:'Müşteri İlgilisi - Ad Soyad', oninput:function(e){ sf.custContact.name=e.target.value; }, style:_clInputStyle()})),
+    h('div',{style:{flex:'1 1 160px'}}, h('input',{value:sf.custContact.phone||'', placeholder:'Telefon', oninput:function(e){ sf.custContact.phone=e.target.value; }, style:_clInputStyle()})));
+  var staffContactRow = h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'14px'}},
+    h('div',{style:{flex:'1 1 200px'}}, h('input',{value:sf.staffContact.name||'', placeholder:'Servis Personeli - Ad Soyad', oninput:function(e){ sf.staffContact.name=e.target.value; }, style:_clInputStyle()})),
+    h('div',{style:{flex:'1 1 160px'}}, h('input',{value:sf.staffContact.phone||'', placeholder:'Telefon', oninput:function(e){ sf.staffContact.phone=e.target.value; }, style:_clInputStyle()})));
+
+  var signs = h('div',{style:{marginTop:'14px',paddingTop:'14px',borderTop:'2px solid #e2e8f0'}},
+    h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}}, 'İmzalar (dijital + ıslak)'),
+    h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
+      clSignPad(sf, sf.staffSign, 'A-Pro Yetkilisi', 'sfsig-staff', (state.users||[]).filter(function(u){return u.active!==false;}).map(function(u){return u.displayName;}).sort(function(a,b){return a.localeCompare(b,'tr');})),
+      clSignPad(sf, sf.custSign, 'Müşteri Yetkilisi', 'sfsig-cust')));
+
+  var isExisting = (state.serviceForms||[]).some(function(x){ return x.id===sf.id; });
+  var footer = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
+    btn('💾 Kaydet', function(){ sfSave(sf); }, '#16a34a'),
+    btn('🖨️ PDF / Yazdır', function(){ printServiceForm(sf); }, '#0891b2'),
+    isExisting ? btn('🗑 Sil', function(){ sfDelete(sf.id); }, '#dc2626') : '',
+    btn('Kapat', function(){ setState({modal:null}); }, '#64748b'));
+
+  var body = h('div',{},
+    header,
+    h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'HİZMET TÜRÜ'), docTypeCards,
+    h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'TESİSTEKİ SİSTEMLER'), sysCards,
+    h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'YAPILAN HİZMET'), descBox,
+    h('div',{style:{fontSize:'12px',color:'#64748b',margin:'14px 0 6px',fontWeight:'700'}},'MÜŞTERİ İLGİLİSİ'), custContactRow,
+    h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'SERVİS PERSONELİ'), staffContactRow,
+    signs, footer);
+  return modal(SF_DOCTYPE_META[sf.docType]||'Servis-Devreye Alma Formu', body, function(){ setState({modal:null}); }, '820px');
+}
 async function clDelete(id){
   if(!confirm('Bu checklist kalıcı olarak silinsin mi?')) return;
   await deleteDoc('checklists', id);
