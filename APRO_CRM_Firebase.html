@@ -1937,25 +1937,36 @@ function maintSysSection(f){
   const sysOpts = [{v:'',l:'-- Sistem --'}, ...Object.keys(SYS_META).map(k=>({v:k,l:SYS_META[k].l}))];
   const fBase = inp('', base, v=>{
     f.mtBaseDate=v;
-    f.mtSystems = f.mtSystems.map(s=> s.freq ? Object.assign({}, s, {due: mtSysFirstDue(v, s.freq), lastDone:''}) : s);
+    f.mtSystems = f.mtSystems.map(s=> s.freq ? Object.assign({}, s, {due: mtSysFirstDue(v, s.freq), lastDone:'', doneCount:0}) : s);
     rerender();
   }, 'date');
   const fEndDate = inp('', endDate, v=>{ f.mtEndDate=v; rerender(); }, 'date');
   const rows = f.mtSystems.map((s,i)=>{
     const selSys = sel(sysOpts, s.sysKey||'', v=>{ f.mtSystems[i].sysKey=v; rerender(); });
-    const selFreq = sel(MT_FREQ_OPTS, s.freq||'', v=>{ f.mtSystems[i].freq=v; f.mtSystems[i].due=mtSysFirstDue(f.mtBaseDate, v); f.mtSystems[i].lastDone=''; rerender(); });
+    const selFreq = sel(MT_FREQ_OPTS, s.freq||'', v=>{ f.mtSystems[i].freq=v; f.mtSystems[i].due=mtSysFirstDue(f.mtBaseDate, v); f.mtSystems[i].lastDone=''; f.mtSystems[i].doneCount=0; rerender(); });
     const dueInp = inp('', s.due||'', v=>{ f.mtSystems[i].due=v; rerender(); }, 'date', {padding:'6px 8px',fontSize:'12px',fontWeight:'700',color:'#15803d',border:'1.5px solid #bbf7d0',background:'#fff'});
     const schedule = mtGenerateSchedule(f.mtBaseDate, f.mtEndDate, s.freq);
+    const doneCount = s.doneCount||0;
+    const plannedNow = schedule[doneCount] || '';
+    let driftBadge = h('span');
+    if(plannedNow && s.due && s.due!==plannedNow){
+      const dd = Math.round((_toDate(s.due) - _toDate(plannedNow))/86400000);
+      if(Math.abs(dd)>3){
+        driftBadge = h('span',{style:{fontSize:'10px',color:'#b45309',background:'#fef3c7',padding:'2px 6px',borderRadius:'8px',marginLeft:'6px',fontWeight:'700',whiteSpace:'nowrap'}}, '⚠️ Plandan '+Math.abs(dd)+' gün kaydı');
+      }
+    }
+    const scheduleItems = schedule.map((d,idx)=> idx>=doneCount ? h('span',{style:{marginRight:'10px',fontWeight:idx===doneCount?'800':'500',color:idx===doneCount?'#0f5132':'#166534'}}, (idx+1)+'. Bakım: '+_toTR(d)) : null).filter(Boolean);
+    const scheduleBlock = !schedule.length ? h('span')
+      : (doneCount>=schedule.length ? h('div',{style:{fontSize:'11px',color:'#0f5132',marginTop:'3px',fontWeight:'700'}},'✅ Sözleşme kapsamındaki tüm bakımlar tamamlandı')
+         : h('div',{style:{fontSize:'11px',color:'#166534',marginTop:'3px',paddingLeft:'2px'}}, ...scheduleItems));
     return h('div',{style:{marginBottom:'8px'}},
       h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
         h('div',{style:{flex:'2'}}, selSys),
         h('div',{style:{flex:'1.3'}}, selFreq),
-        h('div',{style:{flex:'1.2'}}, dueInp),
+        h('div',{style:{flex:'1.2',display:'flex',alignItems:'center'}}, dueInp, driftBadge),
         btn('✕',()=>{ f.mtSystems.splice(i,1); rerender(); },'#fee2e2','#b91c1c','6px 10px',{fontSize:'12px'})
       ),
-      schedule.length ? h('div',{style:{fontSize:'11px',color:'#166534',marginTop:'3px',paddingLeft:'2px'}},
-        '📋 Planlanan ('+schedule.length+' kez): '+schedule.map(_toTR).join(', ')
-      ) : h('span')
+      scheduleBlock
     );
   });
   const recordDue = mtRecordNextDue(f.mtSystems);
@@ -1966,7 +1977,7 @@ function maintSysSection(f){
     row(field('Sözleşme / Baz Tarihi', fBase, true), field('Bitiş Tarihi', fEndDate, true)),
     h('div',{style:{fontSize:'11px',color:'#15803d',marginBottom:'8px'}},'ℹ️ Her sistem kendi periyodunda takip edilir. Kayıt vadesi = en erken sistem vadesi. Bitiş tarihi girilirse tüm planlanan ziyaret tarihleri (kaç kez yapılacağı dahil) otomatik hesaplanır. Vade tarihini devam eden işler için elle de değiştirebilirsiniz.'),
     rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px'}},'Henüz sistem eklenmedi.'),
-    btn('+ Sistem Ekle',()=>{ f.mtSystems.push({sysKey:'',freq:'',due:'',lastDone:''}); rerender(); },'#dcfce7','#15803d','8px 12px',{fontSize:'12px',marginBottom:'8px'}),
+    btn('+ Sistem Ekle',()=>{ f.mtSystems.push({sysKey:'',freq:'',due:'',lastDone:'',doneCount:0}); rerender(); },'#dcfce7','#15803d','8px 12px',{fontSize:'12px',marginBottom:'8px'}),
     recordDue ? h('div',{style:{marginTop:'8px',paddingTop:'8px',borderTop:'1px dashed #bbf7d0'}},
       h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#0f5132'}},'📅 Sonraki Bakım Vadesi: '+_toTR(recordDue)),
       dueList.length ? h('div',{style:{fontSize:'12px',color:'#15803d',marginTop:'3px'}},'Bu ziyarette: '+dueList.map(s=>SYS_META[s.sysKey]?SYS_META[s.sysKey].l:s.sysKey).join(', ')) : h('span')
