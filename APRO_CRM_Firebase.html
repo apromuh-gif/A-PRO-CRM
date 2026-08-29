@@ -7699,7 +7699,7 @@ const SYS_META = {
   gazli:        { l: 'Gazlı Söndürme',               std: 'NFPA 2001',  subs: [] },
   davlumbaz:    { l: 'Davlumbaz / Mutfak Söndürme',  std: 'NFPA 96/17A',subs: [] }
 };
-const FREQ_META = { haftalik:'Haftalık', aylik:'Aylık', '3aylik':'3 Aylık', '6aylik':'6 Aylık', yillik:'Yıllık', '5yillik':'5 Yıllık' };
+const FREQ_META = { haftalik:'Haftalık', aylik:'Aylık', '3aylik':'3 Aylık', '6aylik':'6 Aylık', yillik:'Yıllık', '5yillik':'5 Yıllık', '10yillik':'10 Yıllık' };
 const FORMTYPE_META = { ariza:'Arıza / Servis Formu', devreye:'Test / Devreye Alma Formu', bakim:'Periyodik Bakım Formu' };
 
 // Şablon verisi fonksiyon-sarmalı (Node test harness yalnız function çıkarabilir).
@@ -7771,7 +7771,10 @@ function _clTemplates(){ return {
       {kod:'spr_d7', label:'Ana drenaj testi statik ve akış basıncı kaydedildi'},
       {kod:'spr_d8', label:'Su akış alarmı 90 sn içinde çalıştı'},
       {kod:'spr_d9', label:'Yedek sprinkler başlığı ve anahtarı temin edildi'},
-      {kod:'spr_d10',label:'İşveren eğitimi verildi; devreye alma tutanağı imzalandı'}
+      {kod:'spr_d10',label:'İşveren eğitimi verildi; devreye alma tutanağı imzalandı'},
+      {kod:'spr_dk1', sub:'kuru', label:'Kuru sistem hava testi (25 psi / 24 saat) yapıldı'},
+      {kod:'spr_dk2', sub:'kuru', label:'Kuru vana trip testi yapıldı'},
+      {kod:'spr_dp1', sub:'ontepkili', label:'Algılama-vana entegrasyonu (release) test edildi'}
     ],
     pompa: [
       {kod:'pmp_d1', label:'Malzeme / kapasite onayları proje ile uyumlu'},
@@ -7788,7 +7791,8 @@ function _clTemplates(){ return {
       {kod:'hyd_d2', label:'Statik ve artık basınç ölçüldü'},
       {kod:'hyd_d3', label:'Akış testi (flow test) yapıldı ve kaydedildi'},
       {kod:'hyd_d4', label:'Hortum, lans ve nozul mevcut ve sağlam'},
-      {kod:'hyd_d5', label:'Devreye alma tutanağı imzalandı'}
+      {kod:'hyd_d5', label:'Devreye alma tutanağı imzalandı'},
+      {kod:'hyd_d6', label:'Dikey boru hattı hidrostatik basınç testi (200 psi / 2 saat) yapıldı'}
     ],
     su_deposu: [
       {kod:'tnk_d1', label:'Kapasite ve malzeme proje ile uyumlu'},
@@ -7835,14 +7839,15 @@ function _clTemplates(){ return {
       {kod:'spr_m2',  freq:'aylik',   label:'Manometreler iyi durumda, normal basınç gösteriyor'},
       {kod:'spr_m3',  freq:'3aylik',  label:'Su akış alarm cihazları test edildi (test vanası)'},
       {kod:'spr_m4',  freq:'3aylik',  label:'Denetim (supervisory) anahtarları test edildi'},
-      {kod:'spr_m5',  freq:'3aylik',  label:'Hidrolik bilgi levhası mevcut ve okunur'},
+      {kod:'spr_m5',  freq:'yillik',  label:'Hidrolik bilgi levhası mevcut ve okunur'},
       {kod:'spr_m6',  freq:'yillik',  label:'Sprinkler başlıkları: korozyon / boya / yük / sızıntı yok'},
       {kod:'spr_m7',  freq:'yillik',  label:'Boru ve bağlantılar: hasar / korozyon / kaçak yok, hizada'},
       {kod:'spr_m8',  freq:'yillik',  label:'Askı ve sismik destekler sağlam'},
       {kod:'spr_m9',  freq:'yillik',  label:'Ana drenaj (main drain) tam akış testi yapıldı'},
       {kod:'spr_m10', freq:'yillik',  label:'Yangın pompası / su kaynağı bağlantısı doğrulandı'},
       {kod:'spr_m11', freq:'5yillik', label:'Boru iç muayenesi (yabancı madde / tıkanma) yapıldı'},
-      {kod:'spr_m12', freq:'5yillik', label:'Gate valf iç aksam / basınç azaltma vanası testi'},
+      {kod:'spr_m12', freq:'5yillik', label:'Gate valf iç aksam muayenesi'},
+      {kod:'spr_m12b',freq:'yillik',  label:'Basınç azaltma vanası (PRV) tam akış testi'},
       {kod:'spr_m13', freq:'3aylik',  label:'İtfaiye bağlantısı (FDC): kapak, kaçak, tıkanma kontrolü'},
       {kod:'spr_m14', freq:'5yillik', label:'Manometreler test / kalibre edildi veya değiştirildi (5 yıl)'},
       {kod:'spr_w1', sub:'islak', freq:'aylik', label:'Islak sistem: ısıtma sağlanıyor, donma riski yok (min 4°C)'},
@@ -7865,13 +7870,16 @@ function _clTemplates(){ return {
       {kod:'pmp_m8', freq:'yillik',  label:'Pompa eğrisi kabul değerleri ile karşılaştırıldı'},
       {kod:'pmp_m9', sub:'dizel', freq:'yillik', label:'Dizel: yakıt filtresi, kayış, egzoz bakımı yapıldı'},
       {kod:'pmp_m10', freq:'yillik', label:'Basınç tahliye (relief) vanası ve dönüş hattı kontrol edildi'},
-      {kod:'pmp_m11', freq:'aylik',  label:'Otomatik / manuel start testi ve çalışma süresi kaydedildi'}
+      {kod:'pmp_m11', freq:'aylik',  label:'Otomatik / manuel start testi ve çalışma süresi kaydedildi'},
+      {kod:'pmp_m12', sub:'dizel', freq:'yillik', label:'Dizel yakıt kalite testi yapıldı (ASTM standardına göre)'},
+      {kod:'pmp_m13', freq:'yillik', label:'Akü kapasite / yük (load) testi yapıldı'}
     ],
     hidrant_dolap: [
       {kod:'hyd_m1', freq:'aylik',  label:'Yangın dolapları erişilebilir, hortum ve lans yerinde'},
       {kod:'hyd_m2', freq:'3aylik', label:'Hidrant kapakları, çıkışlar ve vanalar sızıntısız'},
       {kod:'hyd_m3', freq:'yillik', label:'Hidrant akış / basınç testi yapıldı ve kaydedildi'},
-      {kod:'hyd_m4', freq:'yillik', label:'Hortumlar basınç testine tabi tutuldu / gözden geçirildi'},
+      {kod:'hyd_m4', freq:'yillik', label:'Hortumlar görsel olarak gözden geçirildi'},
+      {kod:'hyd_m4b',freq:'5yillik',label:'Hortumlar hidrostatik basınç testine tabi tutuldu'},
       {kod:'hyd_m5', freq:'yillik', label:'Kuru hidrant tahliyesi yapıldı (donma öncesi)'}
     ],
     su_deposu: [
@@ -7889,7 +7897,7 @@ function _clTemplates(){ return {
     ],
     algilama: [
       {kod:'alr_m1', freq:'aylik',  label:'Panel normal durumda, arıza / alarm yok, batarya OK'},
-      {kod:'alr_m2', freq:'3aylik', label:'Örnek dedektör / buton / siren fonksiyon testi yapıldı'},
+      {kod:'alr_m2', freq:'6aylik', label:'Panel fonksiyon testi (birincil/ikincil güç kaynağı) yapıldı'},
       {kod:'alr_m3', freq:'yillik', label:'Tüm dedektörler test / temizlik yapıldı'},
       {kod:'alr_m4', freq:'yillik', label:'Aküler kapasite / gerilim testine tabi tutuldu'},
       {kod:'alr_m5', freq:'yillik', label:'Çevre birim entegrasyonları (damper, asansör) doğrulandı'},
@@ -7901,14 +7909,15 @@ function _clTemplates(){ return {
       {kod:'gas_m3', freq:'6aylik', label:'Tüp tartımı yapıldı (ağırlık kaybı sınır içinde)'},
       {kod:'gas_m4', freq:'yillik', label:'Boşaltma nozulları ve boru hattı muayene edildi'},
       {kod:'gas_m5', freq:'yillik', label:'Mahal sızdırmazlık kontrolü ve tutanak güncellendi'},
-      {kod:'gas_m6', freq:'5yillik', label:'Tüp hidrostatik test / muayene tarihi kontrol edildi (DOT / imalatçı süresi)'}
+      {kod:'gas_m6', freq:'10yillik', label:'Tüp hidrostatik test / muayene tarihi kontrol edildi (etikette süre yoksa 10 yıl esas alınır)'}
     ],
     davlumbaz: [
       {kod:'kit_m1', freq:'aylik',  label:'Nozul kapakları takılı, yağ / tıkanma yok'},
       {kod:'kit_m2', freq:'6aylik', label:'Sistem fonksiyon kontrolü ve tüp basıncı OK'},
       {kod:'kit_m3', freq:'6aylik', label:'Gaz / elektrik otomatik kesme testi yapıldı'},
       {kod:'kit_m4', freq:'yillik', label:'Tüp tartım / hidrostatik durumu kontrol edildi'},
-      {kod:'kit_m5', freq:'yillik', label:'Nozul temizlik / değişimi (imalatçı süresine göre) yapıldı'}
+      {kod:'kit_m5', freq:'yillik', label:'Nozul temizlik / değişimi (imalatçı süresine göre) yapıldı'},
+      {kod:'kit_m6', freq:'yillik', label:'Fusible link elemanları üretici talimatına göre yıllık değiştirildi'}
     ]
   }
 }; }
@@ -7917,11 +7926,10 @@ function _clTemplates(){ return {
 function clItems(formType, sysKey, subType){
   var T = _clTemplates()[formType]; if(!T) return [];
   var arr = T[sysKey]; if(!arr) return [];
-  if(formType !== 'bakim') return arr.map(function(x){ return x; });
   return arr.filter(function(i){ return !i.sub || i.sub === subType; });
 }
 // Frekans sırası (sık→seyrek). Ziyaret frekansı F seçilince rank(item) <= rank(F) gösterilir.
-function clFreqRank(f){ return ({haftalik:0, aylik:1, '3aylik':2, '6aylik':3, yillik:4, '5yillik':5})[f]; }
+function clFreqRank(f){ return ({haftalik:0, aylik:1, '3aylik':2, '6aylik':3, yillik:4, '5yillik':5, '10yillik':6})[f]; }
 function clVisitItems(system){
   var items = clItems('bakim', system.sysKey, system.subType || '');
   var vf = system.visitFreq; if(vf === undefined || vf === '') return items;
