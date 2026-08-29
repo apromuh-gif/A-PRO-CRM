@@ -8347,7 +8347,18 @@ function renderPersonel(){
 
 function openTaskModal(taskId){ setState({ modal:{ type:'task', taskId } }); }
 
+// Görevin bağlı olduğu arıza/proje kaydı zaten kapatılmış mı? (kapanmış işlerde
+// açık görevleri yalnız admin kapatabilsin diye — silinmiş/görmezden gelinmiş iş kalmasın.)
+function _taskParentClosed(t){
+  if(t.linkType==='service'){ const s=(state.services||[]).find(x=>x.id===t.linkId); return !!(s && s.execClosedAt); }
+  if(t.linkType==='opportunity'){ const o=(state.opportunities||[]).find(x=>x.id===t.linkId); return !!(o && o.execClosedAt); }
+  return false;
+}
 async function taskSetStatus(t, status){
+  const closing = (status==='tamamlandi' || status==='onaylandi');
+  if(closing && _taskParentClosed(t) && !(state.currentUser && state.currentUser.isAdmin)){
+    showToast('⚠️ Bu görevin bağlı olduğu iş kapatılmış — kapanmış işteki görevleri yalnız admin kapatabilir.','#d97706'); return;
+  }
   const rec = Object.assign({}, normTask(t), { status, ...stamp() });
   if(status==='tamamlandi') rec.completedAt = rec.completedAt || today();
   await personelSaveDoc('tasks', rec);
@@ -8358,6 +8369,9 @@ async function taskSetStatus(t, status){
 }
 
 async function taskApprove(t){
+  if(_taskParentClosed(t) && !(state.currentUser && state.currentUser.isAdmin)){
+    showToast('⚠️ Bu görevin bağlı olduğu iş kapatılmış — kapanmış işteki görevleri yalnız admin onaylayabilir.','#d97706'); return;
+  }
   const who = (state.currentUser && state.currentUser.displayName)||'';
   const rec = Object.assign({}, normTask(t), { status:'onaylandi', approvedAt:today(), approvedBy:who, completedAt: t.completedAt||today(), ...stamp() });
   await personelSaveDoc('tasks', rec);
