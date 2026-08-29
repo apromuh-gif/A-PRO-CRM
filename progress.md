@@ -632,3 +632,27 @@ Teknik Servis departmanının **%20 ağırlıklı** kriteri kırıktı: yanlış
 **Durum:** Tümü canlı — CRM son commit `82436ac`, nextaura-admin son commit `811d12d`.
 
 **Not:** Bu iki değişiklik `APRO_CRM_Firebase.html` üzerinde yapıldı, `index.html`'e senkronlandı (proje kuralı: ana dosya `APRO_CRM_Firebase.html`, GitHub Pages `index.html`'i okur).
+
+---
+
+## 🔒 Silme Yetkisi Denetimi + Checklist/Servis Formu Sertleştirmesi (30 Ağustos 2026)
+
+Canlı kabul testi sırasında bulunan, imzalı belgelerin hukuki delil değerini tehlikeye atan bir açık üzerine başlayan çalışma; test sırasında görev/kapatma tutarlılığında iki ek boşluk daha bulundu.
+
+### Silme yetkisi açığı — ✅ kritik düzeltme
+Periyodik Bakım listesinde "Sil" tuşunun herkese (imzalı checklist/servis formu olsa bile) açık olduğu fark edildi. Denetim: Arıza ve Devreye Alma'da da aynı açık vardı; Checklist/Servis Formu'nun **kendisi** de imzalı olsa dahi herkes tarafından silinebiliyordu. Devreye Alma/Proje kaydı (`projDelete`) zaten admin'e kilitliydi, değişiklik gerekmedi.
+- İlk tur: imzalı belge varsa admin dahil kimse silemez (tam kilit) — kullanıcı isteğiyle `commit 910214d`.
+- **Geri bildirim:** kilitli bir kaydı test amaçlı silme yolu olmadığı ortaya çıktı → admin için, bir uyarı penceresine büyük harflerle **"SİL"** yazarak onaylanan **force-delete** eklendi; onaylanırsa bağlı checklist+servis formu da kayıtla birlikte kalıcı silinir (`commit 2306146`). Canlıda doğrulandı.
+- **Kritik yan bulgu:** `loadAllData()` içinde `serviceForms` koleksiyonu Firestore'dan çekiliyordu ama `setState()`'e hiç yazılmıyordu — `state.serviceForms` sayfa her girişte/yenilemede boş kalıyordu. Bu, yalnız silme kontrolünü değil, bu ay eklenen **tüm** servis formu zorunluluğu kontrollerini (arıza/bakım/proje kapatma gate'leri) etkiliyordu: sayfa yenilendikten sonra önceki oturumda imzalanmış servis formları "yok" sayılıyordu. Aynı commit'te düzeltildi.
+
+### Checklist/Servis Formu içerik ve doğrulama sertleştirmesi
+- **NFPA içerik denetimi:** Devreye Alma ile Periyodik Bakım checklist maddelerinin aynı olmaması gerektiği (biri tek seferlik kabul testi/NFPA 13-14-20-72-2001-96 kurulum standartları, diğeri tekrarlayan ITM/NFPA 25-72-2001-96 periyotları) doğrulandı, madde madde incelendi. Bulunan hatalar düzeltildi: hidrolik levha kontrolü 3 aylık→yıllık, PRV testi ayrı maddeye alınıp yıllık yapıldı, hidrant hortum testi görsel(yıllık)/hidrostatik(5 yıllık) olarak ayrıldı, algılama panel testi 6 aylığa çekildi, dizel yakıt kalitesi + akü kapasite testi eklendi, sprinkler devreye almaya kuru/ön-tepkili alt madde eklendi, hidrant devreye almaya hidrostatik test eklendi, gazlı tüp testi süresi "etiket yoksa 10 yıl" oldu, davlumbaza fusible link yıllık değişim maddesi eklendi (`commit 0047aab`).
+- **Zorunlu alan kontrolü:** Müşteri adı/imza girilmeden "Kaydet" sessizce taslağa düşüyordu — artık Müşteri, A-Pro Yetkilisi (ad+imza), Müşteri İlgilisi (ad+imza) doldurulmadan Kaydet engelleniyor, eksik alanlar listeleniyor. Ayrı bir **"📝 Taslak Kaydet"** butonu eklendi ki sahada yarım kalan iş kaybolmasın (`commit 9f14741`, `commit d26b44a`).
+- **Müşteri İlgilisi tekleştirme:** Servis Formu'nda "Müşteri İlgilisi" (üst bilgi) ve "Müşteri Yetkilisi" (imza) diye iki ayrı, senkronsuz alan vardı. Tek "Müşteri İlgilisi" alanına indirildi; müşteri seçiliyse o müşterinin kayıtlı kişilerinden ad-soyad otomatik öneriliyor (A-Pro Yetkilisi'ndeki personel listesiyle aynı mantık). Checklist'teki "Müşteri Yetkilisi" etiketi de tutarlılık için yeniden adlandırıldı (`commit 9f14741`).
+
+### Açık görev / kapatma tutarlılığı
+- **Rozet bug'ı:** Liste ekranındaki "X açık görev" rozeti yalnız kaydın **o an bulunduğu son aşamayı** sayıyordu; önceki aşamalarda kalan açık görevler listede hiç görünmüyordu (kayda girip her aşamayı tek tek açmadan fark edilemiyordu). `servTotalOpenCount`/`projTotalOpenCount` ile tüm aşamaların toplamına çekildi (Kanban kartları kasıtlı olarak hâlâ aşama-bazlı).
+- **Kapatma uyarısı:** Arıza/Proje kapatılırken açık görev varsa, "Sonraki aşama"da zaten var olan uyarı kalıbı ("X açık görev var, yine de kapatılsın mı?") kapatmaya da eklendi — otomatik kapatma yok, gerçekte yapılmamış iş görünür kalsın diye (`commit da23dfe`).
+- **Kapanmış işte görev kilidi:** Arıza/Proje zaten kapatılmışsa, ona bağlı görevleri tamamlandı/onaylandı yapma yetkisi artık yalnız admin'de (`commit ca08d43`).
+
+**Durum:** Tümü canlı, son commit `ca08d43`.
