@@ -5821,10 +5821,11 @@ function openServiceForm(opts){
 }
 // Bir kayda bağlı servis formu listesi + yeni buton bloğu (modal içi giriş noktası).
 function sfListBlock(opts){
-  var list = (state.serviceForms||[]).filter(function(x){ return x.linkType===opts.linkType && x.linkId===opts.linkId; });
-  var rows = list.map(function(sf){
+  var list = (state.serviceForms||[]).filter(function(x){ return x.linkType===opts.linkType && x.linkId===opts.linkId; })
+    .sort(function(a,b){ return (a.createdAt||'').localeCompare(b.createdAt||''); });
+  var rows = list.map(function(sf,idx){
     return h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 8px',border:'1px solid #e2e8f0',borderRadius:'8px',marginBottom:'6px',background:'#fff'}},
-      h('span',{style:{flex:'1',fontSize:'13px'}}, (SF_DOCTYPE_META[sf.docType]||sf.docType)+' · '+_toTR(sf.createdAt)+' · '+(sf.status==='tamam'?'✅ Tamam':'✏️ Taslak')),
+      h('span',{style:{flex:'1',fontSize:'13px'}}, (idx+1)+'. '+(SF_DOCTYPE_META[sf.docType]||sf.docType)+' · '+_toTR(sf.createdAt)+' · '+(sf.status==='tamam'?'✅ Tamam':'✏️ Taslak')),
       btn('Aç', function(){ setState({modal:{type:'serviceform', item:sf}}); }, '#2563eb', '#fff', '5px 12px', {fontSize:'12px'}),
       btn('PDF', function(){ printServiceForm(sf); }, '#0891b2', '#fff', '5px 12px', {fontSize:'12px'}));
   });
@@ -6121,10 +6122,11 @@ function printChecklist(c){
 }
 // Bir kayda bağlı checklist listesi + yeni buton bloğu (modal içi giriş noktası).
 function clListBlock(opts){
-  var list = (state.checklists||[]).filter(function(x){ return x.linkType===opts.linkType && x.linkId===opts.linkId; });
-  var rows = list.map(function(c){
+  var list = (state.checklists||[]).filter(function(x){ return x.linkType===opts.linkType && x.linkId===opts.linkId; })
+    .sort(function(a,b){ return (a.createdAt||'').localeCompare(b.createdAt||''); });
+  var rows = list.map(function(c,idx){
     return h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 8px',border:'1px solid #e2e8f0',borderRadius:'8px',marginBottom:'6px',background:'#fff'}},
-      h('span',{style:{flex:'1',fontSize:'13px'}}, (FORMTYPE_META[c.formType]||c.formType)+' · '+_toTR(c.createdAt)+' · '+(c.status==='tamam'?'✅ Tamam':'✏️ Taslak')+' · '+((c.systems||[]).length)+' sistem'),
+      h('span',{style:{flex:'1',fontSize:'13px'}}, (idx+1)+'. '+(FORMTYPE_META[c.formType]||c.formType)+' · '+_toTR(c.createdAt)+' · '+(c.status==='tamam'?'✅ Tamam':'✏️ Taslak')+' · '+((c.systems||[]).length)+' sistem'),
       btn('Aç', function(){ openChecklist({id:c.id}); }, '#2563eb', '#fff', '5px 12px', {fontSize:'12px'}),
       btn('PDF', function(){ printChecklist(c); }, '#0891b2', '#fff', '5px 12px', {fontSize:'12px'}));
   });
