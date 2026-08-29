@@ -1121,11 +1121,11 @@ function btn(text, onClick, bg, fg='#fff', p='10px 18px', extra={}) {
   el.addEventListener('mouseleave',()=>el.style.filter='none');
   return el;
 }
-function inp(placeholder, value, onChange, type='text', extra={}) {
+function inp(placeholder, value, onChange, type='text', extra={}, eventName='input') {
   const el = h('input',{type,placeholder,value:value||'',style:{width:'100%',padding:'10px 13px',background:'#edf5fc',border:'1.5px solid #90b0cc',borderRadius:'8px',color:'#0f1f35',fontSize:'14px',boxSizing:'border-box',fontFamily:"'Inter',sans-serif",...extra}});
   el.addEventListener('focus',()=>el.style.borderColor=ACC);
   el.addEventListener('blur',()=>el.style.borderColor='#b8c8de');
-  el.addEventListener('input', e=>onChange(e.target.value));
+  el.addEventListener(eventName, e=>onChange(e.target.value));
   return el;
 }
 function sel(options, value, onChange, extra={}) {
@@ -1920,11 +1920,24 @@ function buildMaintModal(item) {
 // Çok-sistemli periyodik bakım editörü (NFPA iç-içe zamanlama).
 const MT_FREQ_OPTS = [{v:'',l:'-- Periyot --'},{v:'aylik',l:'Aylık'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'}];
 function maintHasSystems(m){ return !!(m && Array.isArray(m.mtSystems) && m.mtSystems.length); }
+// Tarayıcı tarih alanı yazarken ara-değer (ör. yıl "0020") üretebilir; bu, ISO formatı
+// geçerli görünse de mantıksız yıllarla (1920 vb.) devasa/anlamsız program listeleri
+// üretmesin diye makul bir aralıkla sınırlanır.
+function _isSaneISODate(iso){
+  if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  var y = parseInt(iso.slice(0,4),10);
+  return y>=2015 && y<=2100;
+}
+// Periyodik bakım sözleşmesi en fazla 1 yıl geçerlidir — bitiş tarihi daha ileri
+// girilse bile program bir yılı aşmaz (aylık en fazla 12, 3 aylık en fazla 4,
+// 6 aylık en fazla 2, yıllık en fazla 1 bakım üretir).
 function mtGenerateSchedule(baseISO, endISO, freq){
   var m = mtFreqMonths(freq);
-  if(!baseISO || !endISO || !m) return [];
+  if(!_isSaneISODate(baseISO) || !_isSaneISODate(endISO) || !m) return [];
+  var oneYearCap = _addMonth(baseISO, 12);
+  var cappedEnd = endISO < oneYearCap ? endISO : oneYearCap;
   var out = []; var cur = _addMonth(baseISO, m); var guard = 0;
-  while(cur && cur <= endISO && guard < 60){ out.push(cur); cur = _addMonth(cur, m); guard++; }
+  while(cur && cur <= cappedEnd && guard < 12){ out.push(cur); cur = _addMonth(cur, m); guard++; }
   return out;
 }
 function maintSysSection(f){
@@ -1936,15 +1949,22 @@ function maintSysSection(f){
   const rerender = ()=>setState({modal:{type:'maintenance',item:JSON.parse(JSON.stringify(f))}});
   const sysOpts = [{v:'',l:'-- Sistem --'}, ...Object.keys(SYS_META).map(k=>({v:k,l:SYS_META[k].l}))];
   const fBase = inp('', base, v=>{
+    if(v && !_isSaneISODate(v)){ showToast('⚠️ Geçersiz tarih. Yıl 4 haneli olmalı (ör. 28.02.2027).','#d97706'); return; }
     f.mtBaseDate=v;
     f.mtSystems = f.mtSystems.map(s=> s.freq ? Object.assign({}, s, {due: mtSysFirstDue(v, s.freq), lastDone:'', doneCount:0}) : s);
     rerender();
-  }, 'date');
-  const fEndDate = inp('', endDate, v=>{ f.mtEndDate=v; rerender(); }, 'date');
+  }, 'date', {}, 'change');
+  const fEndDate = inp('', endDate, v=>{
+    if(v && !_isSaneISODate(v)){ showToast('⚠️ Geçersiz tarih. Yıl 4 haneli olmalı (ör. 28.02.2027).','#d97706'); return; }
+    f.mtEndDate=v; rerender();
+  }, 'date', {}, 'change');
   const rows = f.mtSystems.map((s,i)=>{
     const selSys = sel(sysOpts, s.sysKey||'', v=>{ f.mtSystems[i].sysKey=v; rerender(); });
     const selFreq = sel(MT_FREQ_OPTS, s.freq||'', v=>{ f.mtSystems[i].freq=v; f.mtSystems[i].due=mtSysFirstDue(f.mtBaseDate, v); f.mtSystems[i].lastDone=''; f.mtSystems[i].doneCount=0; rerender(); });
-    const dueInp = inp('', s.due||'', v=>{ f.mtSystems[i].due=v; rerender(); }, 'date', {padding:'6px 8px',fontSize:'12px',fontWeight:'700',color:'#15803d',border:'1.5px solid #bbf7d0',background:'#fff'});
+    const dueInp = inp('', s.due||'', v=>{
+      if(v && !_isSaneISODate(v)){ showToast('⚠️ Geçersiz tarih. Yıl 4 haneli olmalı (ör. 28.02.2027).','#d97706'); return; }
+      f.mtSystems[i].due=v; rerender();
+    }, 'date', {padding:'6px 8px',fontSize:'12px',fontWeight:'700',color:'#15803d',border:'1.5px solid #bbf7d0',background:'#fff'}, 'change');
     const schedule = mtGenerateSchedule(f.mtBaseDate, f.mtEndDate, s.freq);
     const doneCount = s.doneCount||0;
     const plannedNow = schedule[doneCount] || '';
@@ -1975,7 +1995,7 @@ function maintSysSection(f){
   return h('div',{style:{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:'10px',padding:'14px',marginBottom:'11px'}},
     lbl('🔁 Periyodik Bakım Takibi (Çok Sistemli)'),
     row(field('Sözleşme / Baz Tarihi', fBase, true), field('Bitiş Tarihi', fEndDate, true)),
-    h('div',{style:{fontSize:'11px',color:'#15803d',marginBottom:'8px'}},'ℹ️ Her sistem kendi periyodunda takip edilir. Kayıt vadesi = en erken sistem vadesi. Bitiş tarihi girilirse tüm planlanan ziyaret tarihleri (kaç kez yapılacağı dahil) otomatik hesaplanır. Vade tarihini devam eden işler için elle de değiştirebilirsiniz.'),
+    h('div',{style:{fontSize:'11px',color:'#15803d',marginBottom:'8px'}},'ℹ️ Her sistem kendi periyodunda takip edilir. Kayıt vadesi = en erken sistem vadesi. Bitiş tarihi girilirse tüm planlanan ziyaret tarihleri (kaç kez yapılacağı dahil) otomatik hesaplanır — program en fazla 1 yıl ileriyi kapsar (aylık en fazla 12, 3 aylık en fazla 4, 6 aylık en fazla 2, yıllık en fazla 1 bakım). Vade tarihini devam eden işler için elle de değiştirebilirsiniz.'),
     rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px'}},'Henüz sistem eklenmedi.'),
     btn('+ Sistem Ekle',()=>{ f.mtSystems.push({sysKey:'',freq:'',due:'',lastDone:'',doneCount:0}); rerender(); },'#dcfce7','#15803d','8px 12px',{fontSize:'12px',marginBottom:'8px'}),
     recordDue ? h('div',{style:{marginTop:'8px',paddingTop:'8px',borderTop:'1px dashed #bbf7d0'}},
