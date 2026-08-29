@@ -697,7 +697,7 @@ let state = {
   // Personel modülü (Faz 1) — additive
   tasks: [], evaluations: [], prim: [],
   strategy: null, evalConfig: null,
-  personelTab: 'gorevler', personelPeriod: '',
+  personelTab: 'performans', personelPeriod: '',
   targets: { company: 0, reps: {} },     // SEÇİLİ mali yılın hedefleri (targetsByYear[fiscalYear] işaretçisi)
   targetsByYear: {},                     // { '2026': {company,reps,...}, '2027': {...} } — yıl bazlı hedefler
   fiscalYear: new Date().getFullYear(),  // aktif mali yıl (prim/hedef bu yıla göre hesaplanır)
@@ -8307,16 +8307,23 @@ function buildFiscalYearModal(){
   return modal('📅 Mali Yıl Yönetimi', container, ()=>setState({modal:null}), '680px');
 }
 
+// Görevler artık ana menüde bağımsız bir sekme — herkese açık (kendi görevleri + devrettikleri).
+function renderGorevlerStandalone(){
+  const cu = state.currentUser; const isAdmin = !!(cu && cu.isAdmin);
+  const mob = window.innerWidth<=768;
+  const headRow = h('div',{style:{marginBottom:'12px'}}, h('h2',{style:{fontSize:mob?'17px':'20px',fontWeight:'800',color:'#0f1f35',margin:'0'}},'✅ Görevler'));
+  return h('div',{}, headRow, renderPersonelGorevler(null, isAdmin, cu));
+}
 function renderPersonel(){
   const cu = state.currentUser; const isAdmin = !!(cu && cu.isAdmin);
+  if(!isAdmin) return renderDashboard(); // Personel (Performans/Prim) tamamen admin'e kilitli.
   // Aktif mali yıl GLOBAL'dir (settings/config) — dönem seçici artık mali yılı DEĞİŞTİRMEZ.
   // Dönem yalnızca performans/görev ayı içindir ve aktif mali yılın içinde kalır.
   const fy = activeFiscalYear();
   const period = _periodYear(state.personelPeriod)===fy ? state.personelPeriod : (fy+'-'+today().slice(5,7));
-  const subTabs=[{id:'gorevler',l:'✅ Görevler'},{id:'performans',l:'📊 Performans'}];
-  if(isAdmin) subTabs.push({id:'prim',l:'💰 Prim'});
-  let active = state.personelTab || 'gorevler';
-  if(active==='prim' && !isAdmin) active='gorevler';
+  const subTabs=[{id:'performans',l:'📊 Performans'},{id:'prim',l:'💰 Prim'}];
+  let active = state.personelTab || 'performans';
+  if(active==='gorevler') active='performans'; // eski varsayılan; Görevler artık ana menüde bağımsız sekme
 
   const mob = window.innerWidth<=768;
   const tabBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'14px'}},
@@ -8336,8 +8343,7 @@ function renderPersonel(){
   );
 
   let body;
-  if(active==='gorevler') body = renderPersonelGorevler(period, isAdmin, cu);
-  else if(active==='performans') body = renderPersonelPerformans(period, isAdmin);
+  if(active==='performans') body = renderPersonelPerformans(period, isAdmin);
   else body = renderPersonelPrim(period);
 
   const settings = (isAdmin && PMOD.settingsOpen) ? renderPersonelSettings() : h('span');
@@ -9102,7 +9108,7 @@ function render() {
     return;
   }
 
-  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'projeler',l:'🏗 Projeler'},{id:'personel',l:'🧑‍💼 Personel'}];
+  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'projeler',l:'🏗 Projeler'},{id:'gorevler',l:'✅ Görevler'},{id:'personel',l:'🧑‍💼 Personel'}];
   const cu = state.currentUser;
 
   // NAVBAR
@@ -9213,7 +9219,7 @@ function render() {
 
   const tabBar = h('div',{className:'tab-scroll',style:{background:'#c0daf0',borderBottom:'1px solid #a8c8e4',padding:window.innerWidth<=768?'0 6px':'0 24px',overflowX:'auto'}},
     h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',gap:'2px',minWidth:'max-content'}},
-      ...TABS.filter(t=>t.id!=='services'||t.l==='_SERVIS_MENU_').map(t=>{
+      ...TABS.filter(t=>(t.id!=='services'||t.l==='_SERVIS_MENU_') && (t.id!=='personel'||cu?.isAdmin)).map(t=>{
         if(t.l==='_TEKLIF_BTN_') {
           const tBtn = h('button',{
             style:{padding:window.innerWidth<=768?'8px 10px':'9px 15px',background:'linear-gradient(135deg,#16a34a,#15803d)',border:'none',cursor:'pointer',fontSize:window.innerWidth<=768?'11px':'13px',fontFamily:"'DM Sans',sans-serif",color:'#fff',whiteSpace:'nowrap',fontWeight:'700',borderRadius:'8px',margin:'6px 4px',boxShadow:'0 2px 6px rgba(21,128,61,.35)',display:'flex',alignItems:'center',gap:'5px'}
@@ -9313,7 +9319,8 @@ function render() {
   else if(state.tab==='visits') content=renderVisits();
   else if(state.tab==='maintenance') content=renderMaintenances();
   else if(state.tab==='projeler') content=renderProjeler();
-  else if(state.tab==='personel') content=renderPersonel();
+  else if(state.tab==='gorevler') content=renderGorevlerStandalone();
+  else if(state.tab==='personel') content=(cu&&cu.isAdmin)?renderPersonel():renderDashboard();
 
   const isMobMain = window.innerWidth <= 768;
   const main = h('div',{style:{maxWidth:'1400px',margin:'0 auto',padding:isMobMain?'12px':'20px'}},content);
