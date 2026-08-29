@@ -1472,9 +1472,8 @@ async function saveMaint(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
   const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
-  await saveDoc('maintenances', id, data);
-  const list = isEdit ? state.maintenances.map(m=>m.id===id?data:m) : [...state.maintenances, data];
-  setState({maintenances:list, modal:null, saving:false});
+  await persistMaint(data);
+  setState({modal:null, saving:false});
   showToast('✅ Periyodik Bakım kaydedildi!');
 }
 async function saveSupplier(form, isEdit) {
@@ -1494,6 +1493,7 @@ async function delItem(col, id) {
     if(!confirm('Silmek istiyor musunuz?')) return;
   }
   if(col==='services'){ await cascadeDeleteTasksFor('service', id); }
+  if(col==='maintenances'){ await cascadeDeleteTasksFor('maintenance', id); }
   await deleteDoc(col, id);
   if(col==='customers') setState({customers:state.customers.filter(x=>x.id!==id)});
   else if(col==='opportunities') setState({opportunities:state.opportunities.filter(x=>x.id!==id)});
@@ -1910,7 +1910,7 @@ function buildMaintModal(item) {
       maintHistory(item).length ? btn('🕘 Geçmiş ('+maintHistory(item).length+')',()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','10px 14px',{fontSize:'13px',border:'1px solid #bfdbfe'}) : h('span')
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next=mtRecordNextDue(sys); saveMaint({...f,amount:Number(f.amount)||0,mtSystems:sys,mtNextDue:next},!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); saveMaint({...f,amount:Number(f.amount)||0,mtSystems:sys,mtNextDue:next},!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -1937,25 +1937,36 @@ function maintSysSection(f){
   const sysOpts = [{v:'',l:'-- Sistem --'}, ...Object.keys(SYS_META).map(k=>({v:k,l:SYS_META[k].l}))];
   const fBase = inp('', base, v=>{
     f.mtBaseDate=v;
-    f.mtSystems = f.mtSystems.map(s=> s.freq ? Object.assign({}, s, {due: mtSysFirstDue(v, s.freq), lastDone:''}) : s);
+    f.mtSystems = f.mtSystems.map(s=> s.freq ? Object.assign({}, s, {due: mtSysFirstDue(v, s.freq), lastDone:'', doneCount:0}) : s);
     rerender();
   }, 'date');
   const fEndDate = inp('', endDate, v=>{ f.mtEndDate=v; rerender(); }, 'date');
   const rows = f.mtSystems.map((s,i)=>{
     const selSys = sel(sysOpts, s.sysKey||'', v=>{ f.mtSystems[i].sysKey=v; rerender(); });
-    const selFreq = sel(MT_FREQ_OPTS, s.freq||'', v=>{ f.mtSystems[i].freq=v; f.mtSystems[i].due=mtSysFirstDue(f.mtBaseDate, v); f.mtSystems[i].lastDone=''; rerender(); });
+    const selFreq = sel(MT_FREQ_OPTS, s.freq||'', v=>{ f.mtSystems[i].freq=v; f.mtSystems[i].due=mtSysFirstDue(f.mtBaseDate, v); f.mtSystems[i].lastDone=''; f.mtSystems[i].doneCount=0; rerender(); });
     const dueInp = inp('', s.due||'', v=>{ f.mtSystems[i].due=v; rerender(); }, 'date', {padding:'6px 8px',fontSize:'12px',fontWeight:'700',color:'#15803d',border:'1.5px solid #bbf7d0',background:'#fff'});
     const schedule = mtGenerateSchedule(f.mtBaseDate, f.mtEndDate, s.freq);
+    const doneCount = s.doneCount||0;
+    const plannedNow = schedule[doneCount] || '';
+    let driftBadge = h('span');
+    if(plannedNow && s.due && s.due!==plannedNow){
+      const dd = Math.round((_toDate(s.due) - _toDate(plannedNow))/86400000);
+      if(Math.abs(dd)>3){
+        driftBadge = h('span',{style:{fontSize:'10px',color:'#b45309',background:'#fef3c7',padding:'2px 6px',borderRadius:'8px',marginLeft:'6px',fontWeight:'700',whiteSpace:'nowrap'}}, '⚠️ Plandan '+Math.abs(dd)+' gün kaydı');
+      }
+    }
+    const scheduleItems = schedule.map((d,idx)=> idx>=doneCount ? h('span',{style:{marginRight:'10px',fontWeight:idx===doneCount?'800':'500',color:idx===doneCount?'#0f5132':'#166534'}}, (idx+1)+'. Bakım: '+_toTR(d)) : null).filter(Boolean);
+    const scheduleBlock = !schedule.length ? h('span')
+      : (doneCount>=schedule.length ? h('div',{style:{fontSize:'11px',color:'#0f5132',marginTop:'3px',fontWeight:'700'}},'✅ Sözleşme kapsamındaki tüm bakımlar tamamlandı')
+         : h('div',{style:{fontSize:'11px',color:'#166534',marginTop:'3px',paddingLeft:'2px'}}, ...scheduleItems));
     return h('div',{style:{marginBottom:'8px'}},
       h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
         h('div',{style:{flex:'2'}}, selSys),
         h('div',{style:{flex:'1.3'}}, selFreq),
-        h('div',{style:{flex:'1.2'}}, dueInp),
+        h('div',{style:{flex:'1.2',display:'flex',alignItems:'center'}}, dueInp, driftBadge),
         btn('✕',()=>{ f.mtSystems.splice(i,1); rerender(); },'#fee2e2','#b91c1c','6px 10px',{fontSize:'12px'})
       ),
-      schedule.length ? h('div',{style:{fontSize:'11px',color:'#166534',marginTop:'3px',paddingLeft:'2px'}},
-        '📋 Planlanan ('+schedule.length+' kez): '+schedule.map(_toTR).join(', ')
-      ) : h('span')
+      scheduleBlock
     );
   });
   const recordDue = mtRecordNextDue(f.mtSystems);
@@ -1966,12 +1977,66 @@ function maintSysSection(f){
     row(field('Sözleşme / Baz Tarihi', fBase, true), field('Bitiş Tarihi', fEndDate, true)),
     h('div',{style:{fontSize:'11px',color:'#15803d',marginBottom:'8px'}},'ℹ️ Her sistem kendi periyodunda takip edilir. Kayıt vadesi = en erken sistem vadesi. Bitiş tarihi girilirse tüm planlanan ziyaret tarihleri (kaç kez yapılacağı dahil) otomatik hesaplanır. Vade tarihini devam eden işler için elle de değiştirebilirsiniz.'),
     rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px'}},'Henüz sistem eklenmedi.'),
-    btn('+ Sistem Ekle',()=>{ f.mtSystems.push({sysKey:'',freq:'',due:'',lastDone:''}); rerender(); },'#dcfce7','#15803d','8px 12px',{fontSize:'12px',marginBottom:'8px'}),
+    btn('+ Sistem Ekle',()=>{ f.mtSystems.push({sysKey:'',freq:'',due:'',lastDone:'',doneCount:0}); rerender(); },'#dcfce7','#15803d','8px 12px',{fontSize:'12px',marginBottom:'8px'}),
     recordDue ? h('div',{style:{marginTop:'8px',paddingTop:'8px',borderTop:'1px dashed #bbf7d0'}},
       h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#0f5132'}},'📅 Sonraki Bakım Vadesi: '+_toTR(recordDue)),
       dueList.length ? h('div',{style:{fontSize:'12px',color:'#15803d',marginTop:'3px'}},'Bu ziyarette: '+dueList.map(s=>SYS_META[s.sysKey]?SYS_META[s.sysKey].l:s.sysKey).join(', ')) : h('span')
     ) : h('span')
   );
+}
+// Bir bakım kaydına bağlı tek "kayan" görevi (varsa) senkronlar: oluştur/güncelle,
+// vade değiştiyse yeniden aç, ilgili kişi değiştiyse otomatik devret + bildir.
+function maintTaskId(m){ return 'auto_maint_'+m.id; }
+async function maintSyncTask(m){
+  try{
+    const existing = (state.tasks||[]).map(normTask).find(t=>t.id===maintTaskId(m));
+    if(!m.mtNextDue){
+      if(existing && !taskIsClosed(existing)){
+        await personelSaveDoc('tasks', Object.assign({}, existing, {status:'tamamlandi', completedAt:today()}));
+      }
+      return;
+    }
+    const person = personelPeople().find(u=>u.displayName===m.serviceContact);
+    const dept = person ? person.department : '';
+    const cust = (state.customers||[]).find(c=>c.id===m.customerId);
+    const title = '🔁 Periyodik Bakım: '+((cust&&cust.firmName)||'Müşteri')+' — '+(m.jobName||'Bakım');
+    if(!existing){
+      if(!m.serviceContact) return;
+      const t = normTask({
+        id: maintTaskId(m), title, desc:'Planlı periyodik bakımı gerçekleştir ve tamamla.',
+        assignedTo:m.serviceContact, department:dept,
+        assignedBy:'sistem', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'',
+        dueDate:m.mtNextDue, dueTime:'', startDate:'', status:'yapilacak', completedAt:null, priority:'orta',
+        needsApproval:false, revisionCount:0, assignmentHistory:[], comments:[],
+        autoGenerated:true, createdBy:'sistem', createdAt:today(), fiscalYear:activeFiscalYear()
+      });
+      await personelSaveDoc('tasks', t);
+      return;
+    }
+    let next = Object.assign({}, existing, {title, department:dept});
+    const dueChanged = existing.dueDate !== m.mtNextDue;
+    if(dueChanged){ next.dueDate = m.mtNextDue; next.status = 'yapilacak'; next.completedAt = null; }
+    if(m.serviceContact && existing.assignedTo !== m.serviceContact){
+      const hist = (existing.assignmentHistory||[]).concat([{from:existing.assignedTo, to:m.serviceContact, at:today(), by:'sistem', reason:'sistem', note:'İlgili kişi bakım kaydında değiştirildi.'}]);
+      next.assignedTo = m.serviceContact;
+      next.assignmentHistory = hist;
+      await personelSaveDoc('tasks', next);
+      showNotification('task_reassign_'+next.id, '↪ Yeni görev', (next.title||'Görev')+' size devredildi.', 'info', m.serviceContact);
+      return;
+    }
+    if(dueChanged || next.title!==existing.title || next.department!==existing.department){
+      await personelSaveDoc('tasks', next);
+    }
+  }catch(e){ /* sessiz — görev senkronu ana CRM akışını etkilemez (personelAutoGenerateTasks deseniyle tutarlı) */ }
+}
+// maintenances koleksiyonuna yazan TÜM yollar bunu kullanır — saveDoc + state + görev senkronu tek yerde.
+async function persistMaint(data){
+  await saveDoc('maintenances', data.id, data);
+  const exists = state.maintenances.some(x=>x.id===data.id);
+  const list = exists ? state.maintenances.map(x=> x.id===data.id ? data : x) : [...state.maintenances, data];
+  setState({maintenances:list});
+  await maintSyncTask(data);
+  return data;
 }
 // Ziyareti tamamla: vadesi gelen sistemleri birlikte ileri sar (kendi periyodu kadar).
 async function maintVisitDone(m){
@@ -1983,34 +2048,68 @@ async function maintVisitDone(m){
   const note = prompt('Ziyaret tamamlandı ('+_toTR(recordDue)+')\nServis edilen sistemler: '+names+'\n\nYapılan işlem / not (opsiyonel):', '');
   if(note===null) return;
   const me = (state.currentUser && state.currentUser.displayName) || '';
-  const advanced = mtCompleteVisit(m.mtSystems, recordDue);
+  const advanced = mtCompleteVisit(m.mtSystems, recordDue, m.mtBaseDate, m.mtEndDate);
   const nextDue = mtRecordNextDue(advanced);
   const hist = [...maintHistory(m), {at:recordDue, by:me, note:note||'', systems:names}];
   const data = {...m, mtSystems:advanced, mtHistory:hist, mtNextDue:nextDue, mtLastDone:recordDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
   setState({saving:true});
-  await saveDoc('maintenances', m.id, data);
-  const list = state.maintenances.map(x=> x.id===m.id ? data : x);
-  setState({maintenances:list, modal:null, saving:false});
+  await persistMaint(data);
+  setState({modal:null, saving:false});
   showToast('✅ Ziyaret tamamlandı — sonraki vade: '+(nextDue?_toTR(nextDue):'-'));
 }
 // Devam eden (zaten süregelen) bakım işleri için geçmişe dönük, elle tarihli kayıt ekler.
 // Vade/programı etkilemez — yalnızca geçmiş ziyaret logunu (mtHistory) besler.
 async function maintAddManualHistory(m, f){
-  const dateStr = prompt('Ziyaret tarihi (GG.AA.YYYY):', _toTR(today()));
+  const systems = (f&&f.mtSystems)||[];
+  const namedSystems = systems.map((s,i)=>({idx:i, sys:s, label: SYS_META[s.sysKey]?SYS_META[s.sysKey].l:(s.sysKey||('Sistem '+(i+1)))}));
+  let target = null;
+  if(namedSystems.length===1){
+    target = namedSystems[0];
+  } else if(namedSystems.length>1){
+    const listStr = namedSystems.map((n,idx)=>(idx+1)+') '+n.label).join('\n');
+    const pick = prompt('Hangi sistem için geçmiş kayıt eklenecek?\n'+listStr+'\n\nNumara girin:', '1');
+    if(pick===null) return;
+    const pickIdx = parseInt(pick.trim(),10)-1;
+    if(!(pickIdx>=0 && pickIdx<namedSystems.length)){ showToast('⚠️ Geçersiz seçim.','#d97706'); return; }
+    target = namedSystems[pickIdx];
+  }
+
+  const sys = target ? target.sys : null;
+  const schedule = sys ? mtGenerateSchedule(f.mtBaseDate, f.mtEndDate, sys.freq) : [];
+
+  let occurrence = null;
+  let plannedDate = '';
+  if(sys && schedule.length){
+    const doneCount = sys.doneCount||0;
+    if(doneCount>=schedule.length){ showToast('⚠️ Bu sistemin tüm planlanan bakımları zaten tamamlanmış.','#d97706'); return; }
+    const optsStr = schedule.map((d,idx)=> idx>=doneCount ? (idx+1)+') '+_toTR(d) : null).filter(Boolean).join('\n');
+    const pickN = prompt('Kaçıncı bakım tamamlandı?\n'+optsStr+'\n\nNumara girin:', String(doneCount+1));
+    if(pickN===null) return;
+    occurrence = parseInt(pickN.trim(),10);
+    if(!(occurrence>=doneCount+1 && occurrence<=schedule.length)){ showToast('⚠️ Geçersiz bakım numarası.','#d97706'); return; }
+    plannedDate = schedule[occurrence-1];
+  }
+
+  const dateStr = prompt('Gerçekleşen ziyaret tarihi (GG.AA.YYYY):', plannedDate ? _toTR(plannedDate) : _toTR(today()));
   if(dateStr===null) return;
   const iso = _toISO(dateStr.trim());
   if(!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)){ showToast('⚠️ Geçersiz tarih formatı. GG.AA.YYYY girin.','#d97706'); return; }
-  const sysNames = ((f&&f.mtSystems)||[]).filter(s=>s.sysKey).map(s=>SYS_META[s.sysKey]?SYS_META[s.sysKey].l:s.sysKey);
-  const names = sysNames.length ? sysNames.join(', ') : '-';
-  const note = prompt('Yapılan işlem / not (opsiyonel) — Sistemler: '+names, '');
+
+  const label = target ? target.label : '-';
+  const note = prompt('Yapılan işlem / not (opsiyonel) — Sistem: '+label, '');
   if(note===null) return;
+
+  const mtSystems = sys ? systems.map((s,i)=> i===target.idx ? Object.assign({}, s, {
+    doneCount: occurrence!==null ? occurrence : (s.doneCount||0),
+    due: (occurrence!==null && schedule.length) ? (schedule[occurrence]||'') : s.due,
+    lastDone: iso
+  }) : s) : systems;
+
   const me = (state.currentUser && state.currentUser.displayName) || '';
-  const hist = [...maintHistory(m), {at:iso, by:me, note:note||'', systems:names}];
-  const data = {...m, mtHistory:hist, ...stamp()};
-  setState({saving:true});
-  await saveDoc('maintenances', m.id, data);
-  const list = state.maintenances.map(x=> x.id===m.id ? data : x);
-  setState({maintenances:list, modal:null, saving:false});
+  const hist = [...maintHistory(m), {at:iso, by:me, note:note||'', systems:label, occurrence: occurrence||null}];
+  const data = {...m, mtSystems, mtHistory:hist, mtNextDue: sys ? mtRecordNextDue(mtSystems) : m.mtNextDue, ...stamp()};
+  await persistMaint(data);
+  setState({modal:null});
   showToast('✅ Geçmiş kayıt eklendi: '+_toTR(iso));
 }
 
@@ -7241,8 +7340,19 @@ function mtFreqMonths(freq){ return ({aylik:1,'3aylik':3,'6aylik':6,yillik:12})[
 function mtSysFirstDue(baseISO, freq){ var m = mtFreqMonths(freq); return (baseISO && m) ? _addMonth(baseISO, m) : ''; }
 function mtRecordNextDue(systems){ var ds = (systems||[]).map(function(s){return s.due;}).filter(Boolean).sort(); return ds.length ? ds[0] : ''; }
 function mtSystemsDueOn(systems, visitISO){ if(!visitISO) return []; return (systems||[]).filter(function(s){ return s.due && s.due <= visitISO; }); }
-function mtAdvanceSystem(sys){ var m = mtFreqMonths(sys.freq); if(!m || !sys.due) return sys; return Object.assign({}, sys, {due:_addMonth(sys.due, m), lastDone:sys.due}); }
-function mtCompleteVisit(systems, visitISO){ return (systems||[]).map(function(s){ return (s.due && visitISO && s.due <= visitISO) ? mtAdvanceSystem(s) : s; }); }
+function mtAdvanceSystem(sys, base, end){
+  var mo = mtFreqMonths(sys.freq);
+  if(!mo || !sys.due) return sys;
+  var schedule = mtGenerateSchedule(base, end, sys.freq);
+  if(schedule.length){
+    var doneCount = (sys.doneCount||0) + 1;
+    return Object.assign({}, sys, {doneCount:doneCount, due:schedule[doneCount]||'', lastDone:sys.due});
+  }
+  return Object.assign({}, sys, {due:_addMonth(sys.due, mo), lastDone:sys.due});
+}
+function mtCompleteVisit(systems, visitISO, base, end){
+  return (systems||[]).map(function(s){ return (s.due && visitISO && s.due <= visitISO) ? mtAdvanceSystem(s, base, end) : s; });
+}
 
 // ═══════════════════════════════════════════════════════
 // NFPA SERVİS CHECKLIST MODÜLÜ (Faz 4)
@@ -7533,11 +7643,10 @@ async function maintDone(m){
   const now = today();
   const hist = [...maintHistory(m), {at:now, by:me, note:note||''}];
   const nextDue = computeNextDue(now, maintPeriod(m), maintPeriodDays(m));
-  const data = {...m, mtLastDone:now, mtHistory:hist, mtNextDue:nextDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
+  const data = {...m, mtLastDone:now, mtHistory:hist, mtNextDue: nextDue || m.mtNextDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
   setState({saving:true});
-  await saveDoc('maintenances', m.id, data);
-  const list = state.maintenances.map(x => x.id===m.id ? data : x);
-  setState({maintenances:list, modal:null, saving:false});
+  await persistMaint(data);
+  setState({modal:null, saving:false});
   showToast('✅ Bakım tamamlandı — sonraki vade: ' + (nextDue ? _toTR(nextDue) : '-'));
 }
 // Bakım geçmişi modalı (tamamlanan bakımlar).
