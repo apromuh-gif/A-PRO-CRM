@@ -656,3 +656,18 @@ Periyodik Bakım listesinde "Sil" tuşunun herkese (imzalı checklist/servis for
 - **Kapanmış işte görev kilidi:** Arıza/Proje zaten kapatılmışsa, ona bağlı görevleri tamamlandı/onaylandı yapma yetkisi artık yalnız admin'de (`commit ca08d43`).
 
 **Durum:** Tümü canlı, son commit `ca08d43`.
+
+---
+
+## 🧭 Force-Delete Canlı Doğrulama + Görevler/Personel Menü Ayrımı (30 Ağustos 2026, devam)
+
+### Force-delete canlı test
+İmzalı belgeli test kaydı üzerinde admin "SİL" yazma onay akışı canlıda denendi — beklendiği gibi çalıştığı doğrulandı. Ayrıca "T. Servis Hizmet Takibi" içindeki **"Tümü" sekmesi tablosu** ile ayrı bir ekran olan **"T.Servis Teklif Takip" (`serviceOpps`)** arasındaki karışıklık netleştirildi: "Tümü" tablosu gerçekten `services` koleksiyonunu, korumalı `delItem('services',...)` ile listeliyor (doğru/güvenli yer); `serviceOpps` ekranı tamamen ayrı, ilişkisiz bir satış-fırsat listesi, kendi silme yolu var, checklist/servis formuna bağlı değil.
+
+### Görevler ana menüye taşındı, Personel admin'e kilitlendi — ✅ karar + uygulama
+Tartışılan iki soru: (1) Görevler, günlük kullanımı en yüksek ekran olmasına rağmen "Personel" (İK çağrışımlı) sekmesinin alt sekmesinde saklıydı; (2) Performans ekranı **tüm** personelin **birbirinin** skorlarını/yönetici notlarını görebildiği bir gizlilik açığıydı (düzenleme zaten admin'e kilitliydi, görüntüleme değildi).
+- **"✅ Görevler"** artık Projeler'den hemen sonra, **ana menüde bağımsız bir sekme** — herkese açık. Görev filtreleme mantığı değişmedi: admin olmayan yalnız kendine atanan / kendisinin devrettiği görevleri görüyor, şirket geneli değil.
+- **"Personel"** (Performans + Prim) artık **tamamen admin'e kilitli** — navbar'dan gizleniyor, `renderPersonel()` admin dışı erişimde Dashboard'a düşüyor. Bu, Performans'taki gizlilik açığını da (ekranın kendisi artık görünmediği için) kökten çözdü.
+- `commit c74d1ab`.
+
+**Durum:** Tümü canlı, son commit `c74d1ab`.
