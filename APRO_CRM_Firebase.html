@@ -1888,12 +1888,17 @@ function buildMaintModal(item) {
   const fSrvRef=h('input',{placeholder:'REF-2024-001 veya https://sunucu/dosya.pdf',value:f.tenderRef||'',
     style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",outline:'none'}});
   fSrvRef.addEventListener('input',e=>f.tenderRef=e.target.value);
+  const mtSection = maintSysSection(f);
+  const progress = maintProgressLabel(f);
+  const statusField = progress
+    ? h('div',{style:{background:progress.done?'#f0fdf4':'#fffbeb',border:'1px solid '+(progress.done?'#bbf7d0':'#fde68a'),borderRadius:'10px',padding:'10px 14px',marginBottom:'11px',fontSize:'13px',fontWeight:'700',color:progress.color}}, (progress.done?'✅ ':'🔧 ')+progress.text)
+    : field('Durum',fSt);
   const content = h('div',{},
     field('İşin Adı *',fJob),
     field('Müşteri',fCust),
     row(field('Teknik Servis İlgilisi',fContact,true),field('Tutar (€)',fAmt,true)),
-    field('Durum',fSt),
-    maintSysSection(f),
+    statusField,
+    mtSection,
     field('Notlar',fNotes),
     (item && maintHasSystems(f)) ? h('div',{style:{display:'flex',gap:'8px',marginBottom:'10px',flexWrap:'wrap'}},
       btn('✅ Ziyareti Tamamla',()=>maintVisitDone(item),'linear-gradient(135deg,#16a34a,#15803d)','#fff','10px 14px',{flex:'1',fontSize:'13px'}),
@@ -2012,6 +2017,23 @@ function maintOccurrenceLabel(m){
     if(schedule.length) labels.push(((s.doneCount||0)+1)+'. Bakım');
   });
   return [...new Set(labels)].join(' + ');
+}
+// Çok sistemli bakım kayıtları için "kaçıncı bakım" ilerleme özeti — programsız
+// (mtEndDate girilmemiş) veya sistemsiz (legacy) kayıtlarda null döner; o durumda
+// çağıran taraf eski elle-seçilen Durum rozetini kullanmaya devam eder.
+function maintProgressLabel(m){
+  if(!maintHasSystems(m)) return null;
+  const totals = m.mtSystems.map(s=>{
+    const schedule = mtGenerateSchedule(m.mtBaseDate, m.mtEndDate, s.freq);
+    return schedule.length ? {done:(s.doneCount||0), total:schedule.length} : null;
+  }).filter(Boolean);
+  if(!totals.length) return null;
+  const done = totals.reduce((a,t)=>a+t.done,0);
+  const total = totals.reduce((a,t)=>a+t.total,0);
+  const allDone = totals.every(t=>t.done>=t.total);
+  if(allDone) return {text: done+'/'+total+' Tamamlandı', color:'#16a34a', done:true};
+  const nextDue = mtRecordNextDue(m.mtSystems);
+  return {text: done+'/'+total+' · Sıradaki: '+(nextDue?_toTR(nextDue):'-'), color:'#d97706', done:false};
 }
 async function maintSyncTask(m){
   try{
@@ -6255,7 +6277,10 @@ function renderMaintenances() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'12px',color:T2}},m.serviceContact||''),
       h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',color:'#10b981'}},eur(m.amount)),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},badge(m.status,MS[m.status]||T3)),
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},(()=>{
+        const p=maintProgressLabel(m);
+        return p ? h('span',{style:{background:(p.done?'#dcfce7':'#fef3c7'),color:(p.done?'#15803d':'#b45309'),padding:'4px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},p.text) : badge(m.status,MS[m.status]||T3);
+      })()),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},m._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},m._editedBy),h('br'),h('span',{style:{color:T4}},m._editedAt||'')):h('span',{style:{color:T4}},'—')),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(m.customerId)||c.name===m.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
