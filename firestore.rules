@@ -43,6 +43,8 @@ service cloud.firestore {
     match /maintenances/{id}  { allow read, write: if signedIn(); }
     match /visits/{id}        { allow read, write: if signedIn(); }
     match /appointments/{id}  { allow read, write: if signedIn(); }
+    match /checklists/{id}    { allow read, write: if signedIn(); }
+    match /serviceForms/{id}  { allow read, write: if signedIn(); }
 
     // --- Personel modülü (Görev / Performans / Prim) ---
     // Görevler & değerlendirmeler: oturum açmış kullanıcı okur/yazar
