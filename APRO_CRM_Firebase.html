@@ -2106,7 +2106,7 @@ async function maintAddManualHistory(m, f){
 
   const me = (state.currentUser && state.currentUser.displayName) || '';
   const hist = [...maintHistory(m), {at:iso, by:me, note:note||'', systems:label, occurrence: occurrence||null}];
-  const data = {...m, mtSystems, mtHistory:hist, mtNextDue: mtRecordNextDue(mtSystems), ...stamp()};
+  const data = {...m, mtSystems, mtHistory:hist, mtNextDue: sys ? mtRecordNextDue(mtSystems) : m.mtNextDue, ...stamp()};
   await persistMaint(data);
   setState({modal:null});
   showToast('✅ Geçmiş kayıt eklendi: '+_toTR(iso));
