@@ -180,14 +180,15 @@ const DEFAULT_EVAL_CONFIG = {
   muhasebe: {
     threshold:0.70, overCap:1.5, overAccel:1.0, primBase:0,
     criteria:[
-      {kod:'tahsilat',        label:'Tahsilat/alacak takibi',         auto:false,weight:0.25},
-      {kod:'faturalama',      label:'Faturalama doğruluğu & zamanı',  auto:false,weight:0.10},
-      {kod:'yasal_uyum',      label:'Yasal-mali yükümlülük uyumu',    auto:false,weight:0.15},
-      {kod:'evrak_duzen',     label:'Evrak & arşiv düzeni',           auto:false,weight:0.15},
+      {kod:'tahsilat',        label:'Tahsilat zamanında tamamlama',    auto:true, weight:0.20},
+      {kod:'siparis_takip',   label:'Sipariş onay/PO takibi',         auto:true, weight:0.15},
+      {kod:'yasal_uyum',      label:'Vergi/beyanname zamanında teslim',auto:true, weight:0.15},
+      {kod:'faturalama',      label:'Faturalama zamanında tamamlama',  auto:true, weight:0.10},
+      {kod:'yonetici',        label:'Kalite / iç-dış ilişki / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.15},
       {kod:'raporlama',       label:'Raporlama zamanında hazırlama',  auto:true, weight:0.10},
       {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.06},
       {kod:'gorev_dogruluk',  label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.04},
-      {kod:'yonetici',        label:'Kalite / iç-dış ilişki / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.15},
+      {kod:'evrak_duzen',     label:'Evrak & arşiv düzeni',           auto:false,weight:0.05},
     ],
   },
 };
@@ -216,6 +217,21 @@ const DEVIR_REASONS = [
   { v:'performans',l:'Yetersiz performans' },
   { v:'yokluk',    l:'İzin / yokluk' },
   { v:'diger',     l:'Diğer' },
+];
+
+// ═══ GÖREV ZİNCİRİ KURALLARI ═══
+const TASK_CHAIN_RULES = [
+  { trigger:'fatura', next:{ title:'Tahsilat takibi', prefix:'\u{1F4B0}', dept:'muhasebe', dueOffset:30, priority:'orta' }},
+];
+// ═══ VERGİ TAKVİMİ ═══
+const TAX_CALENDAR = [
+  { kod:'kdv1',       label:'KDV-1 Beyannamesi',      deadline:28, createDay:20, warnDay:26 },
+  { kod:'kdv2',       label:'KDV-2 Beyannamesi',      deadline:28, createDay:20, warnDay:26 },
+  { kod:'muhtasar',   label:'Muhtasar Beyanname',      deadline:26, createDay:18, warnDay:24 },
+  { kod:'sgk_bildir', label:'SGK Bildirge',            deadline:-1, createDay:22, warnDay:28 },
+  { kod:'sgk_prim',   label:'SGK Prim Ödemesi',   deadline:-1, createDay:22, warnDay:28 },
+  { kod:'babs',       label:'Ba-Bs Formu',             deadline:-1, createDay:22, warnDay:28 },
+  { kod:'gecici',     label:'Geçici Vergi Beyannamesi', quarterly:true, deadlineOffset:17, createOffset:7, warnOffset:15 },
 ];
 
 const eur = v => new Intl.NumberFormat("tr-TR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(v||0);
@@ -868,6 +884,7 @@ function normTask(t){
     assignmentHistory: Array.isArray(t.assignmentHistory)? t.assignmentHistory : [],
     comments: Array.isArray(t.comments)? t.comments : [],
     execStage: t.execStage || '',
+    dedupeKey: t.dedupeKey || '',
   });
 }
 // ---- Faz 2: Proje icra erişimcileri (okuma-anında varsayılan, migration yok) ----
@@ -1495,6 +1512,13 @@ async function saveOpp(form, isEdit) {
   showToast('✅ Fırsat kaydedildi!');
   // Kazanıldı + bağlı teklif varsa → teklifi APPROVED'a çek (karlılık dahli).
   if (data.stage === 'KAZANILDI' && data.quotationId) approveWonQuotation(data);
+  // GAP 2: KAZANILDI → muhasebeye sipariş onay + sipariş formu görevleri
+  if (data.stage === 'KAZANILDI' && (!prevOpp || prevOpp.stage !== 'KAZANILDI')) {
+    const cn = _custName(data.customerId);
+    const lbl = (data.title||'Proje') + (cn ? ' — ' + cn : '');
+    autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:'muhasebe', context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:5, priority:'yuksek' });
+    autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:'muhasebe', context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:7, priority:'orta' });
+  }
 }
 async function saveProp(form, isEdit) {
   setState({saving:true});
@@ -2226,6 +2250,12 @@ async function maintVisitDone(m){
   await persistMaint(data);
   setState({modal:null, saving:false});
   showToast('✅ Ziyaret tamamlandı — sonraki vade: '+(nextDue?_toTR(nextDue):'-'));
+  // GAP 5: Bakım ziyareti tamamlandığında fatura görevi (sözleşme kapsamı dışıysa)
+  const hasContract = m.mtEndDate && _toDate(m.mtEndDate) >= _toDate(today());
+  if(!hasContract){
+    const cn = _custName(m.customerId);
+    autoCreateTask({ dedupeKey:'fatura_bakim_'+m.id+'_'+recordDue, title:'\u{1F9FE} Fatura kesilmesi — '+(cn||'')+' bakım ziyareti', dept:'muhasebe', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'', dueOffset:3, priority:'orta' });
+  }
 }
 // Devam eden (zaten süregelen) bakım işleri için geçmişe dönük, elle tarihli kayıt ekler.
 // Vade/programı etkilemez — yalnızca geçmiş ziyaret logunu (mtHistory) besler.
@@ -3826,6 +3856,7 @@ function renderDashboardAdmin() {
     {l:'Şirket Yıllık Hedef',v:eur(compTarget),s:'Hedefe ulaşma: '+(compTarget>0?targetPct+'%':'Hedef girilmedi'),c:'#0891b2',i:'🎯'},
     {l:'Kaybedilen Fırsat',v:String(lost),s:'KAÇTI + NO GO + ÖLDÜ',c:'#dc2626',i:'❌'},
     {l:'Teknik Servis Ciro',v:eur(serviceTotal),s:S.length+' kayıt',c:'#ea580c',i:'🔧'},
+    (()=>{ const wonOpps=OF.filter(o=>o.stage==='KAZANILDI'); const tasks=(state.tasks||[]).map(normTask); const invoiced=wonOpps.filter(o=>tasks.some(t=>t.linkType==='opportunity'&&t.linkId===o.id&&t.title&&t.title.indexOf('Fatura')>=0&&taskIsClosed(t))); const uninv=wonOpps.filter(o=>!invoiced.includes(o)).reduce((a,o)=>a+(Number(o.value)||0),0); return {l:'Fatura Edilmemiş İş',v:eur(uninv),s:(wonOpps.length-invoiced.length)+' / '+wonOpps.length+' proje',c:uninv>0?'#d97706':'#16a34a',i:'📄'}; })(),
   ].forEach(k=>kpiGrid.appendChild(kpiCard(k.l,k.v,k.s,k.c,k.i)));
 
   // Tarih aralığı filtre kutusu
@@ -6767,6 +6798,38 @@ function personelAutoMetric(kod, name, period, dept){
       const overdue = ps.filter(p=>!isFinal(p.status) && p.validUntil && String(p.validUntil).slice(0,10) < today()).length;
       return Math.max(0, 1 - overdue/ps.length);
     }
+    case 'tahsilat': {
+      const ts = (state.tasks||[]).map(normTask).filter(t=>t.assignedTo===name && t.title && t.title.indexOf('Tahsilat')>=0 && recFY(t)===_periodYear(period));
+      if(!ts.length) return null;
+      const closed = ts.filter(t=>taskIsClosed(t));
+      if(!closed.length) return ts.length ? 0 : null;
+      const onTime = closed.filter(t=>!t.dueDate || !t.completedAt || String(t.completedAt).slice(0,10)<=String(t.dueDate).slice(0,10)).length;
+      return onTime/closed.length;
+    }
+    case 'faturalama': {
+      const ts = (state.tasks||[]).map(normTask).filter(t=>t.assignedTo===name && t.title && t.title.indexOf('Fatura')>=0 && t.title.indexOf('Tahsilat')<0 && recFY(t)===_periodYear(period));
+      if(!ts.length) return null;
+      const closed = ts.filter(t=>taskIsClosed(t));
+      if(!closed.length) return ts.length ? 0 : null;
+      const onTime = closed.filter(t=>!t.dueDate || !t.completedAt || String(t.completedAt).slice(0,10)<=String(t.dueDate).slice(0,10)).length;
+      return onTime/closed.length;
+    }
+    case 'yasal_uyum': {
+      const ts = (state.tasks||[]).map(normTask).filter(t=>t.assignedTo===name && t.dedupeKey && t.dedupeKey.startsWith('tax_') && recFY(t)===_periodYear(period));
+      if(!ts.length) return null;
+      const closed = ts.filter(t=>taskIsClosed(t));
+      if(!closed.length) return ts.length ? 0 : null;
+      const onTime = closed.filter(t=>!t.dueDate || !t.completedAt || String(t.completedAt).slice(0,10)<=String(t.dueDate).slice(0,10)).length;
+      return onTime/closed.length;
+    }
+    case 'siparis_takip': {
+      const ts = (state.tasks||[]).map(normTask).filter(t=>t.assignedTo===name && t.title && (t.title.indexOf('Sipari')>=0 || t.title.indexOf('sipari')>=0) && recFY(t)===_periodYear(period));
+      if(!ts.length) return null;
+      const closed = ts.filter(t=>taskIsClosed(t));
+      if(!closed.length) return ts.length ? 0 : null;
+      const onTime = closed.filter(t=>!t.dueDate || !t.completedAt || String(t.completedAt).slice(0,10)<=String(t.dueDate).slice(0,10)).length;
+      return onTime/closed.length;
+    }
     default: {
       const st = personelTaskStats(name,period,true);
       return st.total? st.ratio : null;
@@ -7361,6 +7424,41 @@ const TASK_TEMPLATES = {
   ],
 };
 function _offsetDay(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Departmandaki açık görev sayısı en az olan personeli döndürür.
+function leastBusyInDept(dept){
+  const people = personelPeople().filter(u=>u.department===dept);
+  if(!people.length) return '';
+  const tasks = (state.tasks||[]).map(normTask);
+  let best=people[0], min=Infinity;
+  people.forEach(p=>{
+    const open = tasks.filter(t=>t.assignedTo===p.displayName && !taskIsClosed(t)).length;
+    if(open<min){ min=open; best=p; }
+  });
+  return best.displayName;
+}
+// Otomatik görev oluşturma (dedupe key ile tekrar oluşmaz).
+async function autoCreateTask(opts){
+  if(opts.dedupeKey){
+    const existing = (state.tasks||[]).map(normTask).find(t=>t.dedupeKey===opts.dedupeKey);
+    if(existing) return null;
+  }
+  const t = normTask({
+    id: genId(), title: opts.title, desc: opts.desc||'',
+    assignedTo: opts.assignedTo || leastBusyInDept(opts.dept||'muhasebe'),
+    department: opts.dept||'muhasebe',
+    assignedBy: 'sistem', context: opts.context||'sirket',
+    linkType: opts.linkType||'none', linkId: opts.linkId||'', linkLabel: opts.linkLabel||'',
+    execStage: opts.execStage||'',
+    dueDate: opts.dueDate || _offsetDay(opts.dueOffset||5), dueTime:'', startDate:'',
+    status:'yapilacak', completedAt:null, priority: opts.priority||'orta',
+    needsApproval: defaultNeedsApproval(opts.context||'sirket', opts.priority||'orta'),
+    revisionCount:0, assignmentHistory:[], comments:[],
+    autoGenerated:true, createdBy:'sistem', createdAt:today(),
+    fiscalYear: activeFiscalYear(), dedupeKey: opts.dedupeKey||'',
+  });
+  await personelSaveDoc('tasks', t);
+  return t;
+}
 // Bir kayıt için şablon görevlerini öner (kullanıcı onayıyla oluşturur). ctx: 'proje'|'servis'.
 async function suggestTasksFor(ctx, linkType, linkId, linkLabel){
   const tpl = TASK_TEMPLATES[ctx]; if(!tpl) return;
@@ -7481,8 +7579,15 @@ async function projClose(o){
   const openTasks = projTotalOpenCount(o);
   if(openTasks>0 && !confirm('Bu projede '+openTasks+' açık görev var. Yine de kapatılsın mı?')) return;
   if(!confirm('Proje kapatılsın mı? (Hakediş/kapanış tamamlandı)')) return;
-  const upd=Object.assign({}, o, { execClosedAt:today() });
+  // GAP 12: Garanti alanları otomatik hesaplama
+  const closeDateISO = today();
+  const warrantyEnd = o.warrantyEndDate || _addMonth(closeDateISO, 12);
+  const warrantyScope = o.warrantyScope || (o.contractorId ? 'yalniz_malzeme' : 'malzeme_iscilik');
+  const upd=Object.assign({}, o, { execClosedAt:closeDateISO, warrantyEndDate:warrantyEnd, warrantyScope:warrantyScope });
   await personelSaveDoc('opportunities', upd);
+  // GAP 5: Proje kapanışında muhasebeye kesin hakediş görevi
+  const cn = _custName(o.customerId);
+  autoCreateTask({ dedupeKey:'hakedis_kesin_'+o.id, title:'\u{1F4D1} Kesin hakediş dosyası — '+(o.title||'')+(cn?' — '+cn:''), dept:'muhasebe', context:'proje', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', dueOffset:7, priority:'yuksek' });
 }
 // Yönetici geri-adım: kapanmışsa yeniden aç, değilse bir önceki aşamaya çek.
 async function projRollback(o){
@@ -7589,6 +7694,12 @@ async function servClose(s){
   if(note===null) return;
   const upd=Object.assign({}, s, { execClosedAt:today(), execCloseNote:note });
   await personelSaveDoc('services', upd);
+  // GAP 3+8: Servis kapanışında fatura görevi — proje kapsamı dışındaysa
+  const isProjectScope = s.opportunityId && (state.opportunities||[]).some(o=>o.id===s.opportunityId && o.stage==='KAZANILDI');
+  if(!isProjectScope){
+    const cn = _custName(s.customerId);
+    autoCreateTask({ dedupeKey:'fatura_servis_'+s.id, title:'\u{1F9FE} Fatura kesilmesi — '+(cn||'')+(s.jobName?' '+s.jobName:''), dept:'muhasebe', context:'servis', linkType:'service', linkId:s.id, linkLabel:s.jobName||'', dueOffset:3, priority:'yuksek' });
+  }
 }
 // Yönetici: bir önceki aşamaya çek.
 async function servRollback(s){
@@ -7971,6 +8082,12 @@ async function maintDone(m){
   await persistMaint(data);
   setState({modal:null, saving:false});
   showToast('✅ Bakım tamamlandı — sonraki vade: ' + (nextDue ? _toTR(nextDue) : '-'));
+  // GAP 5: Eski tekli bakım tamamlandığında fatura görevi (sözleşme dışıysa)
+  const hasContract = m.mtEndDate && _toDate(m.mtEndDate) >= _toDate(today());
+  if(!hasContract){
+    const cn = _custName(m.customerId);
+    autoCreateTask({ dedupeKey:'fatura_bakim_'+m.id+'_'+now, title:'\u{1F9FE} Fatura kesilmesi — '+(cn||'')+' bakım', dept:'muhasebe', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'', dueOffset:3, priority:'orta' });
+  }
 }
 // Bakım geçmişi modalı (tamamlanan bakımlar).
 function buildBakimModal(maintId){
@@ -8242,6 +8359,8 @@ async function taskSetStatus(t, status){
   if(status==='tamamlandi' && rec.needsApproval){
     showNotification('task_done_'+rec.id, 'Onay bekliyor', (rec.title||'Görev')+' tamamlandı, onayınızı bekliyor.', 'info', rec.assignedBy);
   }
+  // GAP 6: Görev zinciri — onay gerektirmeyen fatura görevi tamamlandığında tahsilat görevi oluştur
+  if(status==='tamamlandi' && !rec.needsApproval) _triggerTaskChain(rec);
   showToast('✅ Durum güncellendi: '+(TASK_STATUS_META[status]?TASK_STATUS_META[status].l:status));
 }
 
@@ -8254,9 +8373,21 @@ async function taskApprove(t){
   await personelSaveDoc('tasks', rec);
   showNotification('task_ok_'+rec.id, '✅ Görev onaylandı', (rec.title||'Görev')+' onaylandı.', 'win', rec.assignedTo);
   playBeep('win');
+  // GAP 6: Onaylanan görev de zincir tetikler
+  _triggerTaskChain(rec);
   showToast('✅ Görev onaylandı.');
 }
 
+function _triggerTaskChain(rec){
+  if(!rec || !rec.title) return;
+  TASK_CHAIN_RULES.forEach(rule=>{
+    if(rec.title.indexOf('Fatura')>=0 && rule.trigger==='fatura'){
+      const n = rule.next;
+      const lbl = rec.linkLabel || '';
+      autoCreateTask({ dedupeKey:'chain_'+rule.trigger+'_'+rec.id, title:n.prefix+' '+n.title+' — '+lbl, dept:n.dept, context:rec.context, linkType:rec.linkType, linkId:rec.linkId, linkLabel:lbl, dueOffset:n.dueOffset, priority:n.priority });
+    }
+  });
+}
 async function taskRevise(t){
   const note = prompt('Revizyon nedeni (zorunlu — neyin düzeltileceğini yazın):');
   if(!note || !note.trim()){ showToast('⚠ Revizyon için açıklama zorunlu.','#dc2626'); return; }
@@ -9623,6 +9754,74 @@ function checkAllNotifications() {
     if(diff<0 && now>=540 && now<=544) {
       showNotification('maint_over_'+m.id+'_'+today(),'🚨 Bakım Vadesi Geçti!',(m.jobName||'Bakım')+' · '+cn+' · '+Math.abs(diff)+' gün geçti','urgent',tgt);
       showNotification('maint_over_adm_'+m.id+'_'+today(),'🚨 Bakım Vadesi Geçti',(m.jobName||'Bakım')+' · '+cn,'urgent','admin');
+    }
+    // GAP 1: Bakım sözleşmesi yenileme — bitimine 60 gün kala görev, 30 gün kala bildirim
+    if(m.mtEndDate){
+      const endDiff = _diffDays(_toISO(m.mtEndDate));
+      if(endDiff===60 && now>=540 && now<=544){
+        autoCreateTask({ dedupeKey:'sozlesme_yenile_'+m.id, title:'\u{1F504} Bakım sözleşmesi yenileme teklifi hazırla — '+(cn||'')+' '+(m.jobName||''), dept:'teknik', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'', dueOffset:25, priority:'orta' });
+      }
+      if(endDiff===30 && now>=540 && now<=544){
+        showNotification('maint_renew_'+m.id,'📋 Sözleşme 30 Gün Sonra Bitiyor',(m.jobName||'Bakım')+' · '+cn+' · '+_toTR(m.mtEndDate),'warning','admin');
+        showNotification('maint_renew_ts_'+m.id,'📋 Sözleşme 30 Gün Sonra Bitiyor',(m.jobName||'Bakım')+' · '+cn,'warning',tgt);
+      }
+    }
+  });
+
+  // ── GAP 4: GARANTİ BİTİMİ → BAKIM TEKLİFİ ──────────
+  (state.opportunities||[]).forEach(o=>{
+    if(!o.warrantyEndDate || !o.execClosedAt) return;
+    const wDiff = _diffDays(_toISO(o.warrantyEndDate));
+    const cn = _custName(o.customerId);
+    if(wDiff===60 && now>=540 && now<=544){
+      const assignee = o.serviceContact || o.assignedTo || '';
+      autoCreateTask({ dedupeKey:'garanti_bitis_'+o.id, title:'\u{1F6E1}\u{FE0F} Bakım teklifi hazırlanmalı — '+(cn||'')+' garanti bitiyor', dept:'teknik', assignedTo:assignee||undefined, context:'proje', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', dueOffset:30, priority:'orta' });
+    }
+    if(wDiff===30 && now>=540 && now<=544){
+      showNotification('warranty_end_'+o.id,'🛡️ Garanti 30 Gün Sonra Bitiyor',(o.title||'Proje')+' · '+cn+' · '+_toTR(o.warrantyEndDate),'warning','admin');
+    }
+  });
+
+  // ── GAP 9: FATURA VADESİ GEÇMİŞ — Pazartesi 09:00 ──
+  if(new Date().getDay()===1 && now>=540 && now<=544){
+    (state.tasks||[]).map(normTask).filter(t=>t.title && t.title.indexOf('Tahsilat')>=0 && !taskIsClosed(t) && t.dueDate && String(t.dueDate).slice(0,10)<todayStr).forEach(t=>{
+      const overDays = Math.round((_toDate(todayStr) - _toDate(t.dueDate))/86400000);
+      showNotification('overdue_inv_'+t.id+'_'+todayStr,'\u{1F6A8} Tahsilat Vadesi Geçti','"'+(t.linkLabel||t.title)+'" — '+overDays+' gün gecikme','urgent',t.assignedTo);
+      showNotification('overdue_inv_adm_'+t.id+'_'+todayStr,'\u{1F6A8} Tahsilat Gecikme',(t.linkLabel||t.title)+' · '+overDays+' gün','urgent','admin');
+    });
+  }
+
+  // ── GAP 11: VERGİ TAKVİMİ GÖREV + BİLDİRİM ─────────
+  const _today = new Date();
+  const _dom = _today.getDate();
+  const _mon = _today.getMonth();
+  const _yr  = _today.getFullYear();
+  const _lastDay = new Date(_yr, _mon+1, 0).getDate();
+  TAX_CALENDAR.forEach(tx=>{
+    if(tx.quarterly){
+      const qEnds = [[2,31],[5,30],[8,30],[11,31]];
+      qEnds.forEach(([qm,qd],qi)=>{
+        const qEnd = new Date(_yr, qm, qd);
+        const crDate = new Date(qEnd.getTime() + tx.createOffset*86400000);
+        const wrDate = new Date(qEnd.getTime() + tx.warnOffset*86400000);
+        const dlDate = new Date(qEnd.getTime() + tx.deadlineOffset*86400000);
+        if(_today.getMonth()===crDate.getMonth() && _dom===crDate.getDate() && now>=540 && now<=544){
+          const dlISO = _ymd(dlDate);
+          autoCreateTask({ dedupeKey:'tax_'+tx.kod+'_'+_yr+'_Q'+(qi+1), title:'\u{1F4CB} '+tx.label+' — Q'+(qi+1)+' '+_yr, dept:'muhasebe', context:'sirket', dueDate:dlISO, priority:'yuksek' });
+        }
+        if(_today.getMonth()===wrDate.getMonth() && _dom===wrDate.getDate() && now>=540 && now<=544){
+          showNotification('tax_warn_'+tx.kod+'_'+_yr+'_Q'+(qi+1),'\u{26A0}\u{FE0F} '+tx.label+' Son 2 Gün','Q'+(qi+1)+' '+_yr+' beyannamesi için son '+tx.deadlineOffset+' gün','urgent','admin');
+        }
+      });
+    } else {
+      const dl = tx.deadline===-1 ? _lastDay : tx.deadline;
+      if(_dom===tx.createDay && now>=540 && now<=544){
+        const dlISO = _yr+'-'+String(_mon+1).padStart(2,'0')+'-'+String(dl).padStart(2,'0');
+        autoCreateTask({ dedupeKey:'tax_'+tx.kod+'_'+_yr+'_'+String(_mon+1).padStart(2,'0'), title:'\u{1F4CB} '+tx.label+' — '+String(_mon+1).padStart(2,'0')+'/'+_yr, dept:'muhasebe', context:'sirket', dueDate:dlISO, priority:'yuksek' });
+      }
+      if(_dom===tx.warnDay && now>=540 && now<=544){
+        showNotification('tax_warn_'+tx.kod+'_'+_yr+'_'+(_mon+1),'\u{26A0}\u{FE0F} '+tx.label+' Son 2 Gün',String(_mon+1).padStart(2,'0')+'/'+_yr+' beyannamesi için son gün '+dl+' — acil!','urgent','admin');
+      }
     }
   });
 }

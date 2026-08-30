@@ -84,7 +84,7 @@ git push
 - `customers`, `suppliers`, `opportunities`, `proposals`
 - `services`, `serviceOpps`, `maintenances`
 - `visits`, `appointments`, `users`
-- `settings/config` (Groq API key)
+- `settings/config` (Gemini API key)
 - `settings/targets` (yıllık hedefler)
 
 ## EmailJS Ayarları
