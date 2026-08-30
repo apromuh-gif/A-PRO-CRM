@@ -38,13 +38,36 @@ service cloud.firestore {
     match /suppliers/{id}     { allow read, write: if signedIn(); }
     match /opportunities/{id} { allow read, write: if signedIn(); }
     match /proposals/{id}     { allow read, write: if signedIn(); }
-    match /services/{id}      { allow read, write: if signedIn(); }
-    match /serviceOpps/{id}   { allow read, write: if signedIn(); }
+    // Servis/fırsat silme: yalnız admin (imzalı belge bağlı olabilir).
+    match /services/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if isAdmin();
+    }
+    match /serviceOpps/{id} {
+      allow read: if signedIn();
+      allow create, update: if signedIn();
+      allow delete: if isAdmin();
+    }
     match /maintenances/{id}  { allow read, write: if signedIn(); }
     match /visits/{id}        { allow read, write: if signedIn(); }
     match /appointments/{id}  { allow read, write: if signedIn(); }
-    match /checklists/{id}    { allow read, write: if signedIn(); }
-    match /serviceForms/{id}  { allow read, write: if signedIn(); }
+    // İmzalı (status=='tamam') checklist/servis formu yasal delildir.
+    // Silme: yalnız admin. Güncelleme: tamam olan belge değiştirilemez (admin hariç).
+    match /checklists/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn()
+        && (resource.data.status != 'tamam' || isAdmin());
+      allow delete: if isAdmin();
+    }
+    match /serviceForms/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn()
+        && (resource.data.status != 'tamam' || isAdmin());
+      allow delete: if isAdmin();
+    }
 
     // --- Personel modülü (Görev / Performans / Prim) ---
     // Görevler & değerlendirmeler: oturum açmış kullanıcı okur/yazar
