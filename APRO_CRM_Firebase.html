@@ -221,7 +221,9 @@ const DEVIR_REASONS = [
 const eur = v => new Intl.NumberFormat("tr-TR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(v||0);
 // XSS koruması: kullanıcı verisi innerHTML ile yazdırılan rapor/print şablonlarına gömülmeden önce kaçışlanır.
 const escapeHtml = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const today = () => new Date().toISOString().slice(0,10);
+// YEREL tarih (YYYY-MM-DD). toISOString() UTC verir; TR'de 00:00-03:00 arası bir gün geri
+// döndüğü için createdAt/completedAt/mtLastDone ve prim defteri tarihleri kayardı.
+const today = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 const G="#e8eef7",G2="#ffffff",G3="#d0daea",G4="#b8c8de",T1="#0f1f35",T2="#1e3a5f",T3="#4a6080",T4="#7a90aa";
 const NAVY="#1e3a5f",NAVY2="#264875",ACC="#2563eb";
 
@@ -315,6 +317,41 @@ async function approveWonQuotationsBulk() {
   alert('✅ Tamamlandı. Onaylanan: ' + ok + (fail ? ', başarısız: ' + fail : ''));
 }
 window.approveWonQuotationsBulk = approveWonQuotationsBulk;
+
+// Tek seferlik (K2 geri-doldurma): wonAt/closedAt damgası olmayan ESKİ kapanmış fırsatlara
+// tahmini kapanış tarihi yazar. Kaynak önceliği: _editedAt (son düzenleme, gerçeğe en yakın)
+// → dueDate → createdAt. Yeni kayıtlar saveOpp içinde zaten damgalanır; bu yalnız eskiler içindir.
+async function backfillOppCloseDates() {
+  const parseEdited = s => {                       // "30.08.2026 14:23:11" → "2026-08-30"
+    const m = String(s||'').match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+    return m ? (m[3]+'-'+m[2]+'-'+m[1]) : '';
+  };
+  const targets = (state.opportunities||[]).filter(o=>{
+    if(o.stage==='KAZANILDI') return !o.wonAt;
+    if(_LOST_STAGES.indexOf(o.stage)>=0) return !o.closedAt;
+    return false;
+  }).map(o=>{
+    const guess = parseEdited(o._editedAt) || _toISO(o.dueDate||'') || o.createdAt || today();
+    const src   = parseEdited(o._editedAt) ? 'son düzenleme' : (o.dueDate ? 'sipariş tarihi' : 'oluşturma');
+    return { o, guess, src };
+  });
+  if(!targets.length){ alert('Damgasız kapanmış fırsat yok — tüm kayıtlarda wonAt/closedAt mevcut.'); return; }
+  const lines = targets.slice(0,25).map(t=>'• '+(t.o.title||t.o.id)+'  →  '+_toTR(t.guess)+'  ('+t.src+')').join('\n');
+  if(!confirm(targets.length+' fırsata tahmini kapanış tarihi yazılacak.\n\nBu tarih prim ve yıllık hedef hesabında kullanılır — yanlış olanları sonradan fırsat kartından düzeltebilirsiniz.\n\n'+lines+(targets.length>25?'\n… ve '+(targets.length-25)+' kayıt daha':'')+'\n\nDevam edilsin mi?')) return;
+  let ok=0, fail=0;
+  for(const t of targets){
+    try{
+      const patch = t.o.stage==='KAZANILDI' ? {wonAt:t.guess} : {closedAt:t.guess};
+      const upd = {...t.o, ...patch};
+      await saveDoc('opportunities', t.o.id, upd);
+      setState({opportunities:(state.opportunities||[]).map(x=>x.id===t.o.id?upd:x)});
+      ok++;
+    }catch(e){ fail++; }
+  }
+  alert('✅ Tamamlandı. '+ok+' fırsat damgalandı'+(fail?', '+fail+' başarısız':'')+'.');
+  render();
+}
+window.backfillOppCloseDates = backfillOppCloseDates;
 
 // CRM kullanıcısı için teklif programında oturum açar, session token döndürür.
 async function getCrmSessionToken() {
@@ -756,9 +793,16 @@ async function loadCollection(name) {
     return snap.docs.map(d=>({...d.data(), id:d.id}));
   } catch(e) {
     try {
+      // orderBy başarısız olabilir (createdAt alanı olmayan eski kayıtlar) — sırasız tekrar dene.
       const snap = await db.collection(name).get();
       return snap.docs.map(d=>({...d.data(), id:d.id}));
-    } catch(e2) { return []; }
+    } catch(e2) {
+      // O10: eskiden burada sessizce [] dönülüyordu. İzin/ağ hatası "veri yok" gibi görünüyor,
+      // kullanıcı mükerrer kayıt oluşturabiliyordu. Artık görünür uyarı verilir.
+      console.error('[loadCollection] '+name+' okunamadı:', e2);
+      try { showToast('⚠️ "'+name+'" verisi yüklenemedi — liste eksik görünebilir, sayfayı yenileyin.','#dc2626'); } catch(_){}
+      return [];
+    }
   }
 }
 
@@ -836,7 +880,24 @@ function servExecStage(s){ return (s && typeof SERVICE_STAGES!=='undefined' && S
 function servIsActive(s){ return !!(s && s.execActive===true && !s.execClosedAt); }
 function servIsAwaiting(s){ return !!(s && s.execActive!==true && (s.status==='Onaylandı' || s.status==='Randevu')); }
 function servIsClosed(s){ return !!(s && s.execActive===true && s.execClosedAt); }
-function servIsOverdue(s){ return !!(s && s.execTargetDate && _toDate(s.execTargetDate) < _toDate(today())); }
+// Arızanın sorumlusu: servis ilgilisi (fiilen işi yapan), yoksa hazırlayan.
+function servOwner(s){ return (s && (s.serviceContact || s.preparedBy)) || ''; }
+// Aciliyete göre varsayılan SLA süresi (gün) — execTargetDate elle girilmemişse kullanılır.
+const SERV_SLA_DAYS = { acil:1, normal:3, dusuk:7 };
+// Arızanın çözüm vadesi: elle girilen hedef tarih varsa o; yoksa icra başlangıcı + aciliyet SLA'sı.
+function servSlaDue(s){
+  if(!s) return '';
+  if(s.execTargetDate) return _toISO(s.execTargetDate)||'';
+  const start = s.execStartedAt || s.createdAt;
+  if(!start) return '';
+  return _addDay(start, SERV_SLA_DAYS[s.execUrgency||'normal'] || SERV_SLA_DAYS.normal);
+}
+// Açık ve vadesi geçmiş mi? (UI kırmızı vurgusu ve cozum_suresi/acik_servis kriterleri AYNI kuralı kullanır.)
+function servIsOverdue(s){
+  if(!s || s.execClosedAt) return false;
+  const due = servSlaDue(s);
+  return !!due && _toDate(due) < _toDate(today());
+}
 // "Kapalı" (iş bitti) sayılan durumlar: onaylandi her zaman; tamamlandi yalnız onay gerekmiyorsa.
 function taskIsClosed(t){
   const n = normTask(t)||{};
@@ -1055,7 +1116,11 @@ async function deleteDoc(collection, id) {
 function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
 function stamp() {
-  return { _editedBy: state.currentUser?.displayName||'', _editedAt: new Date().toLocaleString('tr-TR') };
+  // updatedAt (ISO zaman damgası): "son 2 dk içinde değişti mi" bildirimleri ve
+  // "N gündür güncellenmemiş" ölçümü bunu okur. Eskiden hiç yazılmadığı için
+  // 4 anlık bildirim hiç tetiklenmiyor, bekleme süresi createdAt'tan ölçülüyordu.
+  // DİKKAT: prim/hedef atfı bu alanı KULLANMAZ (bkz. _pOppDate → wonAt/closedAt).
+  return { _editedBy: state.currentUser?.displayName||'', _editedAt: new Date().toLocaleString('tr-TR'), updatedAt: new Date().toISOString() };
 }
 
 // Otomatik Teklif Programı senkronunda "Son Düzenleyen" damgası.
@@ -1303,13 +1368,15 @@ function renderLogin() {
 // VERİ YÜKLEME
 // ═══════════════════════════════════════════════════════
 async function loadAllData() {
-  const [customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim, checklists, serviceForms] = await Promise.all([
+  // Ö6: 'prim' koleksiyonu okumadan çıkarıldı — state.prim hiçbir yerde kullanılmıyordu
+  // (gerçek prim defteri settings/primLedger'da tutulur).
+  const [customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, checklists, serviceForms] = await Promise.all([
     loadCollection('customers'), loadCollection('opportunities'),
     loadCollection('proposals'), loadCollection('services'), loadCollection('maintenances'),
     loadCollection('suppliers'), loadCollection('serviceOpps'), loadCollection('visits'), loadCollection('appointments'),
-    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('prim'), loadCollection('checklists'), loadCollection('serviceForms')
+    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('checklists'), loadCollection('serviceForms')
   ]);
-  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, prim, checklists, serviceForms});
+  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, checklists, serviceForms});
   if(Array.isArray(state.tasks)) setState({ tasks: state.tasks.map(normTask) });
 }
 
@@ -1418,7 +1485,10 @@ async function approveWonQuotation(opp) {
 async function saveOpp(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
+  // K2: kazanma/kayıp tarihini AŞAMANIN DEĞİŞTİĞİ AN damgala. Prim ve yıllık hedef atfı
+  // (_pOppDate) artık "Ön Gör. Sipariş Tarihi"ne değil gerçek kapanış tarihine bakıyor.
+  const prevOpp = isEdit ? (state.opportunities||[]).find(o=>o.id===id) : null;
+  const data = {...form, id, ...stamp(), ..._oppCloseStamp(form, prevOpp), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
   await saveDoc('opportunities', id, data);
   const list = isEdit ? state.opportunities.map(o=>o.id===id?data:o) : [...state.opportunities, data];
   setState({opportunities:list, modal:null, saving:false});
@@ -1477,15 +1547,6 @@ async function saveMaint(form, isEdit) {
   setState({modal:null, saving:false});
   showToast('✅ Periyodik Bakım kaydedildi!');
 }
-async function saveSupplier(form, isEdit) {
-  setState({saving:true});
-  const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today()};
-  await saveDoc('suppliers', id, data);
-  const list = isEdit ? state.suppliers.map(s=>s.id===id?data:s) : [...state.suppliers, data];
-  setState({suppliers:list, modal:null, saving:false});
-  showToast('✅ Tedarikçi kaydedildi!');
-}
 
 async function delItem(col, id) {
   if(col==='maintenances' || col==='services'){
@@ -1519,6 +1580,12 @@ async function delItem(col, id) {
   else if(col==='proposals') setState({proposals:state.proposals.filter(x=>x.id!==id)});
   else if(col==='services') setState({services:state.services.filter(x=>x.id!==id)});
   else if(col==='maintenances') setState({maintenances:state.maintenances.filter(x=>x.id!==id)});
+  // Y6: bu dallar eksikti — kayıt Firestore'dan siliniyor ama ekranda kalmaya devam ediyordu.
+  else if(col==='suppliers') setState({suppliers:(state.suppliers||[]).filter(x=>x.id!==id)});
+  else if(col==='serviceOpps') setState({serviceOpps:(state.serviceOpps||[]).filter(x=>x.id!==id)});
+  else if(col==='visits') setState({visits:(state.visits||[]).filter(x=>x.id!==id)});
+  else if(col==='appointments') setState({appointments:(state.appointments||[]).filter(x=>x.id!==id)});
+  else setState({[col]:(state[col]||[]).filter(x=>x.id!==id)});   // güvenlik ağı: yeni koleksiyonlar
   showToast('🗑 Silindi.');
 }
 
@@ -2209,7 +2276,11 @@ async function maintAddManualHistory(m, f){
   }) : s) : systems;
 
   const me = (state.currentUser && state.currentUser.displayName) || '';
-  const hist = [...maintHistory(m), {at:iso, by:me, note:note||'', systems:label, occurrence: occurrence||null}];
+  // O4: dueAt (planlanan vade) + completedOn (fiili tarih) yazılır. Eskiden bu alanlar boştu ve
+  // periyodik_bakim kriteri (Teknik %20) geri dönük kayıtları DAİMA "zamanında" sayıyordu.
+  // plannedDate yoksa (programsız kayıt) dueAt=iso → nötr, yani zamanında sayılır.
+  const hist = [...maintHistory(m), {at:iso, dueAt: plannedDate||iso, completedOn: iso,
+                                     by:me, note:note||'', systems:label, occurrence: occurrence||null}];
   const data = {...m, mtSystems, mtHistory:hist, mtNextDue: sys ? mtRecordNextDue(mtSystems) : m.mtNextDue, ...stamp()};
   await persistMaint(data);
   setState({modal:null});
@@ -4576,200 +4647,7 @@ function renderDashboard() {
 // ═══════════════════════════════════════════════════════
 const SUPPLIER_TYPES = ['Sistem Tedarikçisi','Malzeme Tedarikçisi','Kaynakçı Ustası','Mekanik Boru Ustası','Formen','Mekanik Montaj Ekibi','Yangın Dolabı Tedarikçisi','Hidrant Tedarikçisi','Yangın Pompası Tedarikçisi','Modüler Su Deposu Tedarikçisi','HDPE Boru Tedarikçisi','Metal Boru Tedarikçisi','Sigorta Firması','Nakliye Firması','Araç Tamir ve Servis Firması','Kırtasiye & Ozalit Firması'];
 
-function buildSupplierModal(existing=null) {
-  const isEdit = !!existing;
-  const f = existing ? {...existing} : {
-    id:'', name:'', type:'', city:'', phone:'', email:'', web:'', contacts:[], notes:''
-  };
-  if(!f.contacts) f.contacts = [];
 
-  const container = h('div',{});
-
-  function rerender() {
-    container.innerHTML = '';
-
-    // Firma adı
-    container.appendChild(h('div',{style:{marginBottom:'14px'}},
-      h('label',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',display:'block',marginBottom:'6px'}},'🏢 Firma Adı *'),
-      h('input',{type:'text',placeholder:'Tedarikçi firma adı',value:f.name||'',
-        style:{width:'100%',padding:'10px 13px',border:'1.5px solid #b0c8e0',borderRadius:'9px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none'},
-        onInput:e=>{f.name=e.target.value;}})
-    ));
-
-    // Tedarikçi türü
-    const typeSelect = h('select',{
-      style:{width:'100%',padding:'10px 13px',border:'1.5px solid #b0c8e0',borderRadius:'9px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none',background:'#fff'},
-      onChange:e=>{f.type=e.target.value;}
-    },
-      h('option',{value:''},'— Tür Seçin —'),
-      ...SUPPLIER_TYPES.map(t=>{ const o=h('option',{value:t},t); if(f.type===t) o.selected=true; return o; })
-    );
-    container.appendChild(h('div',{style:{marginBottom:'14px'}},
-      h('label',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',display:'block',marginBottom:'6px'}},'📦 Tedarikçi Türü *'),
-      typeSelect
-    ));
-
-    // Şehir + Telefon
-    container.appendChild(h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'14px'}},
-      h('div',{},
-        h('label',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',display:'block',marginBottom:'6px'}},'📍 Şehir'),
-        h('input',{type:'text',placeholder:'İstanbul',value:f.city||'',
-          style:{width:'100%',padding:'10px 13px',border:'1.5px solid #b0c8e0',borderRadius:'9px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none'},
-          onInput:e=>{f.city=e.target.value;}})
-      ),
-      h('div',{},
-        h('label',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',display:'block',marginBottom:'6px'}},'📞 İletişim'),
-        h('input',{type:'text',placeholder:'0212 000 00 00',value:f.phone||'',
-          style:{width:'100%',padding:'10px 13px',border:'1.5px solid #b0c8e0',borderRadius:'9px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none'},
-          onInput:e=>{f.phone=e.target.value;}})
-      )
-    ));
-
-    // E-posta + Web
-    container.appendChild(h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'14px'}},
-      h('div',{},
-        h('label',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',display:'block',marginBottom:'6px'}},'✉️ E-posta'),
-        h('input',{type:'email',placeholder:'info@firma.com',value:f.email||'',
-          style:{width:'100%',padding:'10px 13px',border:'1.5px solid #b0c8e0',borderRadius:'9px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none'},
-          onInput:e=>{f.email=e.target.value;}})
-      ),
-      h('div',{},
-        h('label',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',display:'block',marginBottom:'6px'}},'🌐 Web'),
-        h('input',{type:'text',placeholder:'www.firma.com',value:f.web||'',
-          style:{width:'100%',padding:'10px 13px',border:'1.5px solid #b0c8e0',borderRadius:'9px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none'},
-          onInput:e=>{f.web=e.target.value;}})
-      )
-    ));
-
-    // Kişiler
-    container.appendChild(h('div',{style:{marginBottom:'14px'}},
-      h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}},
-        h('label',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a'}},'👥 Kişiler'),
-        btn('+ Kişi Ekle',()=>{f.contacts.push({name:'',title:'',phone:''});rerender();},'#2563eb','#fff','7px 14px',{fontSize:'12px',borderRadius:'8px'})
-      ),
-      ...f.contacts.map((ct,ci)=>h('div',{style:{display:'grid',gridTemplateColumns:'2fr 2fr 2fr auto',gap:'8px',marginBottom:'8px',alignItems:'center'}},
-        h('input',{type:'text',placeholder:'Ad Soyad',value:ct.name||'',
-          style:{padding:'8px 10px',border:'1px solid #b0c8e0',borderRadius:'8px',fontSize:'12px',fontFamily:"'Inter',sans-serif",outline:'none'},
-          onInput:e=>{f.contacts[ci].name=e.target.value;}}),
-        h('input',{type:'text',placeholder:'Ünvan',value:ct.title||'',
-          style:{padding:'8px 10px',border:'1px solid #b0c8e0',borderRadius:'8px',fontSize:'12px',fontFamily:"'Inter',sans-serif",outline:'none'},
-          onInput:e=>{f.contacts[ci].title=e.target.value;}}),
-        h('input',{type:'text',placeholder:'Telefon',value:ct.phone||'',
-          style:{padding:'8px 10px',border:'1px solid #b0c8e0',borderRadius:'8px',fontSize:'12px',fontFamily:"'Inter',sans-serif",outline:'none'},
-          onInput:e=>{f.contacts[ci].phone=e.target.value;}}),
-        h('button',{
-          style:{padding:'8px 10px',background:'#fee2e2',color:'#dc2626',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'14px',fontWeight:'700'},
-          onClick:()=>{f.contacts.splice(ci,1);rerender();}
-        },'✕')
-      ))
-    ));
-
-    // Notlar
-    container.appendChild(h('div',{style:{marginBottom:'16px'}},
-      h('label',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',display:'block',marginBottom:'6px'}},'📝 Notlar'),
-      h('textarea',{placeholder:'Tedarikçi hakkında notlar...',rows:3,
-        style:{width:'100%',padding:'10px 13px',border:'1.5px solid #b0c8e0',borderRadius:'9px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none',resize:'vertical'},
-        onInput:e=>{f.notes=e.target.value;}},f.notes||'')
-    ));
-
-    // Butonlar
-    container.appendChild(h('div',{style:{display:'flex',gap:'10px'}},
-      btn(isEdit?'💾 Güncelle':'✅ Kaydet',async()=>{
-        if(!f.name.trim()){showToast('❌ Firma adı zorunlu','#dc2626');return;}
-        if(!f.type){showToast('❌ Tedarikçi türü seçin','#dc2626');return;}
-        await saveSupplier(f,isEdit);
-      },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','11px 20px',{flex:'1',fontSize:'14px',fontWeight:'700',borderRadius:'10px'}),
-      ...(isEdit?[btn('🗑 Sil',async()=>{
-        if(!confirm('Bu tedarikçi silinsin mi?')) return;
-        await delItem('suppliers',f.id);
-        setState({suppliers:state.suppliers.filter(s=>s.id!==f.id),modal:null});
-        showToast('Tedarikçi silindi','#dc2626');
-      },'#fee2e2','#dc2626','11px 20px',{fontSize:'14px',fontWeight:'700',borderRadius:'10px'})]:[] ),
-      btn('İptal',()=>setState({modal:null}),'#f1f5f9','#4a6080','11px 20px',{fontSize:'14px',border:'1px solid #b0c8e0',borderRadius:'10px'})
-    ));
-  }
-
-  rerender();
-  return modal('🏭 '+(isEdit?'Tedarikçi Düzenle':'Yeni Tedarikçi'), container, ()=>setState({modal:null}), '640px');
-}
-
-function renderSuppliers() {
-  const S = state.suppliers || [];
-  if(!state.supFilter) state.supFilter = {name:'', type:''};
-  const sf = state.supFilter;
-
-  const filtered = S.filter(s=>
-    (!sf.name || (s.name||'').toLowerCase().includes(sf.name.toLowerCase())) &&
-    (!sf.type || s.type === sf.type)
-  );
-
-  const typeColors = {
-    'Sistem Tedarikçisi':'#2563eb','Malzeme Tedarikçisi':'#16a34a',
-    'Kaynakçı Ustası':'#d97706','Mekanik Boru Ustası':'#7c3aed',
-    'Formen':'#dc2626','Mekanik Montaj Ekibi':'#0891b2',
-    'Yangın Dolabı Tedarikçisi':'#be185d','Hidrant Tedarikçisi':'#9333ea',
-    'Yangın Pompası Tedarikçisi':'#b45309','Modüler Su Deposu Tedarikçisi':'#047857'
-  };
-
-  return h('div',{style:{animation:'fu .3s ease'}},
-    // Başlık + Ekle butonu
-    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'20px'}},
-      h('div',{},
-        h('h2',{style:{fontSize:'20px',fontWeight:'800',color:'#1e2d4a',margin:'0'}},'🏭 Tedarikçiler'),
-        h('div',{style:{fontSize:'13px',color:'#4a6080',marginTop:'4px'}},S.length+' tedarikçi kayıtlı')
-      ),
-      btn('+ Yeni Tedarikçi',()=>setState({modal:{type:'supplier'}}),'linear-gradient(135deg,#7c3aed,#6d28d9)','#fff','10px 20px',{fontSize:'14px',fontWeight:'700',borderRadius:'10px'})
-    ),
-
-    // Filtreler
-    h('div',{style:{display:'flex',gap:'12px',marginBottom:'20px',flexWrap:'wrap'}},
-      h('input',{type:'text',placeholder:'🔍 Firma adına göre ara...',value:sf.name||'',
-        style:{flex:'1',minWidth:'200px',padding:'10px 14px',border:'1.5px solid #b0c8e0',borderRadius:'10px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none'},
-        onInput:e=>{state.supFilter.name=e.target.value;render();}}),
-      h('select',{
-        style:{padding:'10px 14px',border:'1.5px solid #b0c8e0',borderRadius:'10px',fontSize:'13px',fontFamily:"'Inter',sans-serif",outline:'none',background:'#fff',minWidth:'200px'},
-        onChange:e=>{state.supFilter.type=e.target.value;render();}
-      },
-        h('option',{value:''},'— Tüm Türler —'),
-        ...SUPPLIER_TYPES.map(t=>{ const o=h('option',{value:t},t); if(sf.type===t) o.selected=true; return o; })
-      ),
-      sf.name||sf.type ? btn('✕ Temizle',()=>{state.supFilter={name:'',type:''};render();},'#fee2e2','#dc2626','10px 14px',{fontSize:'13px',borderRadius:'10px'}) : h('span')
-    ),
-
-    // Liste
-    filtered.length === 0
-      ? h('div',{style:{textAlign:'center',padding:'60px 20px',color:'#4a6080',fontSize:'14px',background:'#f8fafc',borderRadius:'14px',border:'1px dashed #b0c8e0'}},
-          h('div',{style:{fontSize:'40px',marginBottom:'12px'}},'🏭'),
-          h('div',{style:{fontWeight:'700',marginBottom:'6px'}}, S.length===0 ? 'Henüz tedarikçi eklenmemiş' : 'Filtreyle eşleşen tedarikçi bulunamadı'),
-          S.length===0 ? btn('+ İlk Tedarikçiyi Ekle',()=>setState({modal:{type:'supplier'}}),'linear-gradient(135deg,#7c3aed,#6d28d9)','#fff','10px 20px',{fontSize:'14px',fontWeight:'700',borderRadius:'10px',marginTop:'12px'}) : h('span')
-        )
-      : h('div',{style:{display:'grid',gap:'12px'}},
-          ...filtered.map(s=>{
-            const color = typeColors[s.type] || '#4a6080';
-            return h('div',{
-              style:{background:'#fff',borderRadius:'14px',padding:'18px 20px',border:'1px solid #d0daea',boxShadow:'0 2px 8px rgba(30,45,74,.06)',cursor:'pointer',transition:'box-shadow .2s,border-color .2s'},
-              onClick:()=>setState({modal:{type:'supplier',data:s}})
-            },
-              h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',flexWrap:'wrap',gap:'10px'}},
-                h('div',{style:{flex:'1'}},
-                  h('div',{style:{display:'flex',alignItems:'center',gap:'10px',marginBottom:'6px'}},
-                    h('div',{style:{fontWeight:'800',fontSize:'16px',color:'#1e2d4a'}},s.name),
-                    h('span',{style:{background:color+'18',color,borderRadius:'20px',padding:'3px 12px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},s.type||'—')
-                  ),
-                  h('div',{style:{display:'flex',gap:'16px',flexWrap:'wrap',fontSize:'12px',color:'#4a6080'}},
-                    ...[s.city?h('span',{},'📍 '+s.city):null, s.phone?h('span',{},'📞 '+s.phone):null, s.email?h('span',{},'✉️ '+s.email):null, s.web?h('a',{href:s.web.startsWith('http')?s.web:'https://'+s.web,target:'_blank',style:{color:'#7c3aed',textDecoration:'none',fontSize:'12px'}},'🌐 '+s.web):null].filter(Boolean)
-                  )
-                ),
-                h('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'6px'}},
-                  s.contacts&&s.contacts.length ? h('span',{style:{fontSize:'12px',color:'#4a6080'}},'👥 '+s.contacts.length+' kişi') : null,
-                  h('span',{style:{fontSize:'11px',color:'#7a90aa'}},s.createdAt||'')
-                )
-              )
-            );
-          })
-        )
-  );
-}
 
 
 
@@ -5751,6 +5629,7 @@ async function clSave(c){
   if(!(c.custSign && c.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
   if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
   c.status = 'tamam';
+  c.completedAt = today();          // Y2: imza tarihi — tazelik kontrolü bunu okur, createdAt'ı değil
   await _clPersist(c, '✅ Checklist kaydedildi');
 }
 async function clSaveDraft(c){
@@ -5762,7 +5641,9 @@ async function clSaveDraft(c){
 function clLatestCompletedAt(linkType, linkId){
   var list = (state.checklists||[]).filter(function(x){ return x.linkType===linkType && x.linkId===linkId && x.status==='tamam'; });
   if(!list.length) return null;
-  return list.map(function(x){ return x.createdAt; }).sort().pop();
+  // Y2: İMZA tarihi (completedAt). Taslak olarak açılıp sonra imzalanan form createdAt'a göre
+  // "bayat" sayılıp bakım/proje kapatmayı bloke ediyordu. Eski kayıtlarda _editedAt'a düşer.
+  return list.map(function(x){ return x.completedAt || x._editedAt || x.createdAt; }).filter(Boolean).sort().pop();
 }
 // sinceISO verilirse (periyodik bakımda bir önceki ziyaretten SONRA) taze bir checklist
 // tamamlanmış olmalı — eski bir ziyaretin checklist'i bir sonraki ziyareti geçerli kılmaz.
@@ -5809,7 +5690,8 @@ function normServiceForm(sf){
 function sfLatestCompletedAt(linkType, linkId){
   var list = (state.serviceForms||[]).filter(function(x){ return x.linkType===linkType && x.linkId===linkId && x.status==='tamam'; });
   if(!list.length) return null;
-  return list.map(function(x){ return x.createdAt; }).sort().pop();
+  // Y2: İMZA tarihi (completedAt); eski kayıtlarda _editedAt'a düşer.
+  return list.map(function(x){ return x.completedAt || x._editedAt || x.createdAt; }).filter(Boolean).sort().pop();
 }
 function sfHasFreshCompleted(linkType, linkId, sinceISO){
   var latest = sfLatestCompletedAt(linkType, linkId);
@@ -5837,6 +5719,7 @@ async function sfSave(sf){
   if(!(sf.custSign && sf.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
   if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
   sf.status = 'tamam';
+  sf.completedAt = today();         // Y2: imza tarihi — tazelik kontrolü bunu okur, createdAt'ı değil
   await _sfPersist(sf, '✅ Servis Formu kaydedildi');
 }
 async function sfSaveDraft(sf){
@@ -6673,7 +6556,23 @@ function _pYtdInPeriod(s, period){
 }
 // Dönemin ay numarası (1-12) — yıllık hedefi orantılamak için (pace = yıllık × ay/12).
 function _monthNum(period){ return Number(String(period).slice(5,7))||0; }
-function _pOppDate(o){ return o.wonAt||o.closedAt||o.updatedAt||o.dueDate||o.createdAt; }
+// Fırsatın prim/hedef atfında kullanılacak KAPANIŞ tarihi.
+// wonAt/closedAt saveOpp içinde aşama KAZANILDI/kayıp'a geçtiği anda damgalanır (K2).
+// updatedAt KULLANILMAZ: her düzenlemede değişir, cironun ayını/yılını kaydırırdı.
+// Eski (damgasız) kayıtlar için Araçlar → "Kazanma Tarihlerini Doldur" ile geri-doldurma yapılır;
+// o zamana kadar dueDate/createdAt'a düşer — bu bir tahmindir, gerçek kapanış değildir.
+function _pOppDate(o){ return o.wonAt||o.closedAt||o.dueDate||o.createdAt; }
+// Kaybedilmiş sayılan aşamalar (closedAt damgası bunlarda basılır).
+const _LOST_STAGES = ['KAÇTI','NO GO','FIRSAT ÖLDÜ'];
+// Aşama değişimine göre wonAt/closedAt damgasını üretir. Aşama kazanç/kayıp dışına
+// çıkarsa damga TEMİZLENİR (yanlışlıkla KAZANILDI yapılıp geri alınan kayıt ciroda kalmasın).
+function _oppCloseStamp(form, prev){
+  const st = form.stage;
+  const now = today();
+  if(st==='KAZANILDI') return { wonAt: (prev && prev.stage==='KAZANILDI' && prev.wonAt) ? prev.wonAt : (form.wonAt||now), closedAt: null };
+  if(_LOST_STAGES.indexOf(st)>=0) return { wonAt: null, closedAt: (prev && _LOST_STAGES.indexOf(prev.stage)>=0 && prev.closedAt) ? prev.closedAt : (form.closedAt||now) };
+  return { wonAt: null, closedAt: null };
+}
 // ── Mali yıl (FY) atıf yardımcıları — prim/hedef yıl bazlı hesaplanır ──
 function _periodYear(period){ return Number(String(period).slice(0,4))||0; }
 function _quarterOfMonth(m){ return Math.floor(((Number(m)||1)-1)/3)+1; }   // 1..4
@@ -6692,12 +6591,6 @@ function _pOppFYMonth(o){
 function _pWonYtd(o, period){
   return _pOppFY(o)===_periodYear(period) && _pOppFYMonth(o)>0 && _pOppFYMonth(o)<=_monthNum(period);
 }
-function _pIsDone(status){ return ['tamam','Tamamlandı','Yapıldı','Onaylandı','Kapandı','Çözüldü'].includes(status); }
-function _pIsOverdue(rec){
-  const d = rec.dueDate; if(!d) return false;
-  if(_pIsDone(rec.status)) return false;
-  return String(d) < today();
-}
 function personelPeople(){
   return (state.users||[]).filter(u=>u.active!==false && u.department);
 }
@@ -6708,9 +6601,10 @@ function personelTaskStats(name, period, ytd){
     .filter(t=>recFY(t)===fy && t.assignedTo===name && (win(t.dueDate,period)||win(t.completedAt,period)));
   const total = ts.length;
   const done = ts.filter(t=>taskIsClosed(t)).length;
-  // Performans sebebiyle bu kişinin elinden alınmış görevler → negatif sinyal
+  // Performans sebebiyle bu kişinin elinden alınmış görevler → negatif sinyal.
+  // O2: devir TARİHİ de dönem penceresinde olmalı — Ocak'taki bir devir Ağustos oranını düşürmesin.
   const takenAway = (state.tasks||[]).map(normTask).filter(t=>recFY(t)===fy &&
-    (t.assignmentHistory||[]).some(h=>h.from===name && h.reason==='performans')).length;
+    (t.assignmentHistory||[]).some(h=>h.from===name && h.reason==='performans' && win(h.at,period))).length;
   const denom = total + takenAway;
   return { total, done, takenAway, ratio: denom? done/denom : 0 };
 }
@@ -6720,29 +6614,37 @@ function personelTaskPunctual(name, period, ytd){
   const fy = _periodYear(period);
   const ts = (state.tasks||[]).map(normTask)
     .filter(t=>recFY(t)===fy && t.assignedTo===name && (win(t.dueDate,period)||win(t.completedAt,period)));
-  if(!ts.length) return null;
-  const onTime = ts.filter(t=>{
-    if(!taskIsClosed(t)) return false;
+  // O1: payda yalnızca KAPANMIŞ görevler. Eskiden tüm görevler paydaydaydı; vadesi
+  // henüz gelmemiş, devam eden bir görev "geç teslim" sayılıp oranı haksız düşürüyordu.
+  // Vadesi GEÇMİŞ ama hâlâ açık görevler paydaya dahil edilir (gerçekten geç kalınmıştır).
+  const closed = ts.filter(t=>taskIsClosed(t));
+  const openOverdue = ts.filter(t=>!taskIsClosed(t) && t.dueDate && String(t.dueDate).slice(0,10) < today());
+  const denom = closed.length + openOverdue.length;
+  if(!denom) return null;
+  const onTime = closed.filter(t=>{
     if(!t.dueDate) return true;
     const doneD = String(t.completedAt||today()).slice(0,10);
     const dueD = String(t.dueDate).slice(0,10);
-    if(doneD!==dueD) return doneD < dueD ? true : doneD===dueD;
+    if(doneD !== dueD) return doneD < dueD;
     if(t.dueTime && t.completedAt && String(t.completedAt).length>10){
       return String(t.completedAt).slice(11,16) <= t.dueTime;
     }
     return true;
   }).length;
-  return onTime/ts.length;
+  return onTime/denom;
 }
 // Doğruluk = ilk seferde onaylanan / (onaylanan + revizyona düşen), yalnız onay gerektiren görevler.
 // Performans sebebiyle elinden alınanlar da payda tarafına eklenir (kalite düşürücü).
 function personelTaskDogruluk(name, period){
   const fy = _periodYear(period);
-  const ts = (state.tasks||[]).map(normTask).filter(t=>recFY(t)===fy && t.assignedTo===name && t.needsApproval);
+  // O2: dönem penceresi burada da uygulanır (eskiden tüm mali yıl taranıyordu).
+  const win = s=>_pYtdInPeriod(s,period);
+  const ts = (state.tasks||[]).map(normTask).filter(t=>recFY(t)===fy && t.assignedTo===name && t.needsApproval
+    && (win(t.dueDate)||win(t.completedAt)||win(t.createdAt)));
   const approvedClean = ts.filter(t=>t.status==='onaylandi' && (t.revisionCount||0)===0).length;
   const reviseCount = ts.reduce((a,t)=>a+(t.revisionCount||0),0);
   const takenAway = (state.tasks||[]).map(normTask).filter(t=>recFY(t)===fy &&
-    (t.assignmentHistory||[]).some(h=>h.from===name && h.reason==='performans')).length;
+    (t.assignmentHistory||[]).some(h=>h.from===name && h.reason==='performans' && win(h.at))).length;
   const denom = approvedClean + reviseCount + takenAway;
   if(denom===0) return null;
   return approvedClean/denom;
@@ -6757,7 +6659,8 @@ function personelAutoMetric(kod, name, period, dept){
   const mNum = _monthNum(period)||1;
   const T = targetsForYear(_periodYear(period));        // dönemin mali yılının hedefleri (FY-aware)
   const O=(state.opportunities||[]), P=(state.proposals||[]), M=(state.maintenances||[]);
-  const SO=(state.serviceOpps||[]), V=(state.visits||[]), A=(state.appointments||[]);
+  const V=(state.visits||[]), A=(state.appointments||[]);
+  const S=(state.services||[]);   // K4: arıza kayıtları (cozum_suresi / acik_servis buradan ölçülür)
   switch(kod){
     case 'sirket_hedef': {
       const annual = Number(T.company)||0;
@@ -6795,6 +6698,8 @@ function personelAutoMetric(kod, name, period, dept){
       const v = V.filter(x=>x.assignedTo===name&&ytd(x.date||x.visitDate||x.createdAt)).length;
       const a = A.filter(x=>x.assignedTo===name&&ytd(x.date||x.datetime||x.createdAt)).length;
       const no = O.filter(o=>o.assignedTo===name&&ytd(o.createdAt)).length;
+      // O3: hiç kayıt yoksa "%0 başarı" değil "veri yok" (null) — yeni personel haksız ceza almasın.
+      if(v+a+no===0) return null;
       return Math.min((v+a+no)/(20*mNum),1.5);
     }
     case 'hedefe_yonelim': {
@@ -6820,16 +6725,26 @@ function personelAutoMetric(kod, name, period, dept){
       }).length;
       return onTime/visits.length;
     }
+    // K4 — Bu iki kriter ARTIK arıza kayıtlarını (services) okuyor.
+    // Eskiden serviceOpps (T.Servis TEKLİF takip) okunuyordu; o koleksiyonda dueDate/status
+    // alanları hiç yok → acik_servis sabit %100, cozum_suresi sabit %0 üretiyordu.
     case 'acik_servis': {
-      const ss = SO.filter(s=>s.assignedTo===name&&ytd(s.dueDate||s.createdAt||s.date));
+      // YTD içinde icraya alınmış arızalar arasında ŞU AN açık ve vadesi geçmiş olanların payı.
+      const ss = S.filter(s=>servOwner(s)===name && s.execActive===true && ytd(s.execClosedAt||s.execStartedAt||s.createdAt));
       if(!ss.length) return null;
-      const over = ss.filter(s=>_pIsOverdue(s)).length;
+      const over = ss.filter(s=>servIsOverdue(s)).length;
       return Math.max(0, 1 - over/ss.length);
     }
     case 'cozum_suresi': {
-      const ss = SO.filter(s=>s.assignedTo===name&&ytd(s.dueDate||s.createdAt||s.date));
-      if(!ss.length) return null;
-      return ss.filter(s=>_pIsDone(s.status)).length/ss.length;
+      // SLA: KAPANMIŞ arızaların vadesinde (execTargetDate ya da aciliyet SLA'sı) kapatılma oranı.
+      // Henüz açık olan arızalar burada değil acik_servis'te ölçülür — çift ceza olmasın.
+      const cs = S.filter(s=>servOwner(s)===name && s.execClosedAt && ytd(s.execClosedAt));
+      if(!cs.length) return null;
+      const onTime = cs.filter(s=>{
+        const due = servSlaDue(s);
+        return !due || String(s.execClosedAt).slice(0,10) <= due;
+      }).length;
+      return onTime/cs.length;
     }
     case 'gorev_dogruluk':
       return personelTaskDogruluk(name, period);
@@ -6894,9 +6809,16 @@ function personelScore(person, period){
   const ev = personelEvalFor(person.displayName, period);
   const rows = cfg.criteria.map(c=>({ ...c, oran: personelCritOran(c, person.displayName, period, dept, ev) }));
   const avail = rows.filter(r=>r.oran!==null && r.oran!==undefined);
-  const wsum = avail.reduce((a,r)=>a+(Number(r.weight)||0),0) || 1;
-  const skor = avail.reduce((a,r)=>a+(r.weight/wsum)*r.oran, 0);
-  return { dept, cfg, ev, rows, avail, wsum, skor, managerScore: (ev&&ev.managerScore)||0 };
+  // K3 — AĞIRLIK YENİDEN DAĞITILMAZ. Her kriter yalnızca KENDİ tasarlanan ağırlığı kadar
+  // katkı verir; veri üretmeyen kriterin payı KAYBEDİLİR, diğerlerine dağıtılmaz.
+  // (Eski davranış weight/wsum ile 1.00'e normalize ediyor, eksik veriyi ödüle çeviriyordu.)
+  const totalWeight = cfg.criteria.reduce((a,c)=>a+(Number(c.weight)||0),0) || 1; // tasarlanan toplam (=1.00)
+  const coverage = avail.reduce((a,r)=>a+(Number(r.weight)||0),0);                // veri üreten ağırlık
+  const missing = rows.filter(r=>r.oran===null || r.oran===undefined);
+  const skor = avail.reduce((a,r)=>a+r.weight*r.oran, 0);                         // HAM ağırlık
+  // wsum geriye dönük uyum için korunur ama artık paydada KULLANILMAZ.
+  return { dept, cfg, ev, rows, avail, missing, totalWeight, coverage, wsum: totalWeight, skor,
+           managerScore: (ev&&ev.managerScore)||0 };
 }
 // ÇEYREKLİK PRİM MOTORU — yıllık hedefe göre kümülatif hak ediş, çeyreklik ödeme.
 //  • Geçiş kapısı (pass): PACE skoru (sc.skor) ≥ eşik → dönem sonunda hedefe gidişat yeterli mi?
@@ -6925,7 +6847,7 @@ function personelPrim(person, period){
   const breakdown = {};
   let primRatio = 0, overRatio = 0;
   sc.avail.forEach(r=>{
-    const wshare = r.weight/sc.wsum;
+    const wshare = r.weight;   // K3: ham ağırlık — eksik kriterin payı buraya dağıtılmaz
     let kazanim;
     if(GOAL_KODS.indexOf(r.kod)>=0){
       const ar = personelAnnualRatio(r.kod, name, period);
@@ -6987,25 +6909,8 @@ function personelCritNumbers(kod, name, period){
   return null;
 }
 // Bir dönemden (YYYY-MM) geriye doğru n ay listesi (trend grafiği için).
-function _prevPeriods(period, n){
-  const parts = String(period).split('-'); let y=Number(parts[0]), m=Number(parts[1]); const out=[];
-  for(let i=0;i<n;i++){ out.unshift(y+'-'+String(m).padStart(2,'0')); m--; if(m<1){ m=12; y--; } }
-  return out;
-}
 // Belirli bir ayda personelin sistemde aktivitesi (iş verisi) olup olmadığını döndürür.
 // Trend grafiğinde "veri yok" ile "%0 başarı" ayrımı için kullanılır.
-function _personelActivity(name, period){
-  const inM = s=>_pInPeriod(s,period);
-  const O=state.opportunities||[], P=state.proposals||[], T=state.tasks||[], V=state.visits||[], A=state.appointments||[];
-  const wonY = O.some(o=>o.assignedTo===name && o.stage==='KAZANILDI' && _pYtdInPeriod(_pOppDate(o),period));
-  const oppM = O.some(o=>o.assignedTo===name && inM(o.createdAt||o.updatedAt));
-  const propM = P.some(p=>p.preparedBy===name && inM(p.createdAt||p.sentDate||p.updatedAt));
-  const taskM = T.some(t=>t.assignedTo===name && (inM(t.dueDate)||inM(t.completedAt)||inM(t.createdAt)));
-  const visitM = V.some(x=>x.assignedTo===name && inM(x.date||x.visitDate||x.createdAt));
-  const apptM = A.some(x=>x.assignedTo===name && inM(x.date||x.datetime||x.createdAt));
-  const evalM = (state.evaluations||[]).some(e=>e.personName===name && e.period===period);
-  return wonY||oppM||propM||taskM||visitM||apptM||evalM;
-}
 // Tek personel performans raporu — yönetici-personel birebir görüşmesinde kullanılacak nitelikte çıktı.
 // ═══ PRİM BORDROSU — çeyreklik prim kırılımı, çıktı alınabilir temiz format ═══
 function printPrimBordro(person, period){
@@ -7017,7 +6922,7 @@ function printPrimBordro(person, period){
   const thrPct = Math.round((pr.cfg.threshold||0)*100);
 
   const critRows = (pr.avail||[]).map(r=>{
-    const wPct = Math.round((r.weight/pr.wsum)*100);
+    const wPct = Math.round(r.weight*100);   // K3: tasarlanan ham ağırlık
     const amt = pr.breakdown[r.kod]||0;
     return `<tr>
       <td>${escapeHtml(r.label)}</td>
@@ -7455,7 +7360,7 @@ const TASK_TEMPLATES = {
     { title:'Servis raporu & teslim',         dept:'teknik',   dueOffset:7,  priority:'orta'  },
   ],
 };
-function _offsetDay(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function _offsetDay(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Bir kayıt için şablon görevlerini öner (kullanıcı onayıyla oluşturur). ctx: 'proje'|'servis'.
 async function suggestTasksFor(ctx, linkType, linkId, linkLabel){
   const tpl = TASK_TEMPLATES[ctx]; if(!tpl) return;
@@ -7717,7 +7622,6 @@ function _addMonth(iso, n){ const dt=_toDate(iso); if(!dt) return ''; const d0=d
 function maintPeriod(m){ return (m && m.mtPeriod) || ''; }
 function maintPeriodDays(m){ return (m && Number(m.mtPeriodDays)) || 0; }
 function maintNextDue(m){ return (m && m.mtNextDue) || ''; }
-function maintLastDone(m){ return (m && m.mtLastDone) || ''; }
 function maintHistory(m){ return (m && Array.isArray(m.mtHistory)) ? m.mtHistory : []; }
 function maintIsTracked(m){ return !!(m && m.mtNextDue && (m.mtPeriod || maintHasSystems(m))); }
 // Tamamlama yönlendirici: çok-sistemli → ziyaret; eski tekli → bakım.
@@ -8109,39 +8013,6 @@ function buildMaintFormsModal(maintId){
 }
 // ================= /FAZ 3b =================
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
-async function personelAutoGenerateTasks(){
-  try{
-    const existing = new Set((state.tasks||[]).map(t=>t.id));
-    const people = personelPeople();
-    const deptOf = name => { const u=people.find(x=>x.displayName===name); return u?u.department:''; };
-    const toAdd = [];
-    const push = (id,title,name,due,linkedType,linkedId,desc) => {
-      if(existing.has(id) || !name) return;
-      existing.add(id);
-      toAdd.push({ id, title, desc:desc||'', assignedTo:name, department:deptOf(name), dueDate:due||'', status:'acik', completedAt:null, priority:'orta', linkedType, linkedId, autoGenerated:true, createdBy:'sistem', createdAt:today(), fiscalYear: activeFiscalYear() });
-    };
-    const offsetDay = n => { const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
-    const cutoff = offsetDay(-90), soon = offsetDay(30);
-    (state.opportunities||[]).forEach(o=>{
-      if(o.stage!=='KAZANILDI') return;
-      const dt = String(_pOppDate(o)||'').slice(0,10);
-      if(dt && dt<cutoff) return;
-      push('auto_won_'+o.id, 'Kazanılan iş süreci: '+(o.title||'Fırsat'), o.assignedTo, o.dueDate||today(), 'opportunity', o.id, 'Sözleşme / sipariş / teslim sürecini başlat.');
-    });
-    (state.maintenances||[]).forEach(m=>{
-      const due = String(m.dueDate||m.nextDate||'').slice(0,10);
-      if(!due || due>soon || _pIsDone(m.status)) return;
-      push('auto_maint_'+m.id, 'Periyodik bakım: '+(m.customer||m.customerName||m.title||'Müşteri'), m.assignedTo, due, 'maintenance', m.id, 'Planlı bakımı gerçekleştir ve raporla.');
-    });
-    (state.proposals||[]).forEach(p=>{
-      if(_pIsDone(p.status)) return;
-      push('auto_prop_'+p.id, 'Teklif hazırla/takip: '+(p.title||'Teklif'), p.assignedTo, p.dueDate||'', 'proposal', p.id, 'Teklifi hazırla veya takibini yap.');
-    });
-    if(!toAdd.length) return;
-    for(const t of toAdd){ await saveDoc('tasks', t.id, t); }
-    setState({ tasks: [...(state.tasks||[]), ...toAdd] });
-  }catch(e){ /* sessiz — otomatik görev üretimi ana CRM akışını etkilemez */ }
-}
 
 // Bugün biten / geciken açık görevler için günde bir kez bildirim (localStorage anti-spam).
 function taskDueReminders(){
@@ -8540,7 +8411,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
   const f = PMOD.taskFilter;
   const statusFilter = t => {
     if(f==='acik') return !taskIsClosed(t);
-    if(f==='geciken') return !taskIsClosed(t) && t.dueDate && String(t.dueDate)<=today();
+    if(f==='geciken') return !taskIsClosed(t) && t.dueDate && String(t.dueDate)<today();   // O7: <= idi, bugün bitenler de geciken görünüyordu
     if(f==='onay') return t.status==='tamamlandi' && t.needsApproval;
     if(f==='tamam') return taskIsClosed(t);
     return true;
@@ -8793,8 +8664,18 @@ function projListRow(o, isAdmin){
 }
 function renderProjeler(){
   const cu=state.currentUser; const isAdmin=!!(cu&&cu.isAdmin); const myName=cu&&cu.displayName;
-  let all=(state.opportunities||[]);
-  if(!isAdmin) all=all.filter(o=>o.assignedTo===myName);
+  // Y3: mali yıl merceği — diğer tüm ekranlar filterFY uyguluyordu, burada eksikti;
+  // Projeler tüm yılları karıştırıyor, ama görevleri Görevler sekmesinde yıla göre süzülüyordu.
+  let all=filterFY(state.opportunities, activeFiscalYear());
+  // Y4: admin olmayan görünürlüğü. Eskiden yalnız o.assignedTo (SATIŞ temsilcisi) idi;
+  // projede fiilen çalışan teknik/saha/muhasebe personeli projeyi hiç göremiyordu.
+  // Artık: satış temsilcisiysen VEYA projeye bağlı bir görevde atanan/atayan taraf isen görürsün.
+  if(!isAdmin){
+    const myProjIds = new Set((state.tasks||[]).map(normTask)
+      .filter(t=>t.linkType==='opportunity' && (t.assignedTo===myName || t.assignedBy===myName))
+      .map(t=>t.linkId));
+    all=all.filter(o=>o.assignedTo===myName || myProjIds.has(o.id));
+  }
   let awaiting=all.filter(projIsAwaiting);
   let active=projFilterMgr(all.filter(projIsActive), isAdmin);
   let closed=all.filter(projIsClosed);
@@ -8859,9 +8740,11 @@ function renderPersonelPerformans(period, isAdmin){
       const rec = ev ? { ...ev } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
       rec.managerScore = Number(v)||0;
       rec.updatedAt = today();
-      const sc2 = personelScore(u, period);
-      rec.totalScore = sc2 ? sc2.skor : 0;
       await personelSaveDoc('evaluations', rec);
+      // O8: totalScore YENİ puanla hesaplanmalı — personelScore state'i okur, bu yüzden
+      // kayıttan SONRA çağrılır. Eskiden önce çağrılıyor, alan bir düzenleme geride kalıyordu.
+      const sc2 = personelScore(u, period);
+      if(sc2 && sc2.skor !== rec.totalScore){ rec.totalScore = sc2.skor; await personelSaveDoc('evaluations', rec); }
       showToast('✅ Yönetici puanı kaydedildi.');
     }, {maxWidth:'200px'});
 
@@ -8918,7 +8801,7 @@ function renderPersonelPerformans(period, isAdmin){
           h('span',{style:{color: r.oran==null && !editable?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
           editable
             ? h('span',{style:{display:'flex',alignItems:'center',gap:'5px'}}, critInput(r), h('span',{style:{color:'#64748b',fontSize:'11px'}},'% · ağırlık '+Math.round(r.weight*100)+'%'))
-            : h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, r.oran==null?'veri yok':pct(r.oran)+' ('+Math.round((r.weight/sc.wsum)*100)+'%)')
+            : h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, r.oran==null?'veri yok':pct(r.oran)+' ('+Math.round(r.weight*100)+'%)')
         );
       })
     ) : h('span');
@@ -8935,9 +8818,15 @@ function renderPersonelPerformans(period, isAdmin){
           h('div',{style:{fontSize:'10px',color:T4}},'Toplam Skor')
         )
       ),
-      h('div',{style:{height:'7px',background:'#e2e8f0',borderRadius:'4px',overflow:'hidden',margin:'10px 0'}},
-        h('div',{style:{height:'100%',width:Math.min(100,(sc.skor||0)*100)+'%',background:barColor,borderRadius:'4px'}})
+      // Skor çubuğu: dolu kısım = kazanılan puan, gri kısım = veri üretmeyen kriterlerin
+      // KAYBEDİLEN ağırlığı (K3 — bu pay artık diğer kriterlere dağıtılmıyor).
+      h('div',{style:{height:'7px',background:'#e2e8f0',borderRadius:'4px',overflow:'hidden',margin:'10px 0',display:'flex'}},
+        h('div',{style:{height:'100%',width:Math.min(100,(sc.skor||0)*100)+'%',background:barColor}}),
+        h('div',{style:{height:'100%',width:Math.max(0,Math.min(100,(1-(sc.coverage||0))*100))+'%',background:'repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 3px,#e2e8f0 3px,#e2e8f0 6px)'}})
       ),
+      sc.missing && sc.missing.length ? h('div',{style:{fontSize:'11px',color:'#b45309',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'7px 10px',marginBottom:'9px',lineHeight:'1.5'}},
+        '⚠️ '+sc.avail.length+'/'+sc.rows.length+' kriterde veri var — ağırlığın %'+Math.round((sc.coverage||0)*100)+'\'i hesaplanıyor, %'+Math.round((1-(sc.coverage||0))*100)+'\'i veri olmadığı için kaybediliyor. Eksik: '+sc.missing.map(m=>m.label).join(', ')
+      ) : h('span'),
       h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
         isAdmin?msSel:h('span',{style:{fontSize:'12px',color:T3}},'Yönetici Puanı: '+(sc.managerScore||'—')),
         btn(open?'▲ Kriterleri gizle':'▼ Kriter detayı',()=>{PMOD.perfOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}),
@@ -8982,7 +8871,7 @@ function renderPersonelPrim(period){
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
       h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,marginBottom:'6px'}},'Kriter kırılımı (yıl başından hak edilen €)'),
       ...pr.avail.map(r=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
-        h('span',{style:{color:'#334155'}},r.label+' ',h('span',{style:{color:'#94a3b8'}},'%'+Math.round((r.weight/pr.wsum)*100))),
+        h('span',{style:{color:'#334155'}},r.label+' ',h('span',{style:{color:'#94a3b8'}},'%'+Math.round(r.weight*100))),
         h('span',{style:{fontWeight:'700',color:'#0f1f35'}},eur(pr.breakdown[r.kod]||0))
       )),
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'6px 0 0',marginTop:'4px',borderTop:'1px dashed #e2e8f0',fontSize:'12px'}},
@@ -9000,7 +8889,9 @@ function renderPersonelPrim(period){
       h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
         h('div',{style:{flex:'1',minWidth:'120px'}},
           h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#0f1f35'}},nm),
-          h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[u.department]||u.department)+' · '+pr.year+'-Q'+pr.quarter+' · Skor '+Math.round((pr.skor||0)*100)+'% · Eşik '+Math.round((pr.cfg.threshold||0)*100)+'%')
+          h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[u.department]||u.department)+' · '+pr.year+'-Q'+pr.quarter+' · Skor '+Math.round((pr.skor||0)*100)+'% · Eşik '+Math.round((pr.cfg.threshold||0)*100)+'%'),
+          (pr.missing && pr.missing.length) ? h('div',{style:{fontSize:'11px',color:'#b45309',marginTop:'4px'}},
+            '⚠️ Ağırlığın %'+Math.round((1-(pr.coverage||0))*100)+'\'i veri olmadığı için prime girmiyor ('+pr.missing.length+' kriter)') : h('span')
         ),
         h('div',{style:{textAlign:'right'}},
           h('div',{style:{fontSize:'19px',fontWeight:'800',color:pr.pass?(pr.thisQuarterPayable>0?'#16a34a':'#94a3b8'):'#94a3b8'}}, pr.pass?eur(pr.thisQuarterPayable):'Prim yok'),
@@ -9012,6 +8903,11 @@ function renderPersonelPrim(period){
         btn(open?'▲ Kırılımı gizle':'▼ Kırılım',()=>{PMOD.primOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}),
         btn('💾 Çeyrek Primini Kaydet', async()=>{
           const year=pr.year, q=pr.quarter;
+          // O9: para tutarı yazılıyor — onaysız tek tıkla kayıt oluşmasın.
+          if(!confirm(nm+' · '+year+'-Q'+q+'\n\nÖdenecek tutar: '+eur(pr.thisQuarterPayable)
+            +'\nYıl başından hak edilen: '+eur(pr.earnedToDate)
+            +'\nÖnceki çeyreklerde ödenen: '+eur(pr.paidBefore)
+            +'\n\nBu tutar prim defterine kaydedilsin mi?')) return;
           const ledger = JSON.parse(JSON.stringify(state.primLedger||{}));
           if(!ledger[year]) ledger[year]={};
           if(!ledger[year][nm]) ledger[year][nm]={paid:0,quarters:{}};
@@ -9031,8 +8927,13 @@ function renderPersonelPrim(period){
 }
 
 function renderPersonelSettings(){
-  const cfg = state.evalConfig || JSON.parse(JSON.stringify(DEFAULT_EVAL_CONFIG));
-  const strat = state.strategy || { ...DEFAULT_STRATEGY };
+  // Y5: DERİN KOPYA. Eskiden state.evalConfig/state.strategy referansı alınıyordu; her
+  // input değişikliği canlı state'i anında değiştiriyor, "Kapat"a basılsa bile prim hesabı
+  // kaydedilmemiş değerle çalışmaya devam ediyordu. Artık yalnız "Kaydet" state'i günceller.
+  if(!PMOD._cfgDraft) PMOD._cfgDraft = JSON.parse(JSON.stringify(state.evalConfig || DEFAULT_EVAL_CONFIG));
+  if(!PMOD._stratDraft) PMOD._stratDraft = JSON.parse(JSON.stringify(state.strategy || DEFAULT_STRATEGY));
+  const cfg = PMOD._cfgDraft;
+  const strat = PMOD._stratDraft;
   const nInp = (get,setV,w) => inp('', String(get()), v=>setV(v), 'number', {maxWidth:w||'110px'});
 
   const deptBlocks = DEPARTMENTS.map(d=>{
@@ -9065,15 +8966,14 @@ function renderPersonelSettings(){
     return btn((on?'✓ ':'')+s, ()=>{
       const i = strat.targetSectors.indexOf(s);
       if(i>=0) strat.targetSectors.splice(i,1); else strat.targetSectors.push(s);
-      state.strategy = { ...strat };
-      render();
+      render();   // Y5: yalnız taslağı değiştir — state.strategy'ye Kaydet'te yazılır
     }, on?'#1e3a6e':'#e8eef7', on?'#fff':'#2a5080','6px 11px',{fontSize:'11px',border:'1px solid #b8c8de',marginBottom:'6px'});
   }) : [h('span',{style:{fontSize:'12px',color:T4}},'Fırsatlarda sektör verisi yok.')];
 
   return h('div',{style:{background:'#ffffff',border:'1px solid #6366f1',borderRadius:'12px',padding:'16px',marginBottom:'16px'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}},
       h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#4338ca'}},'⚙ Personel Modülü Ayarları'),
-      btn('✕',()=>{PMOD.settingsOpen=false;render();},'#e8eef7','#4a6080','6px 11px',{fontSize:'13px'})
+      btn('✕',()=>{PMOD.settingsOpen=false;PMOD._cfgDraft=null;PMOD._stratDraft=null;render();},'#e8eef7','#4a6080','6px 11px',{fontSize:'13px'})
     ),
     h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',margin:'6px 0 8px'}},'💰 Departman Prim Parametreleri'),
     ...deptBlocks,
@@ -9083,8 +8983,10 @@ function renderPersonelSettings(){
       btn('💾 Ayarları Kaydet', async()=>{
         await saveEvalConfig(cfg);
         await saveStrategy(strat);
+        PMOD._cfgDraft=null; PMOD._stratDraft=null;   // taslağı bırak, kayıtlı değerden tazele
+        render();
       },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','9px 16px',{flex:'1'}),
-      btn('Kapat',()=>{PMOD.settingsOpen=false;render();},'#e8eef7','#4a6080','9px 14px')
+      btn('Kapat',()=>{PMOD.settingsOpen=false;PMOD._cfgDraft=null;PMOD._stratDraft=null;render();},'#e8eef7','#4a6080','9px 14px')
     )
   );
 }
@@ -9163,6 +9065,7 @@ function render() {
               {sep:true},
               {icon:'🔁', label:'Teklif Temsilcisi Eşle', color:'#15803d', action:()=>{ menu.remove(); backfillTeklifSalesReps(); }},
               {icon:'🏆', label:'Kazanılanları Onayla', color:'#4f46e5', action:()=>{ menu.remove(); approveWonQuotationsBulk(); }},
+              {icon:'📆', label:'Kazanma Tarihlerini Doldur', color:'#b45309', action:()=>{ menu.remove(); backfillOppCloseDates(); }},
             ];
             items.forEach(item=>{
               if(item.sep){
@@ -9580,7 +9483,9 @@ function _custName(id) {
 
 function checkAllNotifications() {
   const now   = _nowMin();
-  const today = _todayISO();
+  // DİKKAT: bu değişken ASLA `today` olarak adlandırılmamalı — global today() fonksiyonunu
+  // gölgeler ve aşağıdaki dedupe anahtarlarındaki today() çağrıları TypeError fırlatır.
+  const todayStr = _todayISO();
   const tmrw  = _tomorrowISO();
   if(!state.currentUser) return;
 
@@ -9595,7 +9500,7 @@ function checkAllNotifications() {
       showNotification('appt_tmrw_adm_'+a.id,'📅 Yarın Randevu',cn+' · '+a.apptDate+(a.apptTime?' · '+a.apptTime:'')+' · '+a.assignedTo,'warning','admin');
     }
     // Bugün 90dk önce
-    if(iso===today && a.apptTime) {
+    if(iso===todayStr && a.apptTime) {
       const tgt=_hm2min(a.apptTime)-90;
       if(now>=tgt && now<=tgt+4) {
         showNotification('appt_now_'+a.id,'🚨 Randevu 90 Dk Sonra!',cn+' · Saat '+a.apptTime+' · '+a.assignedTo,'urgent',a.assignedTo);
@@ -9613,17 +9518,17 @@ function checkAllNotifications() {
       showNotification('vis_tmrw_'+v.id,'📝 Yarın Ziyaret',cn+(v.projectInfo?' · '+v.projectInfo:'')+(v.visitTime?' · '+v.visitTime:''),'warning',v.assignedTo);
     }
     // Bugün 90dk önce
-    if(iso===today && v.visitTime) {
+    if(iso===todayStr && v.visitTime) {
       const tgt=_hm2min(v.visitTime)-90;
       if(now>=tgt && now<=tgt+4) {
         showNotification('vis_now_'+v.id,'🚨 Ziyaret 90 Dk Sonra!',cn+(v.projectInfo?' · '+v.projectInfo:'')+' · Saat '+v.visitTime,'urgent',v.assignedTo);
       }
     }
     // Not girilmedi - ertesi gün 14:00
-    if(iso<today && !v.notes && now>=840 && now<=844) {
+    if(iso<todayStr && !v.notes && now>=840 && now<=844) {
       const nxtD=_toDate(iso); if(!nxtD) return; nxtD.setDate(nxtD.getDate()+1);
       const nxtISO=nxtD.getFullYear()+'-'+String(nxtD.getMonth()+1).padStart(2,'0')+'-'+String(nxtD.getDate()).padStart(2,'0');
-      if(nxtISO===today) {
+      if(nxtISO===todayStr) {
         showNotification('vis_nonote_'+v.id,'⚠️ Ziyaret Notu Eksik',cn+' ziyareti ('+v.visitDate+') için not eklenmedi.','warning',v.assignedTo);
       }
     }
@@ -9723,6 +9628,24 @@ function checkAllNotifications() {
 }
 
 
+
+// Mail gövde şablonu — yalnızca Araçlar → "Mail Testi" tarafından kullanılır.
+// (Düzenli hatırlatma mailleri 4 Tem 2026'dan beri nextaura-admin cron'undan gidiyor.)
+function mailBody(icon, title, details) {
+  return '<div style="padding:12px 0;border-bottom:2px solid #2563eb;margin-bottom:16px">'
+    + '<span style="font-size:24px">' + icon + '</span>'
+    + '<span style="font-size:18px;font-weight:800;color:#0f1f35;margin-left:10px">' + title + '</span>'
+    + '</div>'
+    + '<table style="width:100%;border-collapse:collapse">'
+    + details.map(([k,v]) =>
+        '<tr><td style="padding:8px 12px;background:#e8f0fb;font-weight:700;font-size:13px;color:#1e3a5f;width:40%;border-radius:6px 0 0 6px">' + k + '</td>'
+        + '<td style="padding:8px 12px;font-size:13px;color:#374151;border-bottom:1px solid #e2e8f0">' + v + '</td></tr>'
+      ).join('')
+    + '</table>'
+    + '<div style="margin-top:16px;padding:10px 14px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;font-size:12px;color:#92400e">'
+    + '⏰ Bu bildirim A-PRO CRM tarafından otomatik gönderilmiştir. Lütfen gerekli aksiyonu alınız.'
+    + '</div>';
+}
 
 function testMailNotification() {
   const cu = state.currentUser;
@@ -9828,14 +9751,6 @@ const EMAILJS_KEY      = 'aFlqv_CSdq9QliGtN';
 
 if(!window._mailSentKeys) window._mailSentKeys = new Set();
 
-function initEmailJS() {
-  try {
-    if(typeof emailjs !== 'undefined') {
-      emailjs.init(EMAILJS_KEY);
-      console.log('✅ EmailJS hazır');
-    }
-  } catch(e) { console.warn('EmailJS init:', e); }
-}
 
 // Kullanıcının mail adresini bul
 function getUserEmail(nameOrRole) {
@@ -9848,39 +9763,8 @@ function getUserEmail(nameOrRole) {
   return user?.email || null;
 }
 
-function sendMail(key, toEmail, subject, bodyHtml) {
-  if(window._mailSentKeys.has(key)) return;
-  if(!toEmail || !toEmail.includes('@')) return;
-  if(typeof emailjs === 'undefined') { console.warn('EmailJS yüklenmedi'); return; }
-  window._mailSentKeys.add(key);
-  emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
-    subject: subject,
-    body: bodyHtml,
-    to_email: toEmail,
-  }).then(()=>{
-    console.log('✅ Mail gönderildi:', subject, '→', toEmail);
-  }).catch(e=>{
-    console.warn('❌ Mail hatası:', e);
-    window._mailSentKeys.delete(key); // Hata olursa tekrar denenebilsin
-  });
-}
 
 // Okunabilir mail içeriği oluştur
-function mailBody(icon, title, details) {
-  return '<div style="padding:12px 0;border-bottom:2px solid #2563eb;margin-bottom:16px">'
-    + '<span style="font-size:24px">' + icon + '</span>'
-    + '<span style="font-size:18px;font-weight:800;color:#0f1f35;margin-left:10px">' + title + '</span>'
-    + '</div>'
-    + '<table style="width:100%;border-collapse:collapse">'
-    + details.map(([k,v]) =>
-        '<tr><td style="padding:8px 12px;background:#e8f0fb;font-weight:700;font-size:13px;color:#1e3a5f;width:40%;border-radius:6px 0 0 6px">' + k + '</td>'
-        + '<td style="padding:8px 12px;font-size:13px;color:#374151;border-bottom:1px solid #e2e8f0">' + v + '</td></tr>'
-      ).join('')
-    + '</table>'
-    + '<div style="margin-top:16px;padding:10px 14px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;font-size:12px;color:#92400e">'
-    + '⏰ Bu bildirim A-PRO CRM tarafından otomatik gönderilmiştir. Lütfen gerekli aksiyonu alınız.'
-    + '</div>';
-}
 
 // Teklif programındaki bağlı tekliflerin durum/numara/tutarını arka planda çekip
 // fırsatların REF. (tenderRef), durum, değer ve satış temsilcisi alanlarını günceller.
@@ -10005,117 +9889,6 @@ async function syncQuotationRefs() {
   } catch {}
 }
 
-function checkAllMails() {
-  const now   = _nowMin();
-  const today = _todayISO();
-  const tmrw  = _tomorrowISO();
-  if(!state.currentUser) return;
-
-  // ── 📅 RANDEVULAR - yarın 16:30 ──────────────────────────────
-  if(now >= 990 && now <= 994) {
-    (state.appointments||[]).forEach(a => {
-      if(a.status==='İptal'||a.status==='Tamamlandı') return;
-      const iso = _toISO(a.apptDate); if(!iso) return;
-      if(iso !== tmrw) return;
-      const cn = _custName(a.customerId);
-      const mailKey = 'mail_appt_tmrw_' + a.id;
-      const subject = '📅 Yarın Randevu: ' + cn;
-      const body = mailBody('📅', 'Yarın Randevunuz Var', [
-        ['Firma', cn],
-        ['Tarih', _toTR(a.apptDate)],
-        ['Saat', a.apptTime || '-'],
-        ['Temsilci', a.assignedTo || '-'],
-        ['Not', a.notes || '-'],
-      ]);
-      // İlgili temsilci
-      const repEmail = getUserEmail(a.assignedTo);
-      if(repEmail) sendMail(mailKey + '_rep', repEmail, subject, body);
-    });
-  }
-
-  // ── 📝 ZİYARETLER - yarın 16:30 ────────────────────────────
-  if(now >= 990 && now <= 994) {
-    (state.visits||[]).forEach(v => {
-      const iso = _toISO(v.visitDate); if(!iso) return;
-      if(iso !== tmrw) return;
-      const cn = _custName(v.customerId);
-      const mailKey = 'mail_visit_tmrw_' + v.id;
-      const subject = '📝 Yarın Ziyaret: ' + cn;
-      const body = mailBody('📝', 'Yarın Ziyaretiniz Var', [
-        ['Firma', cn],
-        ['Tarih', _toTR(v.visitDate)],
-        ['Saat', v.visitTime || '-'],
-        ['Proje', v.projectInfo || '-'],
-        ['Temsilci', v.assignedTo || '-'],
-      ]);
-      const repEmail = getUserEmail(v.assignedTo);
-      if(repEmail) sendMail(mailKey, repEmail, subject, body);
-    });
-  }
-
-  // ── 🎯 FIRSATLAR - Sipariş tarihi 1 gün önce ─────────────────
-  const LOST = ['KAÇTI','NO GO','FIRSAT ÖLDÜ'];
-  (state.opportunities||[]).forEach(o => {
-    if(!o.dueDate || LOST.includes(o.stage) || o.stage==='KAZANILDI') return;
-    const diff = _diffDays(_toISO(o.dueDate));
-    if(diff === 1 && now >= 480 && now <= 484) {
-      const cn = _custName(o.customerId);
-      const mailKey = 'mail_opp_due1_' + o.id;
-      const subject = '⏰ Sipariş Tarihi Yarın: ' + o.title;
-      const body = mailBody('⏰', 'Ön Görülen Sipariş Tarihi Yarın!', [
-        ['Fırsat', o.title || '-'],
-        ['Firma', cn],
-        ['Sipariş Tarihi', _toTR(o.dueDate)],
-        ['Değer', 'EUR ' + Number(o.value||0).toLocaleString('tr-TR')],
-        ['Temsilci', o.assignedTo || '-'],
-      ]);
-      const repEmail = getUserEmail(o.assignedTo);
-      if(repEmail) sendMail(mailKey, repEmail, subject, body);
-    }
-  });
-
-  // ── 🔧 TEKNİK SERVİS - randevu 2 gün önce 16:30 ─────────────
-  if(now >= 990 && now <= 994) {
-    (state.services||[]).forEach(s => {
-      if(!s.appointmentDate) return;
-      const diff = _diffDays(_toISO(s.appointmentDate));
-      if(diff === 2) {
-        const cn = _custName(s.customerId);
-        const mailKey = 'mail_svc_appt2_' + s.id;
-        const subject = '🔧 Servis Randevusu 2 Gün Sonra: ' + (s.jobName||'Servis');
-        const body = mailBody('🔧', 'Servis Randevusu 2 Gün Sonra', [
-          ['İşin Adı', s.jobName || '-'],
-          ['Firma', cn],
-          ['Randevu Tarihi', _toTR(s.appointmentDate)],
-          ['İlgili', s.preparedBy || '-'],
-        ]);
-        const repEmail = getUserEmail(s.preparedBy);
-        if(repEmail) sendMail(mailKey, repEmail, subject, body);
-      }
-    });
-  }
-
-  // ── ⚙️ PERİYODİK BAKIM - 7 gün önce ─────────────────────────
-  (state.maintenances||[]).forEach(m => {
-    const due = maintNextDue(m);
-    if(!due) return;
-    const diff = _diffDays(_toISO(due));
-    if(diff === 7 && now >= 540 && now <= 544) {
-      const cn = _custName(m.customerId);
-      const tgt = m.serviceContact || m.preparedBy;
-      const mailKey = 'mail_maint_7d_' + m.id;
-      const subject = '⚙️ Bakım 7 Gün Sonra: ' + (m.jobName||'Bakım');
-      const body = mailBody('⚙️', 'Periyodik Bakım 7 Gün Sonra', [
-        ['İşin Adı', m.jobName || '-'],
-        ['Firma', cn],
-        ['Bakım Vadesi', _toTR(due)],
-        ['İlgili', tgt || '-'],
-      ]);
-      const repEmail = getUserEmail(tgt);
-      if(repEmail) sendMail(mailKey, repEmail, subject, body);
-    }
-  });
-}
 
 // startNotificationTimer mail + ses birleşik
 

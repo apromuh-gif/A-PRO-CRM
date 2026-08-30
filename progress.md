@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 26 Ağustos 2026 (teklif silme/geri alma bağlantı koruması + REF. ile yeniden eşleştirme; yeni fırsat varsayılan aşaması KAZANILDI → TEKLİF)
+> Son güncelleme: 30 Ağustos 2026 (kod denetimi: prim motoru + bildirim katmanı kritik düzeltmeleri, 420 satır ölü kod temizliği)
 
 ---
 
@@ -165,8 +165,8 @@
 | Ziyaretler | Not girilmedi | +1 gün 14:00 | Temsilci |
 | Fırsatlar | Sipariş tarihi 7 gün | 09:00 | Temsilci |
 | Fırsatlar | 10+ gün güncellenmemiş | Pazartesi 09:00 | Temsilci + Admin |
-| Fırsatlar | KAZANILDI | Anında | Admin |
-| Fırsatlar | Kaybedildi | Anında | Admin |
+| Fırsatlar | KAZANILDI | Anında | Admin |   ← 30 Ağu'da onarıldı (updatedAt yazılmıyordu, hiç tetiklenmiyordu)
+| Fırsatlar | Kaybedildi | Anında | Admin |   ← 30 Ağu'da onarıldı
 | Teklifler | Dead line 1 gün | 08:00 | Hazırlayan |
 | Teklifler | Süresi geçti | Her gün 09:00 | Hazırlayan + Admin |
 | T.Servis | Randevu 1 gün önce | 16:30 | Hazırlayan |
@@ -230,8 +230,8 @@
 |---|---|
 | GitHub repo | ✅ Public (Pages için gerekli) |
 | DEFAULT_USERS şifreleri | ✅ Temizlendi (sadece admin var) |
-| Firebase Security Rules | ⚠️ Güncellemeli |
-| Şifre hashing | ❌ Yapılmadı (PENDING) |
+| Firebase Security Rules | ⚠️ AÇIK — evaluations/settings herkese okunur; imzalı belge silme kilidi yalnız arayüzde |
+| Şifre hashing | ✅ Firebase Auth (signInWithEmailAndPassword) — düz metin parola yok |
 | Erişim logu | ❌ Yapılmadı (PENDING) |
 | KVKK / VERBİS | ❌ Yapılmadı (PENDING) |
 
@@ -260,7 +260,6 @@ EUR karşılıkları (1 EUR = 53 TRY): CRM €55/€110/€205 · Teklif €47/�
 
 ### Yüksek Öncelik
 - [ ] **Firebase Security Rules** güncellenmeli
-- [ ] **Şifre hashing** (SHA-256, mevcut kullanıcılar otomatik migrate)
 - [ ] **Erişim logu** (kim/ne zaman/ne yaptı)
 - [ ] **KVKK** — VERBİS kaydı, Aydınlatma Metni, DPA şablonu
 
@@ -671,3 +670,122 @@ Tartışılan iki soru: (1) Görevler, günlük kullanımı en yüksek ekran olm
 - `commit c74d1ab`.
 
 **Durum:** Tümü canlı, son commit `c74d1ab`.
+
+---
+
+## 🔬 Kod Denetimi ve Düzeltmeler (30 Ağustos 2026)
+
+Projeler icra motoru, prim/performans hesabı ve bildirim katmanı satır satır denetlendi.
+21 doğrulanmış bulgu + 8 ölü kod bloğu tespit edildi; **19'u bu turda düzeltildi**.
+Bulgular izole bir Node ortamında çalıştırılan testlerle doğrulandı (19/19 geçti), ardından
+uygulama tarayıcıda yüklenip değişen fonksiyonlar gerçek runtime'da denendi (10/10 geçti).
+
+### Kritik düzeltmeler
+
+**K1 · `today` gölgelemesi bildirim döngüsünü çökertiyordu.**
+`checkAllNotifications()` içinde `const today = _todayISO()` global `today()` fonksiyonunu
+gölgeliyor, aynı fonksiyondaki 6 dedupe anahtarı `today()` çağırınca **TypeError** fırlıyordu.
+Her gün 09:00'da ilk süresi geçmiş teklifte istisna çıkıyor, `forEach` yakalamadığı için
+**teklif + servis + bakım döngüleri o turda hiç çalışmıyordu** — "Teklif süresi geçti",
+"Bakım vadesi geçti" ve Pazartesi "Fırsat bekliyor" bildirimleri hiç görünmüyordu.
+Yerel değişken `todayStr` olarak yeniden adlandırıldı. (30 Tem'deki `today` → `today()`
+düzeltmesi bu gölgelemeyi fark etmemişti.)
+
+**K2 · Kazanma tarihi hiç yazılmıyordu — ciro yanlış aya/yıla düşüyordu.**
+`_pOppDate()` sırayla `wonAt → closedAt → updatedAt → dueDate → createdAt` okuyordu ama
+ilk üç alan **hiçbir yere yazılmıyordu**; kazanma tarihi fiilen "Ön Görülen Sipariş Tarihi"
+oluyordu. Mart'ta kazanılan iş, sipariş tarihi Kasım'sa 8 ay boyunca prime girmiyor;
+sipariş tarihi gelecek yılsa cari yıl hedefinden tamamen düşüyordu. Ayrıca dashboard
+`recFY()` (createdAt), prim motoru `_pOppFY()` (dueDate) okuduğu için iki ekran aynı kişi
+için **farklı yıllık ciro** gösteriyordu.
+- `saveOpp` artık aşama KAZANILDI'ya geçtiği an `wonAt`, kayıp aşamalara geçtiği an
+  `closedAt` damgalıyor (`_oppCloseStamp`). Aşama geri alınırsa damga temizlenir.
+- `_pOppDate` artık `updatedAt` okumuyor → düzenleme cironun ayını kaydırmıyor.
+- Eski kayıtlar için **Araçlar → 📆 Kazanma Tarihlerini Doldur** eklendi (kaynak önceliği:
+  son düzenleme → sipariş tarihi → oluşturma; ön izlemeli onay ile).
+
+**K3 · Veri üretmeyen kriterin ağırlığı primi şişiriyordu.**
+`personelScore` ağırlıkları `weight/wsum` ile 1,00'e normalize ediyordu; veri yokluğu
+cezalandırılmıyor, **kalan kriterlere ödül olarak dağıtılıyordu**. Testte 9 kriterden 3'ü
+doluyken `birey_hedef`in %35 payı fiilen %78 oluyor, taban prim gerçeğin **2,2 katı**
+(5.190 € / 2.333 €) çıkıyordu.
+- Artık **ham ağırlık** kullanılıyor: her kriter yalnız kendi tasarlanan payı kadar katkı
+  verir, veri üretmeyenin payı **kaybedilir, asla dağıtılmaz**.
+- `personelScore` artık `coverage` (veri üreten ağırlık) ve `missing` (eksik kriter listesi)
+  döndürüyor; Performans kartında taralı çubuk + "⚠️ X/9 kriterde veri var, ağırlığın %Y'si
+  kaybediliyor" uyarısı, Prim kartında da eksik ağırlık rozeti gösteriliyor.
+- Tüm veriler girildiğinde kapsam %100 olur ve ağırlıklar tasarlandığı gibi çalışır (test edildi).
+
+**K4 · Teknik Servis'in %25'i sabit değer üretiyordu.**
+`acik_servis` (%10) ve `cozum_suresi` (%15) `serviceOpps` (T.Servis TEKLİF takip)
+koleksiyonunu okuyordu; o koleksiyonda `dueDate`/`status` alanları hiç yok → birincisi
+**sabit %100**, ikincisi **sabit %0** üretiyordu. Faz 3a arıza icra motoru performansa
+hiç yansımıyordu.
+- Her ikisi de artık `services` (arıza) koleksiyonunu okuyor.
+- `servOwner()` (serviceContact → preparedBy), `servSlaDue()` (execTargetDate, yoksa
+  aciliyete göre varsayılan SLA: acil 1 / normal 3 / düşük 7 gün) eklendi.
+- `cozum_suresi` = kapanmış arızaların vadesinde kapatılma oranı;
+  `acik_servis` = açık arızalar arasında vadesi geçmeyenlerin oranı (çift ceza yok).
+- `servIsOverdue()` aynı SLA kuralına bağlandı → **liste kırmızı vurgusu ile prim kriteri
+  artık aynı kuralı kullanıyor**; kapanmış arıza "gecikmiş" görünmüyor.
+
+### Yüksek öncelikli düzeltmeler
+
+| Kod | Düzeltme |
+|---|---|
+| **Y2** | Belge tazeliği `createdAt` yerine **imza tarihine** (`completedAt`, yoksa `_editedAt`) bakıyor. Taslak olarak açılıp sonra imzalanan checklist/servis formu "bayat" sayılıp bakım/proje kapatmayı bloke ediyordu. |
+| **Y3** | `renderProjeler` **mali yıl merceği uygulamıyordu** (14 `filterFY` çağrısı arasında eksik olan tek ekran) — tüm yıllar karışıyordu. |
+| **Y4** | Projeler görünürlüğü yalnız `assignedTo` (satış temsilcisi) idi; projede fiilen çalışan teknik/saha/muhasebe personeli projeyi hiç göremiyordu. Artık **projeye bağlı bir görevde atanan ya da atayan** taraf da görüyor. |
+| **Y5** | Ayarlar ekranı `state.evalConfig`/`state.strategy` **referansını** alıp canlı state'i mutasyona uğratıyordu; kaydetmeden kapatılsa bile prim hesabı değişmiş değerle çalışıyordu. Artık derin kopya taslağı (`PMOD._cfgDraft`) üzerinde çalışılıyor, yalnız "Kaydet" state'i günceller. |
+| **Y6** | `delItem` yalnız 5 koleksiyon için yerel listeyi güncelliyordu; silinen **tedarikçi** (ve serviceOpp/ziyaret/randevu) ekranda kalmaya devam ediyordu. Eksik dallar + genel güvenlik ağı eklendi. |
+
+### Orta öncelikli düzeltmeler
+
+| Kod | Düzeltme |
+|---|---|
+| **O1** | `personelTaskPunctual` paydası tüm görevlerdi; **vadesi gelmemiş açık görev "geç teslim" sayılıyordu**. Payda artık kapanmış + vadesi geçmiş açık görevler. |
+| **O2** | Performans gerekçeli devirler tüm mali yıl için sayılıyordu (Ocak'taki devir Ağustos oranını düşürüyordu). Artık devir tarihi de dönem penceresinde olmalı. `personelTaskDogruluk` da dönem penceresine alındı. |
+| **O3** | `aktivite` veri yokken `null` yerine `0` dönüyordu → yeni personel "veri yok" yerine **%0 başarı** alıyordu. |
+| **O4** | `maintAddManualHistory` `dueAt`/`completedOn` yazmıyordu; `periyodik_bakim` kriteri (Teknik %20) geri dönük kayıtları **daima "zamanında"** sayıyordu. |
+| **O5** | `today()` `toISOString()` ile **UTC** dönüyordu → TR'de 00:00-03:00 arası bir gün geri. Yerel tarihe çevrildi (`_offsetDay` de). |
+| **O6** | `stamp()` artık `updatedAt` (ISO) yazıyor → "N gündür güncellenmemiş" ölçümü `createdAt` yerine gerçek son düzenlemeden hesaplanıyor. |
+| **O7** | Görev "geciken" filtresi `<= today()` idi; **bugün biten görev gecikmiş görünüyordu**. |
+| **O8** | `totalScore`, `managerScore` güncellenmeden ÖNCE hesaplanıp yazılıyordu (bir düzenleme geride kalıyordu). |
+| **O9** | "Çeyrek Primini Kaydet" **onaysız** para tutarı yazıyordu → tutar dökümlü onay penceresi eklendi. |
+| **O10** | `loadCollection` izin/ağ hatasını yutup `[]` dönüyordu ("veri yok" gibi görünüyordu — 30 Ağu'daki `serviceForms` olayının kök nedeni). Artık konsola log + kullanıcıya uyarı. |
+
+### Ölü kod temizliği — 420 satır
+
+| Blok | Neden ölü |
+|---|---|
+| `checkAllMails` (111 sat.) + `sendMail` + `initEmailJS` | 4 Tem'de sunucu cron'una taşındı, hiçbiri çağrılmıyordu. (`mailBody` korundu — Araçlar → Mail Testi kullanıyor.) |
+| `personelAutoGenerateTasks` (33 sat.) | Satır 1241'de devre dışıydı; 3 dalından 2'si zaten olmayan alan okuyordu ve ürettiği `auto_maint_<id>` anahtarı **yeni bakım motoruyla çakışıyordu**. |
+| `saveSupplier` · `buildSupplierModal` · `renderSuppliers` — 1. tanımlar (202 sat.) | Mükerrer tanımlıydı; hoisting nedeniyle ikinci tanım kazanıyor, ilkler hiç çalışmıyordu. |
+| `_prevPeriods` · `_personelActivity` | 29 Tem'de kaldırılan "Skor Trendi" grafiğinden artakalan. |
+| `maintLastDone` · `_pIsOverdue` · `_pIsDone` | Hiç çağrılmıyor (son ikisi K4 sonrası ölüleşti). |
+| `loadCollection('prim')` | `state.prim` hiçbir yerde okunmuyordu (gerçek defter `settings/primLedger`). |
+
+**Ayrıca:** `updatedAt` yazılmadığı için **hiç tetiklenmeyen 4 anlık bildirim** (Fırsat
+Kazanıldı/Kaybedildi, Teklif Onaylandı/Reddedildi, Servis Onaylandı) O6 ile çalışır hale geldi.
+
+### ⚠️ Bu turda YAPILMAYAN — açık güvenlik kalemleri
+
+| Kod | Açık | Gereken |
+|---|---|---|
+| **K5** | `TEKLIF_API_KEY` düz metin olarak dosyada ve repo **public**. Anahtar canlı siteden okunabiliyor ve Teklif Programı'nın `open-quotation` / `customers` / `approve-quotation` / `profit` / `set-fiscal-year` / `backfill-salesrep` uçlarını açıyor. | Anahtarı istemciden çıkarıp proxy'e taşımak + rotasyon (apro-platform tarafında iş). |
+| **K5** | `firestore.rules` `evaluations` ve `settings` için `allow read: if signedIn()`. `init()` her oturumda `primLedger`/`targets`, `loadAllData()` de `evaluations` çekiyor → **herhangi bir çalışan konsoldan tüm prim tutarlarını ve yönetici notlarını okuyabiliyor**. Personel ekranını gizlemek veriyi gizlemiyor. | Bu iki koleksiyonun okumasını admin'e kilitlemek. |
+| **Y1** | İmzalı belge silme kilidi **yalnız arayüzde**; kurallar `checklists`/`serviceForms` için `signedIn()` veriyor → SDK'dan silinebilir/uydurulabilir. "Hukuki delil" gerekçesi sunucuda karşılıksız. | Silme/güncellemeyi admin'e kilitlemek. |
+
+### Bilinmesi gereken davranış değişikliği
+
+K3 sonrası **eksik veri prim üretmiyor**: kapsam düştükçe skor düşer, eşiğin (%70) altında
+kalırsa prim 0 olur. Hedefleri girilmemiş, yönetici puanı verilmemiş veya hiç teklif
+hazırlamamış personelde bu **bilinçli** sonuçtur (kullanıcı kararı, 30 Ağu). Tüm veriler
+girildiğinde kapsam %100 olur ve ağırlıklar tasarlandığı gibi çalışır.
+Yapısal olarak hiç uygulanmayan bir kriter varsa (ör. satışçıda periyodik bakım) o kişi
+eşiği hiç geçemez — bu durumda kritere yönetici tarafından "N/A" işaretleme seçeneği
+eklenmesi gerekir (henüz yok).
+
+**Durum:** Tümü yerel olarak doğrulandı — sözdizimi temiz, tarayıcıda hatasız yükleniyor,
+`index.html` senkron. Canlıya alınmadı.
+
