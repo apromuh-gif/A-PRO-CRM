@@ -142,12 +142,12 @@ const DEFAULT_EVAL_CONFIG = {
     threshold:0.70, overCap:1.5, overAccel:1.0, primBase:0,
     criteria:[
       {kod:'zamaninda_teslim',label:'Zamanında teslim oranı',      auto:true,  weight:0.20},
-      {kod:'proje_butce',     label:'Proje bütçe hedefi',           auto:false, weight:0.30},
+      {kod:'proje_butce',     label:'Proje bütçe hedefi',           auto:true,  weight:0.30},
       {kod:'is_emri',         label:'İş emri tamamlama',            auto:true,  weight:0.03},
       {kod:'gorev_dogruluk',  label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.02},
-      {kod:'is_guvenligi',    label:'İş güvenliği — uygunsuzluk',   auto:false, weight:0.15},
-      {kod:'iscilik_kalite',  label:'İşçilik kalitesi & yeniden-iş',auto:false, weight:0.10},
-      {kod:'saha_rapor',      label:'Saha raporu disiplini',        auto:false, weight:0.05},
+      {kod:'is_guvenligi',    label:'İş güvenliği — uygunsuzluk',   auto:true,  weight:0.15},
+      {kod:'iscilik_kalite',  label:'İşçilik kalitesi & yeniden-iş',auto:true,  weight:0.10},
+      {kod:'saha_rapor',      label:'Saha raporu disiplini',        auto:true,  weight:0.05},
       {kod:'malzeme_verim',   label:'Malzeme/fire verimliliği',     auto:false, weight:0.05},
       {kod:'yonetici',        label:'Kalite / müşteri / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.10},
     ],
@@ -1387,13 +1387,14 @@ function renderLogin() {
 async function loadAllData() {
   // Ö6: 'prim' koleksiyonu okumadan çıkarıldı — state.prim hiçbir yerde kullanılmıyordu
   // (gerçek prim defteri settings/primLedger'da tutulur).
-  const [customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, checklists, serviceForms] = await Promise.all([
+  const [customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, checklists, serviceForms, fieldReports] = await Promise.all([
     loadCollection('customers'), loadCollection('opportunities'),
     loadCollection('proposals'), loadCollection('services'), loadCollection('maintenances'),
     loadCollection('suppliers'), loadCollection('serviceOpps'), loadCollection('visits'), loadCollection('appointments'),
-    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('checklists'), loadCollection('serviceForms')
+    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('checklists'), loadCollection('serviceForms'),
+    loadCollection('fieldReports')
   ]);
-  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, checklists, serviceForms});
+  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, checklists, serviceForms, fieldReports});
   if(Array.isArray(state.tasks)) setState({ tasks: state.tasks.map(normTask) });
 }
 
@@ -5918,6 +5919,228 @@ function printServiceForm(sf){
   var content = document.createElement('div'); content.style.cssText='overflow:auto;padding:24px;'; content.innerHTML=html;
   po.appendChild(bar); po.appendChild(content); document.body.appendChild(po);
 }
+// ═══════════════════════════════════════════════════════
+// SAHA RAPORU (Field Report) — Proje bazlı günlük/periyodik saha imalat raporu
+// ═══════════════════════════════════════════════════════
+const FR_WEATHER = [{v:'gunesli',l:'Güneşli'},{v:'bulutlu',l:'Bulutlu'},{v:'yagmurlu',l:'Yağmurlu'},{v:'karli',l:'Karlı'},{v:'ruzgarli',l:'Rüzgarlı'}];
+const FR_DEFAULT_FREQ = 3;
+function normFieldReport(fr){
+  fr = fr || {};
+  return Object.assign({
+    id:fr.id, customerId:'', projectId:'', linkType:'', linkId:'',
+    reportDate:today(), weather:'', temperature:'',
+    personnelOnSite:[], workItems:[], materialsUsed:[],
+    safetyOk:true, safetyIncidents:[], reworkItems:[],
+    budgetSpent:0, generalNotes:'', nextDayPlan:'',
+    createdBy:'', staffSign:{name:'',dataURL:'',at:''},
+    status:'taslak', createdAt:today(), completedAt:''
+  }, fr, {
+    personnelOnSite: Array.isArray(fr.personnelOnSite)?fr.personnelOnSite:[],
+    workItems: Array.isArray(fr.workItems)?fr.workItems:[],
+    materialsUsed: Array.isArray(fr.materialsUsed)?fr.materialsUsed:[],
+    safetyIncidents: Array.isArray(fr.safetyIncidents)?fr.safetyIncidents:[],
+    reworkItems: Array.isArray(fr.reworkItems)?fr.reworkItems:[],
+    staffSign: Object.assign({name:'',dataURL:'',at:''}, fr.staffSign||{})
+  });
+}
+async function _frPersist(fr, msg){
+  fr._editedBy = (state.currentUser&&state.currentUser.displayName)||'';
+  fr._editedAt = today();
+  if(!fr.createdAt) fr.createdAt = today();
+  setState({saving:true});
+  await saveDoc('fieldReports', fr.id, fr);
+  var list = (state.fieldReports||[]).slice();
+  var i = list.findIndex(function(x){return x.id===fr.id;});
+  if(i>=0) list[i]=fr; else list.push(fr);
+  setState({fieldReports:list, modal:null, saving:false});
+  showToast(msg);
+}
+async function frSave(fr){
+  var missing=[];
+  if(!fr.projectId) missing.push('Proje');
+  if(!fr.workItems.length) missing.push('En az 1 iş kalemi');
+  if(!(fr.staffSign&&fr.staffSign.dataURL)) missing.push('İmza');
+  if(missing.length){showToast('Eksik: '+missing.join(', '),'#d97706');return;}
+  fr.status='tamam'; fr.completedAt=today();
+  await _frPersist(fr,'Saha raporu kaydedildi');
+}
+async function frSaveDraft(fr){
+  fr.status='taslak';
+  await _frPersist(fr,'Taslak kaydedildi');
+}
+async function frDelete(id){
+  var fr=(state.fieldReports||[]).find(function(x){return x.id===id;});
+  var isAdmin=!!(state.currentUser&&state.currentUser.isAdmin);
+  if(fr&&fr.status==='tamam'){
+    if(!isAdmin){showToast('İmzalı saha raporu silinemez.','#d97706');return;}
+    var typed=prompt('İmzalı saha raporu silmek için "SİL" yazın:');
+    if(typed!=='SİL'){showToast('İptal.','#64748b');return;}
+  } else if(!isAdmin){showToast('Silme yetkisi yalnız admin.','#d97706');return;}
+  else if(!confirm('Saha raporunu silmek istiyor musunuz?')) return;
+  await deleteDoc('fieldReports',id);
+  setState({fieldReports:(state.fieldReports||[]).filter(function(x){return x.id!==id;}),modal:null});
+  showToast('Saha raporu silindi');
+}
+function openFieldReport(opts){
+  opts=opts||{};
+  var existing=opts.id?(state.fieldReports||[]).find(function(x){return x.id===opts.id;}):null;
+  var fr=normFieldReport(existing?JSON.parse(JSON.stringify(existing)):{
+    id:genId(), customerId:opts.customerId||'', projectId:opts.projectId||'',
+    linkType:opts.linkType||'project', linkId:opts.linkId||opts.projectId||'',
+    createdBy:(state.currentUser&&state.currentUser.displayName)||'',
+    staffSign:{name:(state.currentUser&&state.currentUser.displayName)||'',dataURL:'',at:''},
+    createdAt:today(), reportDate:today()
+  });
+  setState({modal:{type:'fieldreport',item:fr}});
+}
+function buildFieldReportModal(fr){
+  fr=normFieldReport(fr); state.modal.item=fr;
+  var rerender=_clRerender;
+  var projOpts=[{v:'',l:'Proje seçin…'}].concat(
+    (state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&!o.execClosedAt;})
+    .sort(function(a,b){return(a.title||'').localeCompare(b.title||'','tr');})
+    .map(function(o){var c=(state.customers||[]).find(function(x){return x.id===o.customerId;});return{v:o.id,l:(o.title||'')+(c?' — '+(c.firmName||''):'')};})
+  );
+  var header=h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px',marginBottom:'12px'}},
+    h('div',{style:{flex:'1 1 280px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Proje'),
+      _clSelect(projOpts,fr.projectId,function(v){fr.projectId=v;fr.linkId=v;var o=(state.opportunities||[]).find(function(x){return x.id===v;});if(o)fr.customerId=o.customerId||'';rerender();})),
+    h('div',{style:{flex:'0 0 150px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Rapor Tarihi'),
+      h('input',{type:'date',value:fr.reportDate||today(),oninput:function(e){fr.reportDate=e.target.value;},style:_clInputStyle()})),
+    h('div',{style:{flex:'0 0 130px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Hava'),
+      _clSelect([{v:'',l:'Seçin…'}].concat(FR_WEATHER),fr.weather,function(v){fr.weather=v;})),
+    h('div',{style:{flex:'0 0 80px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Sıcaklık'),
+      h('input',{value:fr.temperature||'',placeholder:'°C',oninput:function(e){fr.temperature=e.target.value;},style:_clInputStyle()}))
+  );
+  function arrSection(title,arr,addLabel,fields){
+    var rows=arr.map(function(item,idx){
+      return h('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginBottom:'4px',flexWrap:'wrap'}},
+        ...fields.map(function(f){return h('input',{value:item[f.k]||'',placeholder:f.p,oninput:function(e){item[f.k]=e.target.value;},style:Object.assign(_clInputStyle(),{flex:f.flex||'1 1 160px',padding:'6px 8px',fontSize:'12px'})});}),
+        btn('✕',function(){arr.splice(idx,1);rerender();},'#fef2f2','#dc2626','5px 8px',{fontSize:'11px'})
+      );
+    });
+    return h('div',{style:{marginBottom:'12px'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}},
+        h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',flex:'1'}},title),
+        btn('+ '+addLabel,function(){var o={};fields.forEach(function(f){o[f.k]='';});arr.push(o);rerender();},'#eef2ff','#4338ca','5px 10px',{fontSize:'11px'})),
+      ...rows
+    );
+  }
+  var workSec=arrSection('YAPILAN İŞLER',fr.workItems,'İş Kalemi',[
+    {k:'desc',p:'İş tanımı',flex:'2 1 200px'},{k:'quantity',p:'Miktar',flex:'0 0 70px'},{k:'unit',p:'Birim',flex:'0 0 70px'},{k:'note',p:'Not',flex:'1 1 120px'}
+  ]);
+  var matSec=arrSection('KULLANILAN MALZEME',fr.materialsUsed,'Malzeme',[
+    {k:'name',p:'Malzeme adı',flex:'2 1 200px'},{k:'quantity',p:'Miktar',flex:'0 0 70px'},{k:'unit',p:'Birim',flex:'0 0 70px'}
+  ]);
+  var persSec=arrSection('SAHADA BULUNAN PERSONEL',fr.personnelOnSite,'Personel',[
+    {k:'name',p:'Ad Soyad',flex:'2 1 200px'},{k:'role',p:'Görevi',flex:'1 1 120px'}
+  ]);
+  var safetySec=h('div',{style:{marginBottom:'12px'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',flex:'1'}},'İŞ GÜVENLİĞİ'),
+      h('label',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',cursor:'pointer'}},
+        h('input',{type:'checkbox',checked:fr.safetyOk,onchange:function(e){fr.safetyOk=e.target.checked;rerender();}}),
+        'Uygunsuzluk yok')),
+    !fr.safetyOk?arrSection('',fr.safetyIncidents,'Uygunsuzluk',[
+      {k:'desc',p:'Açıklama',flex:'2 1 200px'},{k:'severity',p:'Seviye (dusuk/orta/yuksek)',flex:'1 1 120px'}
+    ]):h('span')
+  );
+  var reworkSec=arrSection('YENİDEN-İŞ',fr.reworkItems,'Kalem',[
+    {k:'desc',p:'Açıklama',flex:'2 1 200px'},{k:'reason',p:'Nedeni',flex:'1 1 150px'}
+  ]);
+  var budgetRow=h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'12px'}},
+    h('div',{style:{flex:'0 0 160px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Günlük Harcama (€)'),
+      h('input',{type:'number',value:fr.budgetSpent||'',placeholder:'0',oninput:function(e){fr.budgetSpent=Number(e.target.value)||0;},style:_clInputStyle()})),
+    h('div',{style:{flex:'1 1 200px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Genel Notlar'),
+      h('input',{value:fr.generalNotes||'',placeholder:'',oninput:function(e){fr.generalNotes=e.target.value;},style:_clInputStyle()})),
+    h('div',{style:{flex:'1 1 200px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Ertesi Gün Planı'),
+      h('input',{value:fr.nextDayPlan||'',placeholder:'',oninput:function(e){fr.nextDayPlan=e.target.value;},style:_clInputStyle()}))
+  );
+  var signSec=h('div',{style:{marginTop:'14px',paddingTop:'14px',borderTop:'2px solid #e2e8f0'}},
+    h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}},'İmza'),
+    h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
+      clSignPad(fr,fr.staffSign,'Saha Sorumlusu','frsig-staff',(state.users||[]).filter(function(u){return u.active!==false;}).map(function(u){return u.displayName;}).sort(function(a,b){return a.localeCompare(b,'tr');})))
+  );
+  var isExisting=(state.fieldReports||[]).some(function(x){return x.id===fr.id;});
+  var footer=h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
+    btn('Kaydet',function(){frSave(fr);},'#16a34a','#fff','8px 14px'),
+    btn('Taslak',function(){frSaveDraft(fr);},'#64748b','#fff','8px 14px'),
+    btn('Yazdır',function(){printFieldReport(fr);},'#0891b2','#fff','8px 14px'),
+    isExisting?btn('Sil',function(){frDelete(fr.id);},'#dc2626','#fff','8px 14px'):'',
+    btn('Kapat',function(){setState({modal:null});},'#64748b','#fff','8px 14px'));
+  var body=h('div',{},header,persSec,workSec,matSec,safetySec,reworkSec,budgetRow,signSec,footer);
+  return modal('Saha Raporu',body,function(){setState({modal:null});},'860px');
+}
+function printFieldReport(fr){
+  fr=normFieldReport(fr);
+  var proj=fr.projectId?(state.opportunities||[]).find(function(x){return x.id===fr.projectId;}):null;
+  var cust=fr.customerId?(state.customers||[]).find(function(x){return x.id===fr.customerId;}):null;
+  function infoRow(l,v){return '<tr><td class="lbl">'+escapeHtml(l)+'</td><td>'+escapeHtml(v||'—')+'</td></tr>';}
+  var info='<table class="infogrid"><tbody>'
+    +infoRow('Proje',proj?(proj.title||'—'):'—')
+    +infoRow('Müşteri',cust?(cust.firmName||'—'):'—')
+    +infoRow('Tarih',_toTR(fr.reportDate||today()))
+    +infoRow('Hava',(FR_WEATHER.find(function(w){return w.v===fr.weather;})||{}).l||fr.weather||'—')
+    +infoRow('Sıcaklık',fr.temperature?(fr.temperature+' °C'):'—')
+    +infoRow('Referans',String(fr.id).slice(-8).toUpperCase())
+    +'</tbody></table>';
+  var persRows=(fr.personnelOnSite||[]).map(function(p,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(p.name||'')+'</td><td>'+escapeHtml(p.role||'')+'</td></tr>';}).join('');
+  var persTable=persRows?'<table class="wtable"><thead><tr><th>#</th><th>Ad Soyad</th><th>Görevi</th></tr></thead><tbody>'+persRows+'</tbody></table>':'<p style="color:#94a3b8;font-size:12px;">Personel girilmemiş.</p>';
+  var workRows=(fr.workItems||[]).map(function(w,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(w.desc||'')+'</td><td>'+escapeHtml(w.quantity||'')+'</td><td>'+escapeHtml(w.unit||'')+'</td><td>'+escapeHtml(w.note||'')+'</td></tr>';}).join('');
+  var workTable=workRows?'<table class="wtable"><thead><tr><th>#</th><th>İş Tanımı</th><th>Miktar</th><th>Birim</th><th>Not</th></tr></thead><tbody>'+workRows+'</tbody></table>':'';
+  var matRows=(fr.materialsUsed||[]).map(function(m,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(m.name||'')+'</td><td>'+escapeHtml(m.quantity||'')+'</td><td>'+escapeHtml(m.unit||'')+'</td></tr>';}).join('');
+  var matTable=matRows?'<table class="wtable"><thead><tr><th>#</th><th>Malzeme</th><th>Miktar</th><th>Birim</th></tr></thead><tbody>'+matRows+'</tbody></table>':'<p style="color:#94a3b8;font-size:12px;">Malzeme girilmemiş.</p>';
+  var safetyHtml=fr.safetyOk?'<span style="color:#16a34a;font-weight:700;">✅ Uygunsuzluk yok</span>':'';
+  if(!fr.safetyOk&&fr.safetyIncidents.length){
+    safetyHtml='<table class="wtable"><thead><tr><th>#</th><th>Açıklama</th><th>Seviye</th></tr></thead><tbody>';
+    fr.safetyIncidents.forEach(function(s,i){safetyHtml+='<tr><td>'+(i+1)+'</td><td>'+escapeHtml(s.desc||'')+'</td><td>'+escapeHtml(s.severity||'')+'</td></tr>';});
+    safetyHtml+='</tbody></table>';
+  }
+  var reworkHtml='';
+  if(fr.reworkItems.length){
+    reworkHtml='<table class="wtable"><thead><tr><th>#</th><th>Açıklama</th><th>Nedeni</th></tr></thead><tbody>';
+    fr.reworkItems.forEach(function(r,i){reworkHtml+='<tr><td>'+(i+1)+'</td><td>'+escapeHtml(r.desc||'')+'</td><td>'+escapeHtml(r.reason||'')+'</td></tr>';});
+    reworkHtml+='</tbody></table>';
+  }
+  var signImg=fr.staffSign&&fr.staffSign.dataURL?'<img src="'+fr.staffSign.dataURL+'" class="sig"/>':'<div class="sig"></div>';
+  var html=''
+    +'<style>@media print{.no-print{display:none!important;}} @page{margin:14mm;} body{font-family:Arial,Helvetica,sans-serif;color:#111;} .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #c00000;padding-bottom:10px;margin-bottom:14px;} .hd img{height:56px;} .letterhead{text-align:right;font-size:11px;color:#333;line-height:1.6;} .letterhead b{display:block;font-size:13px;color:#111;margin-bottom:2px;} .secbar{background:#1e3a5f;color:#fff;font-weight:700;font-size:12px;padding:6px 10px;text-transform:uppercase;letter-spacing:.03em;margin:14px 0 8px;} .infogrid{width:100%;border-collapse:collapse;margin-bottom:6px;} .infogrid td{border:1px solid #e2e8f0;padding:7px 10px;font-size:12px;} .infogrid td.lbl{background:#f5f5f5;font-weight:700;color:#333;width:22%;} .wtable{width:100%;border-collapse:collapse;margin:6px 0;font-size:12px;} .wtable th{background:#f0f4f8;border:1px solid #d0daea;padding:6px 8px;text-align:left;font-weight:700;} .wtable td{border:1px solid #e2e8f0;padding:5px 8px;} .signbox{margin-top:20px;} .role{font-weight:700;font-size:13px;margin-bottom:4px;} img.sig,.sig{display:block;width:220px;height:80px;border:1px solid #cbd5e1;border-radius:6px;object-fit:contain;} .sigline{font-size:12px;margin-top:4px;} .foot{margin-top:24px;font-size:10px;color:#94a3b8;text-align:center;}</style>'
+    +'<div class="hd"><img src="'+APRO_LOGO_DATAURI+'"/><div class="letterhead">'+APRO_LETTERHEAD.map(function(l,i){return i===0?('<b>'+escapeHtml(l)+'</b>'):escapeHtml(l)+'<br/>';}).join('')+'</div></div>'
+    +'<h1 style="font-size:16px;margin:0 0 10px;color:#0f1f35;">Saha Raporu</h1>'
+    +info
+    +'<div class="secbar">Sahada Bulunan Personel</div>'+persTable
+    +'<div class="secbar">Yapılan İşler</div>'+workTable
+    +'<div class="secbar">Kullanılan Malzeme</div>'+matTable
+    +'<div class="secbar">İş Güvenliği</div>'+safetyHtml
+    +(reworkHtml?'<div class="secbar">Yeniden-İş</div>'+reworkHtml:'')
+    +(fr.budgetSpent?'<div class="secbar">Harcama</div><p style="font-size:13px;">'+eur(fr.budgetSpent)+'</p>':'')
+    +(fr.generalNotes?'<div class="secbar">Genel Notlar</div><p style="font-size:12.5px;white-space:pre-wrap;">'+escapeHtml(fr.generalNotes)+'</p>':'')
+    +(fr.nextDayPlan?'<div class="secbar">Ertesi Gün Planı</div><p style="font-size:12.5px;white-space:pre-wrap;">'+escapeHtml(fr.nextDayPlan)+'</p>':'')
+    +'<div class="signbox"><div class="role">Saha Sorumlusu</div>'+signImg+'<div class="sigline">Ad Soyad: '+escapeHtml((fr.staffSign&&fr.staffSign.name)||'')+'</div><div class="sigline">Tarih: '+escapeHtml(fr.staffSign&&fr.staffSign.at?_toTR(fr.staffSign.at):'')+'</div><div class="sigline">İmza (ıslak): ______________________</div></div>'
+    +'<div class="foot">A-PRO Mühendislik · Saha İmalat Raporu · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
+  var ep=document.getElementById('print-overlay');if(ep)ep.remove();
+  var po=document.createElement('div');po.id='print-overlay';po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
+  var bar=document.createElement('div');bar.className='no-print';bar.style.cssText='display:flex;gap:8px;padding:10px;border-bottom:1px solid #e2e8f0;';
+  var pb=document.createElement('button');pb.textContent='Yazdır';pb.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;';pb.onclick=function(){window.print();};
+  var cb=document.createElement('button');cb.textContent='Kapat';cb.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;';cb.onclick=function(){po.remove();};
+  bar.appendChild(pb);bar.appendChild(cb);
+  var content=document.createElement('div');content.style.cssText='overflow:auto;padding:24px;';content.innerHTML=html;
+  po.appendChild(bar);po.appendChild(content);document.body.appendChild(po);
+}
+function frListBlock(opts){
+  var list=(state.fieldReports||[]).filter(function(x){return x.linkType===opts.linkType&&x.linkId===opts.linkId;})
+    .sort(function(a,b){return(a.reportDate||'').localeCompare(b.reportDate||'');});
+  var rows=list.map(function(fr,idx){
+    return h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 8px',border:'1px solid #e2e8f0',borderRadius:'8px',marginBottom:'6px',background:'#fff'}},
+      h('span',{style:{flex:'1',fontSize:'13px'}},(idx+1)+'. '+_toTR(fr.reportDate)+' · '+(fr.status==='tamam'?'✅ Tamam':'✏️ Taslak')+(fr.createdBy?' · '+fr.createdBy:'')),
+      btn('Aç',function(){openFieldReport({id:fr.id});},'#2563eb','#fff','5px 12px',{fontSize:'12px'}),
+      btn('PDF',function(){printFieldReport(fr);},'#0891b2','#fff','5px 12px',{fontSize:'12px'}));
+  });
+  return h('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #e2e8f0'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
+      h('div',{style:{fontWeight:'800',fontSize:'14px',flex:'1',color:'#0f1f35'}},'📋 Saha Raporu'),
+      btn('+ Yeni Saha Raporu',function(){openFieldReport(opts.newOpts);},'#1e3a5f','#fff','6px 13px',{fontSize:'12px'})),
+    rows.length?h('div',{},...rows):h('div',{style:{fontSize:'12px',color:'#94a3b8'}},'Henüz saha raporu yok.'));
+}
 async function clDelete(id){
   const cl = (state.checklists||[]).find(x=>x.id===id);
   const isAdmin = !!(state.currentUser && state.currentUser.isAdmin);
@@ -6830,6 +7053,64 @@ function personelAutoMetric(kod, name, period, dept){
       const onTime = closed.filter(t=>!t.dueDate || !t.completedAt || String(t.completedAt).slice(0,10)<=String(t.dueDate).slice(0,10)).length;
       return onTime/closed.length;
     }
+    case 'saha_rapor': {
+      var projs=(state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&!o.execClosedAt&&o.assignedTo===name;});
+      if(!projs.length) return null;
+      var allFr=(state.fieldReports||[]).filter(function(r){return r.status==='tamam';});
+      var expected=0,filed=0;
+      var periodYear=_periodYear(period);
+      projs.forEach(function(p){
+        var freq=Number(p.reportFreqDays)||FR_DEFAULT_FREQ;
+        var start=p.execStartDate||p.wonDate||p.createdAt||'';
+        if(!start) return;
+        var s=_toDate(start),e=new Date();
+        if(String(s.getFullYear())>String(periodYear)) return;
+        var dayCount=Math.max(0,Math.floor((e-s)/(86400000)));
+        var exp=Math.floor(dayCount/freq);
+        expected+=exp;
+        var pReports=allFr.filter(function(r){return r.projectId===p.id&&r.createdBy===name;});
+        filed+=Math.min(pReports.length,exp);
+      });
+      return expected>0?(filed/expected):null;
+    }
+    case 'proje_butce': {
+      var projs2=(state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&o.assignedTo===name;});
+      if(!projs2.length) return null;
+      var scored=0,total2=0;
+      projs2.forEach(function(p){
+        var planned=Number(p.plannedBudget)||0;
+        if(!planned) return;
+        total2++;
+        var spent=(state.fieldReports||[]).filter(function(r){return r.projectId===p.id&&r.status==='tamam';}).reduce(function(a,r){return a+(Number(r.budgetSpent)||0);},0);
+        var ratio=spent/planned;
+        scored+=ratio<=1?1:Math.max(0,2-ratio);
+      });
+      return total2>0?(scored/total2):null;
+    }
+    case 'is_guvenligi': {
+      var projs3=(state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&o.assignedTo===name;});
+      if(!projs3.length) return null;
+      var incidents=0,reportCount=0;
+      projs3.forEach(function(p){
+        var pReports=(state.fieldReports||[]).filter(function(r){return r.projectId===p.id&&r.status==='tamam';});
+        reportCount+=pReports.length;
+        pReports.forEach(function(r){incidents+=(r.safetyIncidents||[]).length;});
+      });
+      if(!reportCount) return null;
+      return Math.max(0,1-(incidents/reportCount));
+    }
+    case 'iscilik_kalite': {
+      var projs4=(state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&o.assignedTo===name;});
+      if(!projs4.length) return null;
+      var reworkCount=0,reportCount2=0;
+      projs4.forEach(function(p){
+        var pReports=(state.fieldReports||[]).filter(function(r){return r.projectId===p.id&&r.status==='tamam';});
+        reportCount2+=pReports.length;
+        pReports.forEach(function(r){reworkCount+=(r.reworkItems||[]).length;});
+      });
+      if(!reportCount2) return null;
+      return Math.max(0,1-(reworkCount/reportCount2));
+    }
     default: {
       const st = personelTaskStats(name,period,true);
       return st.total? st.ratio : null;
@@ -7365,7 +7646,7 @@ function personelTestModeToggle(period){
     const ex = evals.find(e=>e.personName===n && e.period===P);
     const rec = ex ? {...ex, criteria:{...(ex.criteria||{})}} : { id:'test_'+idx, personName:n, department:u.department, period:P, criteria:{}, managerScore:0 };
     rec.managerScore = [4,5,3,4][idx%4];
-    ['ilk_cozum','teknik_dogruluk','proje_butce','is_guvenligi','iscilik_kalite','saha_rapor','malzeme_verim','yasal_uyum','evrak_duzen','raporlama'].forEach(k=>{
+    ['ilk_cozum','teknik_dogruluk','malzeme_verim','yasal_uyum','evrak_duzen','raporlama'].forEach(k=>{
       if(rec.criteria[k]==null) rec.criteria[k] = [0.9,0.75,1.0,0.85][idx%4];
     });
     const i = evals.findIndex(e=>e.personName===n && e.period===P);
@@ -8771,6 +9052,7 @@ function buildProjeModal(oppId){
   );
   content.appendChild(clListBlock({ linkType:'project', linkId:o.id, newOpts:{ formType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
   content.appendChild(sfListBlock({ linkType:'project', linkId:o.id, newOpts:{ docType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
+  content.appendChild(frListBlock({ linkType:'project', linkId:o.id, newOpts:{ customerId:o.customerId||'', projectId:o.id, linkType:'project', linkId:o.id } }));
   return modal((o.title||'Proje')+' — İcra', content, ()=>setState({modal:null}), '720px');
 }
 function projFilterMgr(list, isAdmin){
@@ -9384,6 +9666,7 @@ function render() {
     else if(type==='bakimformlar') m=buildMaintFormsModal(state.modal.maintId);
     else if(type==='checklist') m=buildChecklistModal(item);
     else if(type==='serviceform') m=buildServiceFormModal(item);
+    else if(type==='fieldreport') m=buildFieldReportModal(item);
     else if(type==='opportunity') m=buildOppModal(item);
     else if(type==='serviceopp') m=buildServiceOppModal(item);
     else if(type==='proposal') m=buildPropModal(item);

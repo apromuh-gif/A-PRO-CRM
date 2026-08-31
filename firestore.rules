@@ -68,6 +68,13 @@ service cloud.firestore {
         && (resource.data.status != 'tamam' || isAdmin());
       allow delete: if isAdmin();
     }
+    match /fieldReports/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn()
+        && (resource.data.status != 'tamam' || isAdmin());
+      allow delete: if isAdmin();
+    }
 
     // --- Personel modülü (Görev / Performans / Prim) ---
     // Görevler & değerlendirmeler: oturum açmış kullanıcı okur/yazar
