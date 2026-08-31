@@ -8849,6 +8849,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
   }
   const viewBar = h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},
     btn('📋 Liste',()=>{PMOD.taskView='liste';render();},PMOD.taskView==='liste'?'#1e3a6e':'#e8eef7',PMOD.taskView==='liste'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
+    btn('📂 Gruplu',()=>{PMOD.taskView='gruplu';render();},PMOD.taskView==='gruplu'?'#1e3a6e':'#e8eef7',PMOD.taskView==='gruplu'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
     btn('🗂 Kanban',()=>{PMOD.taskView='kanban';render();},PMOD.taskView==='kanban'?'#1e3a6e':'#e8eef7',PMOD.taskView==='kanban'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'})
   );
 
@@ -8862,9 +8863,12 @@ function renderPersonelGorevler(period, isAdmin, cu){
 
   const filtered = list.filter(statusFilter).sort((a,b)=>String(a.dueDate||'').localeCompare(String(b.dueDate||'')));
 
+  const emptyMsg = h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.');
   const body = PMOD.taskView==='kanban'
     ? renderTaskKanban(filtered)
-    : h('div',{}, ...(filtered.length? filtered.map(t=>taskCard(t,isAdmin,myName)) : [h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.')]));
+    : PMOD.taskView==='gruplu'
+    ? renderTaskGrouped(filtered, isAdmin, myName)
+    : h('div',{}, ...(filtered.length? filtered.map(t=>taskCard(t,isAdmin,myName)) : [emptyMsg]));
 
   return h('div',{}, fyEmptyBanner('tasks','görev'), renderTaskDigest(isAdmin, myName), addBtn, addPanel, ctxBar, mgrBar, filterBar, viewBar, body);
 }
@@ -8965,6 +8969,46 @@ function taskCard(t, isAdmin, myName){
     h('div',{style:{flex:'1',minWidth:'0'}}, cardEl),
     canDel?btn('🗑️',(e)=>{ if(confirm('Görev silinsin mi?')) personelDeleteDoc('tasks',t.id).then(()=>showToast('✅ Silindi.')); },'#fef2f2','#dc2626','6px 10px',{fontSize:'12px',border:'1px solid #fecaca',flexShrink:'0',marginTop:'4px'}):h('span')
   );
+}
+
+function renderTaskGrouped(tasks, isAdmin, myName){
+  if(!tasks.length) return h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.');
+  const groups = {};
+  tasks.forEach(t=>{
+    const key = (t.linkType && t.linkType!=='none' && t.linkId) ? t.linkType+'::'+t.linkId : '_genel';
+    if(!groups[key]) groups[key] = { tasks:[], linkType:t.linkType, linkLabel:t.linkLabel, context:t.context };
+    groups[key].tasks.push(t);
+  });
+  const CTX_ICON = {servis:'🔧',proje:'📋',bakim:'🔁',sirket:'🏢'};
+  const CTX_COLOR = {servis:'#0e7490',proje:'#1e3a6e',bakim:'#15803d',sirket:'#b45309'};
+  const sortedKeys = Object.keys(groups).sort((a,b)=>{
+    if(a==='_genel') return 1; if(b==='_genel') return -1;
+    return (groups[a].linkLabel||'').localeCompare(groups[b].linkLabel||'','tr');
+  });
+  if(!PMOD._groupOpen) PMOD._groupOpen = {};
+  return h('div',{}, ...sortedKeys.map(key=>{
+    const g = groups[key];
+    const isGenel = key==='_genel';
+    const ctx = isGenel ? 'sirket' : (g.context||'sirket');
+    const icon = CTX_ICON[ctx]||'🏢';
+    const color = CTX_COLOR[ctx]||'#b45309';
+    const label = isGenel ? 'Genel Görevler' : (g.linkLabel || key);
+    const open = g.tasks.some(t=>!taskIsClosed(t) && t.dueDate && String(t.dueDate)<today());
+    const isOpen = PMOD._groupOpen[key] !== undefined ? PMOD._groupOpen[key] : open || (!isGenel && g.tasks.some(t=>!taskIsClosed(t)));
+    const openCount = g.tasks.filter(t=>!taskIsClosed(t)).length;
+    const overdueCount = g.tasks.filter(t=>!taskIsClosed(t) && t.dueDate && String(t.dueDate)<today()).length;
+    const header = h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'10px 14px',background:isOpen?color+'0d':'#f8fafc',border:'1px solid '+(isOpen?color+'33':'#e2e8f0'),borderRadius:isOpen?'11px 11px 0 0':'11px',cursor:'pointer',userSelect:'none',marginTop:'8px'},onclick:()=>{PMOD._groupOpen[key]=!isOpen;render();}},
+      h('span',{style:{fontSize:'14px',transition:'transform .15s',transform:isOpen?'rotate(90deg)':'rotate(0)'}},'▶'),
+      h('span',{style:{fontSize:'13px'}},icon),
+      h('span',{style:{fontWeight:'700',fontSize:'13px',color:color}},label),
+      openCount?h('span',{style:{background:color+'22',color:color,fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'9px'}},openCount+' acik'):h('span'),
+      overdueCount?h('span',{style:{background:'#fee2e2',color:'#dc2626',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'9px'}},overdueCount+' geciken'):h('span')
+    );
+    const content = isOpen ? h('div',{style:{border:'1px solid '+(color+'33'),borderTop:'none',borderRadius:'0 0 11px 11px',padding:'8px',background:'#fff'}},
+      ...g.tasks.map(t=>taskCard(t,isAdmin,myName))
+    ) : h('span');
+    return h('div',{}, header, content);
+  }));
 }
 
 function renderTaskKanban(tasks){
