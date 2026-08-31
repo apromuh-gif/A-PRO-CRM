@@ -8722,7 +8722,8 @@ function buildTaskModal(taskId){
   const cm = TASK_CONTEXT_META[t.context] || TASK_CONTEXT_META.sirket;
 
   const ownerBtns = [];
-  if(isOwner && !taskIsClosed(t)){
+  const canAct = (isOwner || isGiver) && !taskIsClosed(t);
+  if(canAct){
     if(t.status==='yapilacak') ownerBtns.push(btn('▶ Başla',()=>taskSetStatus(t,'devam'),'#2563eb','#fff','8px 14px'));
     if(t.status==='devam'){
       ownerBtns.push(btn('✓ Tamamladım',()=>taskSetStatus(t,'tamamlandi'),'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px'));
@@ -8772,7 +8773,7 @@ function buildTaskModal(taskId){
     ...(commentList.length?commentList:[h('div',{style:{fontSize:'12px',color:'#94a3b8'}},'Henüz yorum yok.')]),
     h('div',{style:{display:'flex',gap:'6px',marginTop:'8px'}},
       inp('Yorum ekle…', cDraft.text, v=>{cDraft.text=v;}),
-      btn('Gönder',()=>{ taskAddComment(t,cDraft.text).then(()=>{state._commentDraft=null;render();}); },'#2563eb','#fff','8px 14px')
+      btn('Yorum Yap',()=>{ taskAddComment(t,cDraft.text).then(()=>{state._commentDraft=null;render();}); },'#2563eb','#fff','8px 14px')
     )
   );
 
