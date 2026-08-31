@@ -5874,8 +5874,8 @@ function buildServiceFormModal(sf){
     h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'HİZMET TÜRÜ'), docTypeCards,
     h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'TESİSTEKİ SİSTEMLER'), sysCards,
     h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'YAPILAN HİZMET'), descBox,
-    h('div',{style:{fontSize:'12px',color:'#64748b',margin:'14px 0 6px',fontWeight:'700'}},'MÜŞTERİ İLGİLİSİ'), custContactRow,
-    h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'SERVİS PERSONELİ'), staffContactRow,
+    h('div',{style:{fontSize:'12px',color:'#64748b',margin:'14px 0 6px',fontWeight:'700'}},'SERVİS PERSONELİ'), staffContactRow,
+    h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px',fontWeight:'700'}},'MÜŞTERİ İLGİLİSİ'), custContactRow,
     signs, footer);
   return modal(SF_DOCTYPE_META[sf.docType]||'Servis-Devreye Alma Formu', body, function(){ setState({modal:null}); }, '820px');
 }
@@ -5905,8 +5905,8 @@ function printServiceForm(sf){
    + '<div class="secbar">Tesisteki Sistemler</div><div class="badges">'+(sysLabels.length?sysLabels.map(function(l){return '<span class="badge">'+escapeHtml(l)+'</span>';}).join(''):'<span style="color:#94a3b8;font-size:12px;">Belirtilmedi</span>')+'</div>'
    + '<div class="secbar">Yapılan Hizmet</div><div class="desc">'+escapeHtml(sf.description||'—')+'</div>'
    + '<div class="secbar">Taraflar</div><div class="parties">'
-     + '<div><b style="font-size:12px;">Müşteri İlgilisi</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.custContact.name||'—')+(sf.custContact.phone?(' · '+escapeHtml(sf.custContact.phone)):'')+'</div></div>'
      + '<div><b style="font-size:12px;">Servis Personeli</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.staffContact.name||'—')+(sf.staffContact.phone?(' · '+escapeHtml(sf.staffContact.phone)):'')+'</div></div>'
+     + '<div><b style="font-size:12px;">Müşteri İlgilisi</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.custContact.name||'—')+(sf.custContact.phone?(' · '+escapeHtml(sf.custContact.phone)):'')+'</div></div>'
    + '</div>'
    + '<div class="signs">'+signBox(sf.staffSign,'A-Pro Yetkilisi')+signBox(sf.custSign,'Müşteri İlgilisi')+'</div>'
    + '<div class="foot">A-PRO Mühendislik · Hizmet teslim formu · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
