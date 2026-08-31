@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 30 Ağustos 2026 (kod denetimi: prim motoru + bildirim katmanı kritik düzeltmeleri, 420 satır ölü kod temizliği)
+> Son güncelleme: 31 Ağustos 2026 (Saha Raporu sistemi + 4 auto prim kriteri, 12-GAP muhasebe otomasyonu)
 
 ---
 
@@ -47,6 +47,9 @@
 | `visits` | Saha ziyaretleri |
 | `appointments` | Randevular |
 | `users` | Kullanıcılar (şifre, rol, hedef) |
+| `checklists` | NFPA checklist kayıtları |
+| `serviceForms` | Servis-devreye alma formları |
+| `fieldReports` | Saha imalat raporları |
 | `settings/config` | Groq API key |
 | `settings/targets` | Yıllık hedefler |
 
@@ -788,4 +791,90 @@ eklenmesi gerekir (henüz yok).
 
 **Durum:** Tümü yerel olarak doğrulandı — sözdizimi temiz, tarayıcıda hatasız yükleniyor,
 `index.html` senkron. Canlıya alınmadı.
+
+---
+
+## 🔧 Muhasebe & Operasyonel Takip — 12-GAP Implementasyonu (30 Ağustos 2026)
+
+Muhasebe departmanına otomatik görev atama, fatura/tahsilat zinciri, vergi takvimi ve garanti takibi altyapısı kuruldu. 12 boşluk (GAP) tek seferde uygulandı.
+
+### Altyapı fonksiyonları
+- **`leastBusyInDept(dept)`** — departmandaki açık görev sayısı en az olan personeli döndürür.
+- **`autoCreateTask(opts)`** — dedupe key ile tekrarlayan görev oluşturmayı önler.
+- **`TASK_CHAIN_RULES`** — görev tamamlandığında zincirleme sonraki görevi tetikler (fatura → tahsilat).
+- **`TAX_CALENDAR`** — 7 beyanname türü (KDV-1/2, Muhtasar, SGK, Geçici Vergi, Ba-Bs) takvimi.
+
+### GAP özeti
+
+| GAP | Açıklama | Tetikleyici |
+|---|---|---|
+| 1 | Bakım sözleşmesi yenileme takibi (60 gün önce) | `checkAllNotifications()` |
+| 2 | KAZANILDI → Sipariş onay + sipariş formu görevi | `saveOpp()` |
+| 3 | Servis kapanışında fatura görevi | `servClose()` |
+| 4 | Garanti bitimi → bakım teklifi (60 gün önce) | `checkAllNotifications()` |
+| 5 | Tüm tetikleme noktalarında otomatik görev | `servClose/maintDone/projClose/saveOpp` |
+| 6 | Görev zinciri: fatura → tahsilat (30 gün offset) | Görev tamamlama |
+| 7 | Muhasebe prim kriterleri (4 auto kriter) | `DEFAULT_EVAL_CONFIG` |
+| 8 | Servis tipi ayrımı (proje kapsamı → hakediş) | `servClose()` |
+| 9 | Fatura vadesi & yaşlandırma bildirimi | `checkAllNotifications()` |
+| 10 | Proje bazlı fatura/tahsilat özeti | Fırsat kartı |
+| 11 | Vergi/beyanname otomatik görev + bildirim | `checkAllNotifications()` |
+| 12 | Garanti takibi (otomatik kapsam hesaplama) | `projClose()` |
+
+### Muhasebe prim kriterleri (yeni dağılım)
+```
+tahsilat:       auto:true,  weight:0.20
+siparis_takip:  auto:true,  weight:0.15
+yasal_uyum:     auto:true,  weight:0.15
+faturalama:     auto:true,  weight:0.10
+yonetici:       auto:false, weight:0.15
+raporlama:      auto:true,  weight:0.10
+gorev:          auto:true,  weight:0.06
+gorev_dogruluk: auto:true,  weight:0.04
+evrak_duzen:    auto:false, weight:0.05
+```
+
+**Durum:** Canlı, commit `b31dc53`.
+
+---
+
+## 📋 Saha Raporu Sistemi + Saha Auto Prim Kriterleri (31 Ağustos 2026)
+
+Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departmanının 6 manuel kriterinden 4'ü saha raporu verisine dayalı otomatik hesaplamaya geçirildi.
+
+### Saha Raporu formu
+- **`normFieldReport`** — normalize fonksiyonu: reportDate, weather, temperature, personnelOnSite[], workItems[], materialsUsed[], safetyOk, safetyIncidents[], reworkItems[], budgetSpent, generalNotes, nextDayPlan, staffSign, status.
+- **`buildFieldReportModal`** — tam form UI: proje seçimi, tarih, hava durumu, sıcaklık, sahada bulunan personel, yapılan işler (iş tanımı/miktar/birim/not), kullanılan malzeme, iş güvenliği (uygunsuzluk var/yok + olay listesi), yeniden-iş kalemleri, günlük harcama, genel notlar, ertesi gün planı, dijital imza.
+- **`printFieldReport`** — A-PRO antetli yazdırma: logo, şirket bilgileri, proje/müşteri bilgisi, tablolu iş/malzeme/personel/güvenlik/yeniden-iş listeleri, imza alanı.
+- **`frListBlock`** — proje detay modalında saha raporları listeleme (tarih + durum + oluşturan + Aç/PDF butonları).
+- **CRUD:** `frSave` (zorunlu alan kontrolü: proje + en az 1 iş kalemi + imza), `frSaveDraft`, `frDelete` (imzalı rapor silme admin onaylı).
+- **Firestore:** `fieldReports` koleksiyonu + güvenlik kuralları (imzalı rapor güncelleme/silme admin'e kilitli).
+
+### Rapor periyodu ve disiplin takibi
+- Her projenin `reportFreqDays` alanı ile rapor sıklığı ayarlanabilir (varsayılan: **3 gün**).
+- Prim kriteri `saha_rapor` (%5): projenin başlangıcından bugüne kadar **beklenen rapor sayısı** (gün/periyot) vs **zamanında teslim edilen rapor sayısı** oranını ölçer.
+- Yönetici için önemli: raporların düzenli gelmesi saha disiplininin göstergesi.
+
+### Saha prim kriterleri — Manuel → Otomatik
+
+| Kriter | Ağırlık | Eski | Yeni | Hesaplama |
+|---|---|---|---|---|
+| `proje_butce` | %30 | Manuel | **Otomatik** | Saha raporlarındaki toplam harcama / proje planlanan bütçe |
+| `is_guvenligi` | %15 | Manuel | **Otomatik** | 1 − (güvenlik uygunsuzluk sayısı / rapor sayısı) |
+| `iscilik_kalite` | %10 | Manuel | **Otomatik** | 1 − (yeniden-iş kalemi sayısı / rapor sayısı) |
+| `saha_rapor` | %5 | Manuel | **Otomatik** | Zamanında teslim edilen rapor / beklenen rapor (periyot bazlı) |
+| `malzeme_verim` | %5 | Manuel | Manuel | Envanter modülü gerekiyor |
+| `yonetici` | %10 | Manuel | Manuel | Sübjektif değerlendirme |
+
+### Değişiklik listesi
+1. `DEFAULT_EVAL_CONFIG.saha` — 4 kriter `auto:false` → `auto:true`
+2. `loadAllData` — `fieldReports` koleksiyonu Promise.all'a eklendi
+3. Saha raporu fonksiyon bloğu (~250 satır): norm, CRUD, form, yazdırma, listBlock
+4. `personelAutoMetric` — 4 yeni case: `saha_rapor`, `proje_butce`, `is_guvenligi`, `iscilik_kalite`
+5. Proje detay modalına `frListBlock` eklendi
+6. Modal switch'e `fieldreport` case'i eklendi
+7. Test modu — auto olan 4 kriter manuel listeden çıkarıldı
+8. `firestore.rules` — `fieldReports` koleksiyon kuralları eklendi
+
+**Durum:** Canlı, commit `92d5304`. Firestore rules Firebase Console'dan deploy edildi. UI testi devam ediyor.
 
