@@ -631,13 +631,13 @@ function selectTeklifFormat() {
 function oppTeklifBtns(o, pad){
   const lp=state.proposals.find(function(p){return p.opportunityId===o.id&&p.quotationId&&!p.quotationDeleted;});
   const qId=(o.quotationDeleted?'':o.quotationId)||(lp&&lp.quotationId);
-  var _teklifClick=function(){var cust=custById(o.customerId);if(cust)teklifOlustur(cust,o.title,o.id);else alert("Müşteri bulunamadı.");};
+  var _teklifClick=function(){var cust=state.customers.find(function(c){return c.id===o.customerId;});if(cust)teklifOlustur(cust,o.title,o.id);else alert("Müşteri bulunamadı.");};
   if(!qId) return [btn("📋 Teklif Oluştur",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'})];
   var crmSent=["Gönderildi","Revize","Randevu","Onaylandı","Reddedildi"];
   var qStatus=o.quotationStatus||(lp&&lp.quotationStatus);
   var isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);
   var existing=isDraft?btn("✏️ Taslağı Aç",function(){openQuotationWithSSO(qId);},'#fffbeb','#b45309',pad,{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn("🔗 Teklif Programı",function(){openQuotationWithSSO(qId);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});
-  return [existing, btn("📋 Yeni Teklif",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'})];
+  return [existing, btn("📋 Yeni Teklif Formatı",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'})];
 }
 
 // Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
