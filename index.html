@@ -254,6 +254,7 @@ const TEKLIF_USERS_URL      = TEKLIF_APP_URL + '/api/v1/crm/users';
 const TEKLIF_STAFF_SYNC_URL = TEKLIF_APP_URL + '/api/v1/crm/staff-lists';
 const TEKLIF_BACKFILL_URL   = TEKLIF_APP_URL + '/api/v1/crm/backfill-salesrep';
 const TEKLIF_APPROVE_URL    = TEKLIF_APP_URL + '/api/v1/crm/approve-quotation';
+const TEKLIF_CONVERT_URL = TEKLIF_APP_URL + '/api/v1/crm/convert-quotation';
 const TEKLIF_API_KEY  = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a83ef805af0';
 
 // Tek seferlik backfill: eski (salesRep boş) tekliflere, bağlı fırsatın sahibini (assignedTo) yaz.
@@ -475,11 +476,13 @@ async function openQuotationWithSSO(quotationId) {
         const _scrollSave = [...document.querySelectorAll('.apro-no-sb')].map(el => el.scrollLeft);
         let updatedOpps = [...state.opportunities];
         for (const o of relatedOpps) {
+          const tpFormat = chkBody.data.format ?? null;
           const upd = { ...o,
             ...(tpStatus   !== null && { quotationStatus: tpStatus }),
             ...(tpTotal    !== null && tpTotal > 0 && { value: tpTotal }),
             ...(tpReference !== null && { tenderRef: tpReference }),
             ...(tpSalesRep  !== null && tpSalesRep !== '' && { assignedTo: tpSalesRep }),
+            ...(tpFormat   !== null && { quotationFormat: tpFormat }),
             ...syncStamp(tpLastEditor)
           };
           await saveDoc('opportunities', o.id, upd);
@@ -628,6 +631,58 @@ function selectTeklifFormat() {
   });
 }
 
+function selectConvertFormat(currentFormat){
+  var formatMap={SYSTEM_SALES:"Sistem Satış",UNIT_PRICE:"Birim Fiyatlı",SYSTEM_ROLLUP:"Sistem Master"};
+  var allFormats=["SYSTEM_SALES","UNIT_PRICE","SYSTEM_ROLLUP"];
+  var targets=allFormats.filter(function(f){return f!==currentFormat;});
+  return new Promise(function(resolve){
+    var overlay=document.createElement("div");
+    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;animation:fu .2s ease;";
+    var box=document.createElement("div");
+    box.style.cssText="background:#fff;border-radius:18px;padding:28px 24px;width:380px;max-width:92vw;box-shadow:0 24px 60px rgba(0,0,0,.3);";
+    var title=document.createElement("div");
+    title.style.cssText="font-size:17px;font-weight:800;color:#0f1f35;margin-bottom:4px;";
+    title.textContent="Format Değiştir";
+    var sub=document.createElement("div");
+    sub.style.cssText="font-size:12px;color:#64748b;margin-bottom:16px;";
+    sub.textContent="Mevcut: "+(formatMap[currentFormat]||currentFormat)+". Yeni revizyon hangi formatta olsun?";
+    box.appendChild(title);
+    box.appendChild(sub);
+    targets.forEach(function(f){
+      var b=document.createElement("button");
+      b.style.cssText="display:block;width:100%;padding:14px 18px;border:2px solid #e2e8f0;border-radius:12px;background:#fff;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:14px;font-weight:700;color:#0f1f35;transition:all .15s;";
+      b.textContent=formatMap[f]||f;
+      b.onmouseover=function(){b.style.borderColor="#93c5fd";b.style.background="#f8faff";};
+      b.onmouseout=function(){b.style.borderColor="#e2e8f0";b.style.background="#fff";};
+      b.onclick=function(){overlay.remove();resolve(f);};
+      box.appendChild(b);
+    });
+    var cancel=document.createElement("button");
+    cancel.style.cssText="display:block;width:100%;padding:10px;border:none;background:transparent;cursor:pointer;font-family:inherit;font-size:13px;color:#64748b;margin-top:4px;";
+    cancel.textContent="Vazgeç";
+    cancel.onclick=function(){overlay.remove();resolve(null);};
+    box.appendChild(cancel);
+    overlay.appendChild(box);
+    overlay.onclick=function(e){if(e.target===overlay){overlay.remove();resolve(null);}};
+    document.body.appendChild(overlay);
+  });
+}
+async function convertQuotationFormat(quotationId,currentFormat){
+  var targetFormat=await selectConvertFormat(currentFormat);
+  if(!targetFormat)return;
+  showNotification("convert-teklif","Teklif Programı","Format değiştiriliyor...","info");
+  try{
+    var res=await fetch(TEKLIF_CONVERT_URL,{method:"POST",headers:{"Content-Type":"application/json","x-crm-key":TEKLIF_API_KEY},body:JSON.stringify({quotationId:quotationId,targetFormat:targetFormat})});
+    var body=await res.json().catch(function(){return null;});
+    if(!res.ok)throw new Error(body&&body.error?body.error.message:"Sunucu hatası");
+    var fmtNames={SYSTEM_SALES:"Sistem Satış",UNIT_PRICE:"Birim Fiyatlı",SYSTEM_ROLLUP:"Sistem Master"};
+    showToast("Revizyon #"+body.data.revisionNumber+" ("+(fmtNames[targetFormat]||targetFormat)+") oluşturuldu.");
+    await openQuotationWithSSO(quotationId);
+  }catch(e){
+    alert("Format değiştirme başarısız: "+(e.message||e));
+  }
+}
+
 function oppTeklifBtns(o, pad){
   const lp=state.proposals.find(function(p){return p.opportunityId===o.id&&p.quotationId&&!p.quotationDeleted;});
   const qId=(o.quotationDeleted?'':o.quotationId)||(lp&&lp.quotationId);
@@ -637,7 +692,8 @@ function oppTeklifBtns(o, pad){
   var qStatus=o.quotationStatus||(lp&&lp.quotationStatus);
   var isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);
   var existing=isDraft?btn("✏️ Taslağı Aç",function(){openQuotationWithSSO(qId);},'#fffbeb','#b45309',pad,{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn("🔗 Teklif Programı",function(){openQuotationWithSSO(qId);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});
-  return [existing];
+  var convertBtn=btn("🔄 Format",function(){convertQuotationFormat(qId,o.quotationFormat||(lp&&lp.quotationFormat)||"SYSTEM_SALES");},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',border:'1px solid #c4b5fd',borderRadius:'7px'});
+  return [existing,convertBtn];
 }
 
 // Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
@@ -10399,6 +10455,7 @@ async function syncQuotationRefs() {
         if (ref != null && ref !== o.tenderRef) patch.tenderRef = ref;
         if (total != null && total > 0 && total !== o.value) patch.value = total;
         if (d.salesRep && d.salesRep !== o.assignedTo) patch.assignedTo = d.salesRep;
+        if (d.format && d.format !== o.quotationFormat) patch.quotationFormat = d.format;
         if (Object.keys(patch).length === 0) continue;
         const upd = { ...o, ...patch, ...syncStamp(lastEditor) };
         await saveDoc('opportunities', o.id, upd);
