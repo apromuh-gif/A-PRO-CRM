@@ -10372,10 +10372,9 @@ async function syncQuotationRefs() {
     let updatedProps = [...state.proposals];
     let changed = false, clearedCount = 0, restoredCount = 0, relinkedCount = 0;
 
-    // Bağlantısı tamamen kopmuş fırsatları REF. numarasından kurtar.
-    // (Eski sürüm, teklif silindiğinde quotationId'yi siliyordu; teklif geri alınsa bile
-    // CRM onu bulamıyordu. Elde yalnızca REF. numarası kalıyor — onunla eşleştiriyoruz.)
-    const orphans = updatedOpps.filter(o => !o.quotationId && o.tenderRef);
+    // Bağlantısı kopmuş veya silinmiş teklife bağlı fırsatları REF. numarasından kurtar.
+    // quotationDeleted:true olanlar da dahil — silinmiş teklif yerine REF ile doğru teklife yeniden bağlar.
+    const orphans = updatedOpps.filter(o => (!o.quotationId || o.quotationDeleted) && o.tenderRef);
     for (const o of orphans) {
       const num = String(o.tenderRef).trim().replace(/-R\d+$/i, ''); // "-R2" revizyon eki
       if (!/^[\w.-]{3,60}$/.test(num) || !/-T-\d/.test(num)) continue; // serbest metin REF.'leri atla
@@ -10386,8 +10385,10 @@ async function syncQuotationRefs() {
       if (!r || !r.ok) continue;
       const rd = (await r.json().catch(() => null))?.data;
       if (rd?.exists !== true || !rd.id) continue;
+      if (rd.id === o.quotationId && !o.quotationDeleted) continue;
       const upd = { ...o, quotationId: rd.id, quotationDeleted: false,
-        ...(rd.status ? { quotationStatus: rd.status } : {}) };
+        ...(rd.status ? { quotationStatus: rd.status } : {}),
+        ...(rd.format ? { quotationFormat: rd.format } : {}) };
       await saveDoc('opportunities', o.id, upd);
       updatedOpps = updatedOpps.map(x => x.id === o.id ? upd : x);
       changed = true; relinkedCount++;
