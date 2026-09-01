@@ -668,6 +668,11 @@ function selectConvertFormat(currentFormat){
   });
 }
 async function convertQuotationFormat(quotationId,currentFormat){
+  try{
+    var sr=await fetch(TEKLIF_APP_URL+'/api/v1/crm/quotation-status?id='+encodeURIComponent(quotationId),{headers:{'x-crm-key':TEKLIF_API_KEY}});
+    var sb=await sr.json().catch(function(){return null;});
+    if(sr.ok&&sb&&sb.data&&sb.data.format)currentFormat=sb.data.format;
+  }catch(e){}
   var targetFormat=await selectConvertFormat(currentFormat);
   if(!targetFormat)return;
   showNotification("convert-teklif","Teklif Programı","Format değiştiriliyor...","info");
