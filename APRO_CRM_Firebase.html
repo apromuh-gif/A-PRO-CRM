@@ -404,7 +404,7 @@ function tpRefWithRev(d) {
   const base = (d && (d.number ?? d.reference)) ?? null;
   if (!base) return base;
   const rev = Number(d && d.revisionNumber);
-  if (Number.isFinite(rev) && rev >= 2 && !/-R\d+$/.test(base)) return base + '-R' + rev;
+  if (Number.isFinite(rev) && rev >= 2 && !/-R\d+$/.test(base)) return base + '-R' + (rev - 1);
   return base;
 }
 // Fırsat değeri daima EUR: API grandTotalEur (EUR'ya çevrilmiş) döndürür; yoksa ham toplama düşer.
@@ -681,7 +681,9 @@ async function convertQuotationFormat(quotationId,currentFormat){
     var body=await res.json().catch(function(){return null;});
     if(!res.ok)throw new Error(body&&body.error?body.error.message:"Sunucu hatası");
     var fmtNames={SYSTEM_SALES:"Sistem Satış",UNIT_PRICE:"Birim Fiyatlı",SYSTEM_ROLLUP:"Sistem Master"};
-    showToast("Revizyon #"+body.data.revisionNumber+" ("+(fmtNames[targetFormat]||targetFormat)+") oluşturuldu.");
+    var revNo=Number(body.data.revisionNumber);
+    var revLabel=Number.isFinite(revNo)&&revNo>1?("Revizyon #"+(revNo-1)):"İlk Teklif";
+    showToast(revLabel+" ("+(fmtNames[targetFormat]||targetFormat)+") oluşturuldu.");
     await openQuotationWithSSO(quotationId);
   }catch(e){
     alert("Format değiştirme başarısız: "+(e.message||e));
