@@ -1280,7 +1280,7 @@ function btn(text, onClick, bg, fg='#fff', p='10px 18px', extra={}) {
   return el;
 }
 function inp(placeholder, value, onChange, type='text', extra={}, eventName='input') {
-  const el = h('input',{type,placeholder,value:value||'',style:{width:'100%',padding:'10px 13px',background:'#edf5fc',border:'1.5px solid #90b0cc',borderRadius:'8px',color:'#0f1f35',fontSize:'14px',boxSizing:'border-box',fontFamily:"'Inter',sans-serif",...extra}});
+  const el = h('input',{type,placeholder,value:value||'',autocomplete:'off',style:{width:'100%',padding:'10px 13px',background:'#edf5fc',border:'1.5px solid #90b0cc',borderRadius:'8px',color:'#0f1f35',fontSize:'14px',boxSizing:'border-box',fontFamily:"'Inter',sans-serif",...extra}});
   el.addEventListener('focus',()=>el.style.borderColor=ACC);
   el.addEventListener('blur',()=>el.style.borderColor='#b8c8de');
   el.addEventListener(eventName, e=>onChange(e.target.value));
