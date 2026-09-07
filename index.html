@@ -4767,7 +4767,7 @@ function renderSuppliers() {
   const filtered = (state.suppliers||[]).filter(s=>{
     if(f.supQ){const _q=f.supQ.toLowerCase();if(!(s.firmName||'').toLowerCase().includes(_q)&&!(s.contacts||[]).some(ct=>(ct.name||'').toLowerCase().includes(_q)))return false;}
     if(f.supName){if(f.supName===EMPTY){if((s.firmName||'').trim())return false;}else if(!(s.firmName||'').toLowerCase().includes(f.supName.toLowerCase()))return false;}
-    if(f.supType){if(f.supType===EMPTY){if((s.supplierType||'').trim())return false;}else if(s.supplierType!==f.supType)return false;}
+    if(f.supType){const _st=Array.isArray(s.supplierType)?s.supplierType:[s.supplierType||''];if(f.supType===EMPTY){if(_st.some(x=>x.trim()))return false;}else if(!_st.includes(f.supType))return false;}
     return true;
   }).sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr'));
 
@@ -4816,7 +4816,7 @@ function renderSuppliers() {
         h('div',{},
           h('div',{style:{fontWeight:'800',fontSize:'17px',marginBottom:'8px',color:'#0f1f35'}},s.firmName),
           h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap',marginBottom:'6px'}},
-            badge(s.supplierType,'#16a34a'),
+            ...(Array.isArray(s.supplierType)?s.supplierType:[s.supplierType||'']).filter(Boolean).map(t=>badge(t,'#16a34a')),
             s.city?tag('📍 '+s.city):h('span'),
             tag('👤 '+(s.contacts||[]).length+' kişi')
           ),
@@ -4848,7 +4848,8 @@ function renderSuppliers() {
 }
 
 function buildSupplierModal(item) {
-  const f = item ? JSON.parse(JSON.stringify(item)) : {firmName:'',supplierType:SUPPLIER_TYPES[0],city:'',phone:'',email:'',web:'',contacts:[],createdAt:today()};
+  const f = item ? JSON.parse(JSON.stringify(item)) : {firmName:'',supplierType:[],city:'',phone:'',email:'',web:'',contacts:[],createdAt:today()};
+  if(typeof f.supplierType==='string') f.supplierType = f.supplierType ? [f.supplierType] : [];
   let addMode = false;
   let nc = {name:'',title:'',email:'',phone:''};
 
@@ -4918,7 +4919,7 @@ function buildSupplierModal(item) {
     renderAdd();
 
     const fName=inp('Firma adı',f.firmName,v=>f.firmName=v);
-    const fType=(()=>{const s=h('select',{style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',outline:'none'}});SUPPLIER_TYPES.forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=t;if(f.supplierType===t)o.selected=true;s.appendChild(o);});s.onchange=e=>f.supplierType=e.target.value;return s;})();
+    const fType=(()=>{const wrap=h('div',{style:{width:'100%',maxHeight:'150px',overflowY:'auto',background:G,border:'1px solid '+G4,borderRadius:'8px',padding:'6px 10px'}});SUPPLIER_TYPES.forEach(t=>{const cb=h('input',{type:'checkbox',style:{marginRight:'6px',accentColor:'#16a34a'}});if(f.supplierType.includes(t))cb.checked=true;cb.onchange=()=>{if(cb.checked){if(!f.supplierType.includes(t))f.supplierType.push(t);}else{f.supplierType=f.supplierType.filter(x=>x!==t);}};const row=h('label',{style:{display:'flex',alignItems:'center',fontSize:'13px',color:T1,padding:'3px 0',cursor:'pointer'}},cb,t);wrap.appendChild(row);});return wrap;})();
     const fCity=inp('İstanbul',f.city,v=>f.city=v);
     const fPhone=inp('0212 000 00 00',f.phone,v=>f.phone=v);
     const fEmail=inp('info@firma.com',f.email,v=>f.email=v);
