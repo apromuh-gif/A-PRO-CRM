@@ -3912,7 +3912,7 @@ function renderDashboardAdmin() {
     return true;
   });
 
-  const totalPipeline = OF.filter(o=>!LOST.includes(o.stage)).reduce((a,o)=>a+(Number(o.value)||0),0);
+  const totalPipeline = OF.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').reduce((a,o)=>a+(Number(o.value)||0),0);
   const totalAll = OF.reduce((a,o)=>a+(Number(o.value)||0),0);
   const won = OF.filter(o=>o.stage==='KAZANILDI').reduce((a,o)=>a+(Number(o.value)||0),0);
   const lost = OF.filter(o=>LOST.includes(o.stage)).length;
@@ -3926,7 +3926,7 @@ function renderDashboardAdmin() {
   // KPI Kartları
   const kpiGrid = h('div',{style:{display:'grid',gridTemplateColumns:window.innerWidth<=480?'1fr 1fr':'repeat(auto-fit,minmax(180px,1fr))',gap:window.innerWidth<=768?'10px':'14px',marginBottom:window.innerWidth<=768?'14px':'20px'}});
   [
-    {l:'Toplam Pipeline',v:eur(totalPipeline),s:OF.filter(o=>!LOST.includes(o.stage)).length+' aktif fırsat',c:'#2563eb',i:'🎯'},
+    {l:'Toplam Pipeline',v:eur(totalPipeline),s:OF.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').length+' aktif fırsat',c:'#2563eb',i:'🎯'},
     {l:'Satış Tutarı',v:eur(won),s:'Kazanılan toplam ciro',c:'#7c3aed',i:'💰'},
     {l:'Win Rate',v:winRate+'%',s:OF.filter(o=>o.stage==='KAZANILDI').length+' kazanılan / '+totalCount+' toplam',c:'#16a34a',i:'🏆'},
     {l:'Şirket Yıllık Hedef',v:eur(compTarget),s:'Hedefe ulaşma: '+(compTarget>0?targetPct+'%':'Hedef girilmedi'),c:'#0891b2',i:'🎯'},
@@ -4188,7 +4188,7 @@ function renderDashboardSales() {
   });
   const myP = cu?.isAdmin ? P : P.filter(p=>p.createdBy===cu?.displayName||p.assignedTo===cu?.displayName);
 
-  const myPipeline = myO.filter(o=>!LOST.includes(o.stage)).reduce((a,o)=>a+(Number(o.value)||0),0);
+  const myPipeline = myO.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').reduce((a,o)=>a+(Number(o.value)||0),0);
   const myWon = myO.filter(o=>o.stage==='KAZANILDI').length;
   const myLostCount = myO.filter(o=>LOST.includes(o.stage)).length;
   const myTotal = myO.length;
@@ -4234,7 +4234,7 @@ function renderDashboardSales() {
   // KPI
   const kpiGrid = h('div',{style:{display:'grid',gridTemplateColumns:window.innerWidth<=480?'1fr 1fr':'repeat(auto-fit,minmax(180px,1fr))',gap:window.innerWidth<=768?'10px':'14px',marginBottom:window.innerWidth<=768?'14px':'20px'}});
   [
-    {l:'Toplam Pipeline',v:eur(myPipeline),s:myO.filter(o=>!LOST.includes(o.stage)).length+' aktif fırsat',c:'#2563eb',i:'🎯'},
+    {l:'Toplam Pipeline',v:eur(myPipeline),s:myO.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').length+' aktif fırsat',c:'#2563eb',i:'🎯'},
     {l:'Hit Rate — Sonuçlanan İşlerin Satışa Dönme Oranı',v:hitRate+'%',s:'Sonuçlanan '+hitRateDenom+' işten '+myWon+' satışa dönüştü',c:hitRate>=50?'#16a34a':'#dc2626',i:'🏹'},
     {l:'Bireysel Hedef',v:repTarget>0?eur(repTarget):'Hedef yok',s:repTarget>0?'Gerçekleşen: '+eur(myWonVal)+' ('+Math.min(100,Math.round(myWonVal/repTarget*100))+'%)':'Hedef girilmedi',c:'#7c3aed',i:'🎯'},
     {l:'Şirket Yıllık Hedef',v:eur(state.targets?.company||0),s:(()=>{const t=state.targets?.company||0;const w=O.filter(o=>o.stage==='KAZANILDI').reduce((a,o)=>a+(Number(o.value)||0),0);return t>0?'Hedefe ulaşma: '+Math.min(100,Math.round(w/t*100))+'%':'Hedef girilmedi'})(),c:'#0891b2',i:'🏢'},
@@ -4606,7 +4606,7 @@ function renderDashboardMarketing() {
   // KPI
   const totalFirms = C.length;
   const newFirms = C.filter(c=>c.createdAt&&new Date(c.createdAt)>=new Date(Date.now()-30*86400000)).length;
-  const activePipeline = O.filter(o=>!LOST.includes(o.stage)).reduce((a,o)=>a+(Number(o.value)||0),0);
+  const activePipeline = O.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').reduce((a,o)=>a+(Number(o.value)||0),0);
   const lostCount = O.filter(o=>LOST.includes(o.stage)).length;
   const totalCount = O.length;
   const lostRate = totalCount ? Math.round(lostCount/totalCount*100) : 0;
@@ -4615,7 +4615,7 @@ function renderDashboardMarketing() {
   const kpiGrid = h('div',{style:{display:'grid',gridTemplateColumns:window.innerWidth<=480?'1fr 1fr':'repeat(auto-fit,minmax(180px,1fr))',gap:window.innerWidth<=768?'10px':'14px',marginBottom:window.innerWidth<=768?'14px':'20px'}});
   [
     {l:'Toplam Firma',v:String(totalFirms),s:newFirms+' yeni (son 30 gün)',c:'#2563eb',i:'🏢'},
-    {l:'Aktif Pipeline',v:eur(activePipeline),s:O.filter(o=>!LOST.includes(o.stage)).length+' fırsat',c:'#7c3aed',i:'🎯'},
+    {l:'Aktif Pipeline',v:eur(activePipeline),s:O.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').length+' fırsat',c:'#7c3aed',i:'🎯'},
     {l:'Kayıp Oranı',v:lostRate+'%',s:lostCount+' kaybedilen / '+totalCount+' toplam',c:'#dc2626',i:'📉'},
     {l:'Toplam Fırsat',v:String(totalCount),s:'Tüm zamanlar',c:'#16a34a',i:'📊'},
     {l:'Sektör Çeşitliliği',v:String(new Set(O.map(o=>o.sector)).size),s:'Farklı sektör',c:'#0891b2',i:'🌐'},
