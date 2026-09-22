@@ -751,6 +751,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         phone: customer.phone || '',
         email: customer.email || '',
         crmCustomerId: customer.id || '',
+        crmOpportunityId: opportunityId || '',
         crmOpportunityTitle: opportunityTitle || '',
         salesRep: salesRepName,
         preparedBy: preparedByName,
