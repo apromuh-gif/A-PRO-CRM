@@ -434,8 +434,23 @@ async function clearDeletedQuotationLink(qid) {
   return true;
 }
 
+// Mobilde (özellikle iOS Safari) window.open() bir await'ten SONRA çağrılırsa kullanıcı
+// dokunuşuyla senkron bağı koptuğu için pop-up engelleyiciye takılır ve sessizce hiçbir şey
+// açılmaz. Çözüm: sekme tıklamayla senkron olarak hemen (boş) açılır, adres async işlem
+// bitince location.href ile yazılır. win null dönerse (engellenmişse) olduğu gibi bırakılır.
+function openLoadingTab() {
+  const win = window.open('', '_blank');
+  try {
+    win?.document.write('<title>Teklif Programı</title><body style="font-family:sans-serif;padding:60px 20px;text-align:center;color:#64748b">Yükleniyor…</body>');
+  } catch {}
+  return win;
+}
+
 // Mevcut teklifi SSO ile aç. Teklif silinmişse CRM'den otomatik temizler.
-async function openQuotationWithSSO(quotationId) {
+// existingWin verilirse (çağıran zaten kendi tıklamasıyla bir sekme açtıysa) o kullanılır,
+// verilmezse burada senkron olarak yeni bir sekme açılır.
+async function openQuotationWithSSO(quotationId, existingWin) {
+  const _win = existingWin !== undefined ? existingWin : openLoadingTab();
   // Personel listelerini her açılışta sync et (fire-and-forget) — yalnızca mevcut CRM kullanıcıları
   fetch(TEKLIF_STAFF_SYNC_URL, {
     method: 'POST',
@@ -459,6 +474,7 @@ async function openQuotationWithSSO(quotationId) {
         // o durumda yanıt !res.ok olur ve bu bloğa hiç girilmez). CRM bağlantısını otomatik
         // temizle → buton "📋 Teklif Oluştur"a döner. Fırsat/teklif talebi kaydı korunur.
         await clearDeletedQuotationLink(quotationId);
+        try { _win?.close(); } catch {}
         showToast('🧹 Bu teklif teklif programında silinmiş — CRM bağlantısı otomatik temizlendi. Yeniden teklif oluşturabilirsiniz.');
         return;
       } else if (chkBody?.data?.exists === true) {
@@ -499,8 +515,9 @@ async function openQuotationWithSSO(quotationId) {
   } catch {}
   // 2. Teklif mevcut → SSO ile doğrudan aç
   const token = await getCrmSessionToken();
-  if (!token) { showToast('⚠️ Oturum alınamadı, tekrar deneyin.'); return; }
-  window.open(`${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=/quotations/${quotationId}`, '_blank');
+  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.'); return; }
+  const _url = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=/quotations/${quotationId}`;
+  if (_win) _win.location.href = _url; else window.open(_url, '_blank');
 }
 
 // Aşama 3: Müşteri güncelleme senkronizasyonu (fire-and-forget)
@@ -705,9 +722,12 @@ function oppTeklifBtns(o, pad){
 
 // Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
 async function teklifOlustur(customer, opportunityTitle, opportunityId) {
+  // Sekme, kullanıcının tıklamasıyla senkron olarak hemen (boş) açılır — mobilde pop-up
+  // engelleyiciye takılmaması için. Adres, aşağıdaki async işlemler bitince yazılır.
+  const _win = openLoadingTab();
   // Format + para birimi seçimi
   const selection = await selectTeklifFormat();
-  if (!selection) return;
+  if (!selection) { try { _win?.close(); } catch {} return; }
   const { format, currency, language } = selection;
   // Teknik Servis: UNIT_PRICE düzeni + isService bayrağı (numara A-Pro-BT serisi).
   const isService = format === 'SERVICE';
@@ -731,7 +751,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
         'Bu fırsat için zaten bir teklif oluşturulmuş:\n"' + existing.title + '"\n\nMevcut teklifi açmak ister misiniz?\n\nTamam = Mevcut teklifi aç\nİptal = Yine de yeni oluştur'
       );
       if (openExisting) {
-        await openQuotationWithSSO(existing.quotationId);
+        await openQuotationWithSSO(existing.quotationId, _win);
         return;
       }
     }
@@ -801,14 +821,16 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
     const sessionToken = await getCrmSessionToken();
     if (!sessionToken) {
       console.warn('[SSO] Token alınamadı — pencere açılmadı.');
+      try { _win?.close(); } catch {}
       showToast('⚠️ Teklif oluşturuldu. Teklif Programı açılamadı, lütfen tekrar deneyin.');
       return;
     }
     // Yeni oluşturulan teklif direkt açılır (az önce DB'ye yazıldı, 404 yok)
     const openUrl = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations/${quotationId}`;
-    window.open(openUrl, '_blank');
+    if (_win) _win.location.href = openUrl; else window.open(openUrl, '_blank');
     showToast('✅ Teklif oluşturuldu — Fırsat ve Teklif Talepleri güncellendi!');
   } catch(e) {
+    try { _win?.close(); } catch {}
     alert('Teklif oluşturulamadı: ' + e.message);
   }
 }
