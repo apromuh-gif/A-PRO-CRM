@@ -724,7 +724,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
   // Aşama 2: Fırsata bağlı teklif zaten varsa uyar
   if (opportunityId) {
     const existing = state.proposals.find(p =>
-      p.customerId === customer.id && p.quotationId && p.opportunityId === opportunityId
+      p.customerId === customer.id && p.quotationId && !p.quotationDeleted && p.opportunityId === opportunityId
     );
     if (existing) {
       const openExisting = confirm(
