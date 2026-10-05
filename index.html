@@ -629,7 +629,10 @@ function selectTeklifFormat() {
     confirmBtn.textContent = 'Teklif Oluştur →';
     confirmBtn.disabled = true;
     confirmBtn.style.cssText = 'width:100%;padding:11px;border:none;border-radius:10px;background:#cbd5e1;color:#fff;cursor:not-allowed;font-family:inherit;font-size:14px;font-weight:700;margin-bottom:8px;transition:all .15s;';
-    confirmBtn.onclick = () => { overlay.remove(); resolve({format: selFormat, currency: selCurrency, language: selLanguage}); };
+    // Yükleme sekmesi BURADA, kullanıcının "Teklif Oluştur →" tıklamasıyla senkron açılır
+    // (mobil pop-up engelleyici güvenli). Eskiden sekme modal AÇILMADAN önce açılıyor, tarayıcı
+    // o boş sekmeye odaklanıyor ve seçim penceresi arkadaki CRM sekmesinde kalıyordu.
+    confirmBtn.onclick = () => { const win = openLoadingTab(); overlay.remove(); resolve({format: selFormat, currency: selCurrency, language: selLanguage, win}); };
     box.appendChild(confirmBtn);
     function syncConfirm() {
       if(selFormat && selCurrency && selLanguage){
@@ -722,13 +725,26 @@ function oppTeklifBtns(o, pad){
 
 // Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
 async function teklifOlustur(customer, opportunityTitle, opportunityId) {
-  // Sekme, kullanıcının tıklamasıyla senkron olarak hemen (boş) açılır — mobilde pop-up
-  // engelleyiciye takılmaması için. Adres, aşağıdaki async işlemler bitince yazılır.
-  const _win = openLoadingTab();
-  // Format + para birimi seçimi
+  // Aşama 2: Fırsata bağlı teklif zaten varsa uyar — sekme/modal açılmadan ÖNCE (CRM sekmesinde sorulur)
+  if (opportunityId) {
+    const existing = state.proposals.find(p =>
+      p.customerId === customer.id && p.quotationId && !p.quotationDeleted && p.opportunityId === opportunityId
+    );
+    if (existing) {
+      const openExisting = confirm(
+        'Bu fırsat için zaten bir teklif oluşturulmuş:\n"' + existing.title + '"\n\nMevcut teklifi açmak ister misiniz?\n\nTamam = Mevcut teklifi aç\nİptal = Yine de yeni oluştur'
+      );
+      if (openExisting) {
+        await openQuotationWithSSO(existing.quotationId);
+        return;
+      }
+    }
+  }
+  // Format + para birimi + dil seçimi. Yükleme sekmesi, seçim onaylanınca (tıklamayla senkron) açılır.
   const selection = await selectTeklifFormat();
-  if (!selection) { try { _win?.close(); } catch {} return; }
+  if (!selection) return;
   const { format, currency, language } = selection;
+  const _win = selection.win;
   // Teknik Servis: UNIT_PRICE düzeni + isService bayrağı (numara A-Pro-BT serisi).
   const isService = format === 'SERVICE';
   const apiFormat = isService ? 'UNIT_PRICE' : format;
@@ -741,21 +757,6 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
     body: JSON.stringify({ salesReps: salesRepsSync, preparedByNames: preparedBySync }),
   }).catch(() => {});
 
-  // Aşama 2: Fırsata bağlı teklif zaten varsa uyar
-  if (opportunityId) {
-    const existing = state.proposals.find(p =>
-      p.customerId === customer.id && p.quotationId && !p.quotationDeleted && p.opportunityId === opportunityId
-    );
-    if (existing) {
-      const openExisting = confirm(
-        'Bu fırsat için zaten bir teklif oluşturulmuş:\n"' + existing.title + '"\n\nMevcut teklifi açmak ister misiniz?\n\nTamam = Mevcut teklifi aç\nİptal = Yine de yeni oluştur'
-      );
-      if (openExisting) {
-        await openQuotationWithSSO(existing.quotationId, _win);
-        return;
-      }
-    }
-  }
   try {
     showNotification('teklif-aciliyor', 'Teklif Programı', 'Teklif oluşturuluyor...', 'info');
     // Satış temsilcisi = fırsatın sahibi (assignedTo); yoksa teklifi açan kullanıcı.
