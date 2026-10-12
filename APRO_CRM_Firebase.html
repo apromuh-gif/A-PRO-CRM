@@ -2022,11 +2022,19 @@ function buildPropModal(item) {
   const fOpp=sel(oppOpts,f.opportunityId,v=>f.opportunityId=v);
   // Mevcut Gönderildi teklifler için sentDate'i modal açılışında doldur
   if(f.status==='Gönderildi'&&!f.sentDate) f.sentDate=today();
-  const fSentDate=inp('',f.sentDate||'',v=>f.sentDate=v,'date');
+  // Gönderilme Tarihi MANUEL girilmez: durum "Gönderildi" yapıldığında otomatik (bugün) yazılır, salt-okunur görünür.
+  // Tarih bir kez oluşunca korunur (durum sonradan Onaylandı/Revize vb. olsa da değişmez). Yalnızca bu modal oturumunda
+  // otomatik atanmışsa ve durum Gönderildi'den geri alınırsa önceki (boş) haline döner.
+  const origSentDate=f.sentDate||'';
+  const fmtSent=d=>d?String(d).split('-').reverse().join('.'):'';
+  const fSentDate=inp('Gönderildiğinde otomatik',fmtSent(f.sentDate),()=>{},'text',{background:'#e4ebf3',color:'#4a6080',cursor:'not-allowed',fontWeight:'600'});
+  fSentDate.readOnly=true;
+  fSentDate.tabIndex=-1;
+  fSentDate.title='Teklif "Gönderildi" durumuna alındığında otomatik doldurulur';
   const fSt=sel(PROP_ST,f.status,v=>{
     f.status=v;
-    if(v==='Gönderildi'&&!f.sentDate){f.sentDate=today();fSentDate.value=today();}
-    if(v!=='Gönderildi'&&f.sentDate===today()){f.sentDate='';fSentDate.value='';}
+    if(v==='Gönderildi'&&!f.sentDate){f.sentDate=today();fSentDate.value=fmtSent(f.sentDate);}
+    if(v!=='Gönderildi'&&!origSentDate&&f.sentDate){f.sentDate='';fSentDate.value='';}
   });
   const fAmt=inp('0',f.amount,v=>f.amount=v,'number');
   const fCreated=inp('',f.createdAt,v=>f.createdAt=v,'date');
@@ -2038,7 +2046,7 @@ function buildPropModal(item) {
     row(field('Müşteri',fCust,true),field('Fırsat',fOpp,true)),
     row(field('Hazırlayan *',prepContainer,true),field('Durum',fSt,true)),
     row(field('Tutar (€)',fAmt,true),field('Talep Tarihi',fCreated,true)),
-    row(field('Dead Line',fValid,true),field('Gönderilme Tarihi',fSentDate,true)),
+    row(field('Dead Line',fValid,true),field('Gönderilme Tarihi (otomatik)',fSentDate,true)),
     field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
       btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
