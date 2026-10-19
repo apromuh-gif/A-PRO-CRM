@@ -377,6 +377,7 @@ async function getCrmSessionToken() {
   const _attempt = async () => {
     const cu = state.currentUser || firebase.auth().currentUser;
     if (!cu?.email) return null;
+    const _meRec = (state.users || []).find(u => (u.email || '').toLowerCase() === (cu.email || '').toLowerCase()) || state.currentUser || {};
     const res = await fetch(TEKLIF_AUTH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
@@ -385,8 +386,9 @@ async function getCrmSessionToken() {
         name:   cu.displayName || cu.email,
         crmUid: cu.uid,
         // Stok yetkileri CRM kullanıcı kaydından gelir (kişiler değişebilir → e-posta değil alan esas).
-        department: ((state.users || []).find(u => (u.email || '').toLowerCase() === (cu.email || '').toLowerCase()) || state.currentUser || {}).department || '',
-        depo: !!((state.users || []).find(u => (u.email || '').toLowerCase() === (cu.email || '').toLowerCase()) || state.currentUser || {}).depo,
+        department: _meRec.department || '',
+        extraDepartments: (_meRec.extraDepts || []).filter(d => d && d !== _meRec.department),
+        depo: !!_meRec.depo,
       }),
     }).catch(() => null);
     if (!res?.ok) return null;
@@ -3708,6 +3710,18 @@ function buildAdminModal() {
   const container = h('div',{});
   msgEl = h('div',{style:{display:'none',padding:'8px 12px',borderRadius:'8px',fontSize:'12px',marginBottom:'8px',background:'#0f2a1a'}});
 
+  // Ek departman seçici: obj.extraDepts dizisini günceller (ana departman ayrıca seçilir).
+  function extraDeptBox(obj){
+    return h('div',{style:{display:'flex',gap:'14px',flexWrap:'wrap',marginBottom:'10px'}},
+      ...DEPARTMENTS.map(d=>{
+        const cb=document.createElement('input');
+        cb.type='checkbox'; cb.checked=(obj.extraDepts||[]).indexOf(d.v)>=0; cb.style.accentColor='#6366f1';
+        cb.addEventListener('change',e=>{ const st=new Set(obj.extraDepts||[]); if(e.target.checked) st.add(d.v); else st.delete(d.v); obj.extraDepts=[...st]; });
+        return h('label',{style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'12px',color:T3,cursor:'pointer'}},cb,h('span',{},d.l));
+      })
+    );
+  }
+
   function rerender() {
     container.innerHTML='';
     container.appendChild(msgEl);
@@ -3725,6 +3739,7 @@ function buildAdminModal() {
               u.isAdmin?h('span',{style:{background:'#7c3aed22',color:'#a78bfa',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'YÖNETİCİ'):h('span',{style:{background:'#1e3a5f22',color:'#60a5fa',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'KULLANICI'),
               u.active===false?h('span',{style:{background:'#3b1a1a',color:'#f87171',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'PASİF'):h('span'),
               u.hasTarget===false?h('span',{style:{background:'#1c2a3a',color:'#60a5fa',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'HEDEFSİZ'):h('span'),
+              ...userDepts(u).map(dv=>h('span',{style:{background:dv===u.department?'#14532d33':'#78350f33',color:dv===u.department?'#4ade80':'#fbbf24',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'},title:dv===u.department?'Ana departman':'Ek departman'},DEPT_LABEL[dv]||dv)),
               u.email===state.currentUser.email?h('span',{style:{background:'#0f2a1a',color:'#4ade80',fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},'SİZ'):h('span')
             ),
             h('div',{style:{fontSize:'11px',color:T3,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},u.email)
@@ -3764,10 +3779,12 @@ function buildAdminModal() {
         cbEDepo.type='checkbox'; cbEDepo.checked=!!eu.depo; cbEDepo.style.accentColor='#f59e0b';
         cbEDepo.addEventListener('change',e=>eu.depo=e.target.checked);
         const eDept = sel([{v:'',l:'— Departman seçin —'},...DEPARTMENTS], eu.department||'', v=>eu.department=v);
+        const eExtra = extraDeptBox(eu);
         const editPanel = h('div',{style:{marginTop:'12px',background:'#0d1f35',border:'1px solid #2563eb',borderRadius:'10px',padding:'14px'}},
           h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#60a5fa',marginBottom:'10px'}},'✏️ Kullanıcı Düzenle'),
           row(field('Görünen Ad',eName,true),field('E-posta',eEmail,true)),
-          row(field('Departman',eDept,true),h('div',{style:{flex:1}})),
+          row(field('Ana departman (performans & prim bu departmana göre)',eDept,true),h('div',{style:{flex:1}})),
+          field('Ek departmanlar (görev atama & yetki için)',eExtra),
           h('div',{style:{display:'flex',gap:'20px',marginBottom:'12px',flexWrap:'wrap'}},
             h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T3,cursor:'pointer'}},cbEAdmin,h('span',{},'Yönetici yetkisi')),
             h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T3,cursor:'pointer'}},cbETarget,h('span',{},'Satış & Servis Hedefi girilsin')),
@@ -3776,7 +3793,7 @@ function buildAdminModal() {
           h('div',{style:{display:'flex',gap:'8px'}},
             btn('✓ Kaydet',async()=>{
               if(!eu.displayName){flash('⚠ Ad boş olamaz.',false);return;}
-              const list=users.map(x=>x.email===u.email?{...x,displayName:eu.displayName,isAdmin:eu.isAdmin,hasTarget:eu.hasTarget!==false,department:eu.department||'',depo:!!eu.depo}:x);
+              const list=users.map(x=>x.email===u.email?{...x,displayName:eu.displayName,isAdmin:eu.isAdmin,hasTarget:eu.hasTarget!==false,department:eu.department||'',extraDepts:(eu.extraDepts||[]).filter(d=>d!==eu.department),depo:!!eu.depo}:x);
               await persistUsers(list); editingUser=null; flash('✅ Kullanıcı güncellendi.');
             },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','8px 14px',{flex:'1',fontSize:'12px'}),
             btn('İptal',()=>{editingUser=null;rerender();},'#21262d','#8b949e','8px 12px',{fontSize:'12px'})
@@ -3838,10 +3855,12 @@ function buildAdminModal() {
       cbDepo.checked=!!newU.depo;
       cbDepo.addEventListener('change',e=>newU.depo=e.target.checked);
       const nDept=sel([{v:'',l:'— Departman seçin —'},...DEPARTMENTS], newU.department||'', v=>newU.department=v);
+      const nExtra=extraDeptBox(newU);
       const addBox = h('div',{style:{background:G,border:'1px solid #6366f1',borderRadius:'10px',padding:'14px',marginBottom:'10px'}},
         row(field('Görünen Ad *',nName,true),field('Şifre *',nPw,true)),
         field('E-posta *',nEmail),
-        row(field('Departman',nDept,true),h('div',{style:{flex:1}})),
+        row(field('Ana departman (performans & prim bu departmana göre)',nDept,true),h('div',{style:{flex:1}})),
+        field('Ek departmanlar (görev atama & yetki için)',nExtra),
         h('div',{style:{display:'flex',gap:'20px',marginBottom:'12px',flexWrap:'wrap'}},
           h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T2,cursor:'pointer'}},cbAdmin,h('span',{},'Yönetici yetkisi ver')),
           h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T2,cursor:'pointer'}},cbTarget,h('span',{},'Satış & Servis Hedefi girilsin')),
@@ -3862,8 +3881,8 @@ function buildAdminModal() {
               else { flash('⚠ Hesap oluşturulamadı: '+(err.code==='auth/weak-password'?'Şifre zayıf.':err.message),false); return; }
             }
             const {password, ...rest} = newU;
-            await persistUsers([...users,{...rest,active:true,hasTarget:newU.hasTarget!==false,department:newU.department||'',depo:!!newU.depo,createdAt:today()}]);
-            newU={email:'',password:'',displayName:'',isAdmin:false,hasTarget:true,department:'',depo:false}; adding=false; flash('✅ Kullanıcı eklendi.');
+            await persistUsers([...users,{...rest,active:true,hasTarget:newU.hasTarget!==false,department:newU.department||'',extraDepts:(newU.extraDepts||[]).filter(d=>d!==newU.department),depo:!!newU.depo,createdAt:today()}]);
+            newU={email:'',password:'',displayName:'',isAdmin:false,hasTarget:true,department:'',extraDepts:[],depo:false}; adding=false; flash('✅ Kullanıcı eklendi.');
           },'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{flex:'1'}),
           btn('İptal',()=>{adding=false;rerender();},'#21262d','#8b949e')
         )
@@ -7047,6 +7066,14 @@ function _pWonYtd(o, period){
 function personelPeople(){
   return (state.users||[]).filter(u=>u.active!==false && u.department);
 }
+// Görev atama/devir/filtre listeleri için: departmanı tanımsız olanlar dahil TÜM aktif kullanıcılar.
+// (personelPeople performans/prim içindir ve departmansızları dışarıda bırakır.)
+function taskPeople(){
+  return (state.users||[]).filter(u=>u.active!==false && u.displayName);
+}
+// Çoklu departman: ana departman (u.department → performans/prim) + ek departmanlar (u.extraDepts → görev atama, devir, stok yetkisi).
+function userDepts(u){ return [...new Set([u&&u.department, ...((u&&u.extraDepts)||[])].filter(Boolean))]; }
+function userInDept(u, dept){ return !!dept && userDepts(u).indexOf(dept)>=0; }
 function personelTaskStats(name, period, ytd){
   const win = ytd ? _pYtdInPeriod : _pInPeriod;
   const fy = _periodYear(period);
@@ -7906,7 +7933,7 @@ const TASK_TEMPLATES = {
 function _offsetDay(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 // Departmandaki açık görev sayısı en az olan personeli döndürür.
 function leastBusyInDept(dept){
-  const people = personelPeople().filter(u=>u.department===dept);
+  const people = taskPeople().filter(u=>userInDept(u,dept));
   if(!people.length) return '';
   const tasks = (state.tasks||[]).map(normTask);
   let best=people[0], min=Infinity;
@@ -7943,7 +7970,7 @@ async function autoCreateTask(opts){
 async function suggestTasksFor(ctx, linkType, linkId, linkLabel){
   const tpl = TASK_TEMPLATES[ctx]; if(!tpl) return;
   const people = personelPeople();
-  const firstInDept = dept => { const u=people.find(x=>x.department===dept); return u?u.displayName:''; };
+  const firstInDept = dept => leastBusyInDept(dept); // departmanda en az açık görevi olan kişi (dengeli dağıtım)
   const existing = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType===linkType&&t.linkId===linkId).map(t=>t.title));
   const toAdd = tpl.filter(x=>!existing.has(x.title)).map(x=>normTask({
     id: genId(), title:x.title, desc:'', assignedTo:firstInDept(x.dept), department:x.dept,
@@ -7969,9 +7996,9 @@ const PROJECT_STAGE_META = {
 const PROJECT_STAGE_TEMPLATES = {
   teknik: [
     { title:'Sözleşme / iş emri açılışı',       dept:'proje',    dueOffset:2,  priority:'yuksek' },
-    { title:'Hidrolik hesap / sistem tasarımı', dept:'teknik',   dueOffset:5,  priority:'yuksek' },
-    { title:'Uygulama (shop drawing) çizimi',   dept:'teknik',   dueOffset:8,  priority:'orta'  },
-    { title:'Malzeme listesi (BOQ) çıkarma',    dept:'teknik',   dueOffset:8,  priority:'orta'  },
+    { title:'Hidrolik hesap / sistem tasarımı', dept:'proje',   dueOffset:5,  priority:'yuksek' },
+    { title:'Uygulama (shop drawing) çizimi',   dept:'proje',   dueOffset:8,  priority:'orta'  },
+    { title:'Malzeme listesi (BOQ) çıkarma',    dept:'proje',   dueOffset:8,  priority:'orta'  },
   ],
   satinalma: [
     { title:'Tedarikçi teklif toplama',         dept:'muhasebe', dueOffset:3,  priority:'orta'  },
@@ -8014,7 +8041,7 @@ async function suggestStageTasks(o, stage, opts){
   const tpl = PROJECT_STAGE_TEMPLATES[stage];
   if(!tpl || !tpl.length){ if(manual) showToast('Bu aşama için şablon görev tanımlı değil.', '#d97706'); return; }
   const people = personelPeople();
-  const firstInDept = dept => { const u=people.find(x=>x.department===dept); return u?u.displayName:''; };
+  const firstInDept = dept => leastBusyInDept(dept); // departmanda en az açık görevi olan kişi (dengeli dağıtım)
   const existing = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType==='opportunity'&&t.linkId===o.id).map(t=>t.title));
   const toAdd = tpl.filter(x=>!existing.has(x.title)).map(x=>normTask({
     id: genId(), title:x.title, desc:'', assignedTo:firstInDept(x.dept), department:x.dept,
@@ -8128,7 +8155,7 @@ async function suggestServStageTasks(s, stage, opts){
   const tpl = SERVICE_STAGE_TEMPLATES[stage];
   if(!tpl || !tpl.length){ if(manual) showToast('Bu aşama için şablon görev tanımlı değil.', '#d97706'); return; }
   const people = personelPeople();
-  const firstInDept = dept => { const u=people.find(x=>x.department===dept); return u?u.displayName:''; };
+  const firstInDept = dept => leastBusyInDept(dept); // departmanda en az açık görevi olan kişi (dengeli dağıtım)
   const existing = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType==='service'&&t.linkId===s.id).map(t=>t.title));
   const toAdd = tpl.filter(x=>!existing.has(x.title)).map(x=>normTask({
     id: genId(), title:x.title, desc:'', assignedTo:firstInDept(x.dept), department:x.dept,
@@ -8884,12 +8911,12 @@ async function taskRevise(t){
 
 async function taskReassign(t, toName, reason, note, newDue){
   const who = (state.currentUser && state.currentUser.displayName)||'';
-  const person = personelPeople().find(u=>u.displayName===toName);
+  const person = taskPeople().find(u=>u.displayName===toName);
   const base = normTask(t);
   const hist = base.assignmentHistory.concat([{ from:base.assignedTo, to:toName, at:today(), by:who, reason:reason||'diger', note:note||'' }]);
   const comments = base.comments.concat([{ by:who, text:'↪ Devredildi → '+toName+(reason?(' ('+(DEVIR_REASONS.find(r=>r.v===reason)||{}).l+')'):'' )+(note?': '+note:''), at:today() }]);
   const rec = Object.assign({}, base, {
-    assignedTo: toName, department: person? person.department : base.department,
+    assignedTo: toName, department: person? (userInDept(person, base.department) ? base.department : (person.department||base.department)) : base.department,
     assignmentHistory: hist, comments,
     dueDate: newDue || base.dueDate, ...stamp()
   });
@@ -8940,10 +8967,12 @@ function buildTaskModal(taskId){
 
   let devretPanel = h('span');
   if(isGiver && !taskIsClosed(t)){
-    const d = state._devretDraft || (state._devretDraft = { to:'', reason:'is_yuku', note:'', newDue:t.dueDate||'', wide:false });
+    const d = state._devretDraft || (state._devretDraft = { to:'', reason:'is_yuku', note:'', newDue:t.dueDate||'', wide:true });
     // Devredilebilecek kişiler: aktif tüm kullanıcılar (departmansız olanlar da dahil), mevcut atanan hariç.
     const _allPeople = (state.users||[]).filter(u=> u.active!==false && u.displayName && u.displayName!==t.assignedTo);
-    let pool = d.wide ? _allPeople : _allPeople.filter(u=> u.department && u.department===t.department);
+    // Varsayılan: tüm ekip (aynı departmandakiler listenin başında). "Sadece departman" ile daraltılabilir.
+    const _sameDept = u=> userInDept(u, t.department);
+    let pool = d.wide ? [..._allPeople].sort((a,b)=>(_sameDept(b)-_sameDept(a))||a.displayName.localeCompare(b.displayName,'tr')) : _allPeople.filter(_sameDept);
     if(!pool.length) pool = _allPeople; // departman eşleşmesi/tanımı yoksa tüm ekibe düş
     const opts = [{v:'',l:'— Kişi seçin —'}, ...pool.map(u=>({v:u.displayName,l:u.displayName+(u.department?' ('+(DEPT_LABEL[u.department]||'')+')':'')}))];
     devretPanel = h('div',{style:{background:'#f8fafc',border:'1px solid #e2e8f0',borderRadius:'10px',padding:'12px',marginTop:'10px'}},
@@ -8983,7 +9012,7 @@ function buildTaskModal(taskId){
   ) : h('span');
 
   const meta = h('div',{style:{fontSize:'12px',color:'#475569',lineHeight:'1.7'}},
-    h('div',{},h('b',{},'Atanan: '),(t.assignedTo||'-')+(t.department?' · '+(DEPT_LABEL[t.department]||''):'')),
+    h('div',{},h('b',{},'Atanan: '),(t.assignedTo||'⚠ Atanmamış — aşağıdan Devret ile kişi seçin')+(t.department?' · '+(DEPT_LABEL[t.department]||''):'')),
     h('div',{},h('b',{},'Veren: '),(t.assignedBy||'-')),
     h('div',{},h('b',{},'Bitiş: '),(t.dueDate?_toTR(t.dueDate):'-')+(t.dueTime?' '+t.dueTime:'')),
     t.linkId?h('div',{},h('b',{},'Bağlı: '),(t.linkLabel||t.linkType)) : h('span'),
@@ -9041,7 +9070,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
   let mgrBar = h('span');
   if(isAdmin){
     const deptOpts=[{v:'',l:'Tüm departmanlar'},...DEPARTMENTS.map(d=>({v:d.v,l:d.l}))];
-    const perOpts=[{v:'',l:'Tüm kişiler'},...personelPeople().map(u=>({v:u.displayName,l:u.displayName}))];
+    const perOpts=[{v:'',l:'Tüm kişiler'},...taskPeople().map(u=>({v:u.displayName,l:u.displayName}))];
     mgrBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px',alignItems:'center'}},
       sel(deptOpts, PMOD.taskDept, v=>{PMOD.taskDept=v;render();}),
       sel(perOpts, PMOD.taskPerson, v=>{PMOD.taskPerson=v;render();})
@@ -9095,8 +9124,8 @@ function renderTaskDigest(isAdmin, myName){
 
 function renderTaskAddPanel(isAdmin, myName){
   const d = PMOD.draft;
-  const people = personelPeople();
-  const assignOpts = [{v:'',l:'— Kişi seçin —'}, ...people.map(u=>({v:u.displayName,l:u.displayName+' ('+(DEPT_LABEL[u.department]||'')+')'}))];
+  const people = taskPeople();
+  const assignOpts = [{v:'',l:'— Kişi seçin —'}, ...people.map(u=>({v:u.displayName,l:u.displayName+(DEPT_LABEL[u.department]?' ('+DEPT_LABEL[u.department]+')':'')}))];
   const assignEl = isAdmin ? sel(assignOpts, d.assignedTo, v=>d.assignedTo=v) : inp('', myName, ()=>{}, 'text', {background:'#e2e8f0'});
   if(!isAdmin){ assignEl.disabled=true; d.assignedTo=myName; }
   const ctxOpts = TASK_CONTEXTS.map(c=>({v:c.v,l:c.l}));
@@ -9162,7 +9191,7 @@ function taskCard(t, isAdmin, myName){
       (t.comments&&t.comments.length)?h('span',{style:{fontSize:'10px',color:'#64748b'}},'💬'+t.comments.length):h('span')
     ),
     t.desc?h('div',{style:{fontSize:'12px',color:T3,marginTop:'4px'}},t.desc):h('span'),
-    h('div',{style:{fontSize:'11px',color:T4,marginTop:'5px'}},'👤 '+(t.assignedTo||'-')+(t.department?' · '+(DEPT_LABEL[t.department]||''):'')+(t.dueDate?' · 📅 '+_toTR(t.dueDate)+(t.dueTime?' '+t.dueTime:''):''))
+    h('div',{style:{fontSize:'11px',color:T4,marginTop:'5px'}},'👤 '+(t.assignedTo||'⚠ Atanmamış')+(t.department?' · '+(DEPT_LABEL[t.department]||''):'')+(t.dueDate?' · 📅 '+_toTR(t.dueDate)+(t.dueTime?' '+t.dueTime:''):''))
   );
   cardEl.addEventListener('click',()=>openTaskModal(t.id));
   return h('div',{style:{display:'flex',gap:'8px',alignItems:'flex-start'}},
@@ -9224,7 +9253,7 @@ function renderTaskKanban(tasks){
       ...(items.length? items.map(t=>{
         const card = h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'8px',padding:'8px 10px',marginBottom:'6px',cursor:'pointer',fontSize:'12px'}},
           h('div',{style:{fontWeight:'700',color:'#0f1f35'}},t.title),
-          h('div',{style:{color:'#64748b',marginTop:'3px'}},'👤 '+(t.assignedTo||'-')+(t.dueDate?' · '+_toTR(t.dueDate):''))
+          h('div',{style:{color:'#64748b',marginTop:'3px'}},'👤 '+(t.assignedTo||'⚠ Atanmamış')+(t.dueDate?' · '+_toTR(t.dueDate):''))
         );
         card.addEventListener('click',()=>openTaskModal(t.id));
         return card;
@@ -9346,7 +9375,7 @@ function renderProjeler(){
   let mgrBar=h('span');
   if(isAdmin){
     const deptOpts=[{v:'',l:'Tüm departmanlar'},...DEPARTMENTS.map(d=>({v:d.v,l:d.l}))];
-    const perOpts=[{v:'',l:'Tüm kişiler'},...personelPeople().map(u=>({v:u.displayName,l:u.displayName}))];
+    const perOpts=[{v:'',l:'Tüm kişiler'},...taskPeople().map(u=>({v:u.displayName,l:u.displayName}))];
     mgrBar=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px'}},
       sel(deptOpts, PMOD.projDept, v=>{PMOD.projDept=v;render();}),
       sel(perOpts, PMOD.projPerson, v=>{PMOD.projPerson=v;render();})
