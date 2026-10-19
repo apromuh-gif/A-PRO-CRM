@@ -335,6 +335,33 @@ async function approveWonQuotationsBulk() {
 }
 window.approveWonQuotationsBulk = approveWonQuotationsBulk;
 
+// Stok: KAZANILDI + bağlı teklifi olan tüm fırsatlar için rezervi yeniden kurar (idempotent).
+// Stok kartı/takip işareti projeden SONRA eklendiyse kazanılmış projeler rezerve edilmemiş kalır; bu araç onları eşitler.
+async function resyncWonStockReservations() {
+  // Stok modülü başlangıç tarihinden (STOCK_START_DATE) önce kazanılan projeler stok kapsamı dışındadır.
+  const STOCK_START_DATE = '2026-10-19';
+  const targets = (state.opportunities || []).filter(o => o.stage === 'KAZANILDI' && o.quotationId && !o.quotationDeleted && String(o.wonAt || '') >= STOCK_START_DATE);
+  if (!targets.length) { alert('Stok kapsamında (' + STOCK_START_DATE + ' ve sonrası kazanılmış) ve teklifi bağlı fırsat yok.'); return; }
+  if (!confirm(targets.length + ' kazanılmış projenin stok kaydı/rezervi yeniden kurulacak (takipli stok kartlarına göre; ' + STOCK_START_DATE + ' ve sonrası). Devam edilsin mi?')) return;
+  let ok = 0, fail = 0;
+  for (const o of targets) {
+    try {
+      const prop = (state.proposals || []).find(p => p.quotationId === o.quotationId);
+      const res = await fetch(TEKLIF_APPROVE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+        body: JSON.stringify({ quotationId: o.quotationId, salesRep: o.assignedTo || '', preparedBy: (prop && prop.preparedBy) || '', wonAt: o.wonAt || null }),
+      });
+      const b = await res.json().catch(() => null);
+      if (res.ok && b && b.success) ok++; else fail++;
+    } catch (e) { fail++; }
+  }
+  _stockStatusCache.at = 0;
+  alert('✅ Tamamlandı. Eşitlenen: ' + ok + (fail ? ', başarısız: ' + fail : '') + '.');
+  render();
+}
+window.resyncWonStockReservations = resyncWonStockReservations;
+
 // Tek seferlik (K2 geri-doldurma): wonAt/closedAt damgası olmayan ESKİ kapanmış fırsatlara
 // tahmini kapanış tarihi yazar. Kaynak önceliği: _editedAt (son düzenleme, gerçeğe en yakın)
 // → dueDate → createdAt. Yeni kayıtlar saveOpp içinde zaten damgalanır; bu yalnız eskiler içindir.
@@ -9761,6 +9788,7 @@ function render() {
               {sep:true},
               {icon:'🔁', label:'Teklif Temsilcisi Eşle', color:'#15803d', action:()=>{ menu.remove(); backfillTeklifSalesReps(); }},
               {icon:'🏆', label:'Kazanılanları Onayla', color:'#4f46e5', action:()=>{ menu.remove(); approveWonQuotationsBulk(); }},
+              {icon:'🔄', label:'Stok rezervlerini yeniden kur', color:'#4f46e5', action:()=>{ menu.remove(); resyncWonStockReservations(); }},
               {icon:'📆', label:'Kazanma Tarihlerini Doldur', color:'#b45309', action:()=>{ menu.remove(); backfillOppCloseDates(); }},
             ];
             items.forEach(item=>{
