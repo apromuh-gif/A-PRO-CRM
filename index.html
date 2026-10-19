@@ -8941,7 +8941,8 @@ function buildTaskModal(taskId){
   const t = normTask((state.tasks||[]).find(x=>x.id===taskId));
   if(!t) return modal('Görev', h('div',{style:{padding:'16px'}},'Görev bulunamadı.'), ()=>setState({modal:null}));
   const cu = state.currentUser || {};
-  const isAdmin = cu.role==='admin' || cu.role==='yonetici';
+  // CRM kullanıcılarında yönetici bayrağı isAdmin'dir (role alanı yok) — eskiden yalnızca role bakıldığı için yönetici bile 'sistem' görevlerini devredemiyordu.
+  const isAdmin = !!cu.isAdmin || cu.role==='admin' || cu.role==='yonetici';
   const myName = cu.displayName;
   const isOwner = t.assignedTo===myName;
   const isGiver = t.assignedBy===myName || isAdmin;
