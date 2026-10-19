@@ -320,7 +320,7 @@ async function approveWonQuotationsBulk() {
       const res = await fetch(TEKLIF_APPROVE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
-        body: JSON.stringify({ quotationId: o.quotationId, salesRep: o.assignedTo || '', preparedBy: (prop && prop.preparedBy) || '' }),
+        body: JSON.stringify({ quotationId: o.quotationId, salesRep: o.assignedTo || '', preparedBy: (prop && prop.preparedBy) || '', wonAt: o.wonAt || null }),
       });
       const b = await res.json().catch(() => null);
       if (res.ok && b && b.success) {
@@ -384,6 +384,9 @@ async function getCrmSessionToken() {
         email:  cu.email,
         name:   cu.displayName || cu.email,
         crmUid: cu.uid,
+        // Stok yetkileri CRM kullanıcı kaydından gelir (kişiler değişebilir → e-posta değil alan esas).
+        department: ((state.users || []).find(u => (u.email || '').toLowerCase() === (cu.email || '').toLowerCase()) || state.currentUser || {}).department || '',
+        depo: !!((state.users || []).find(u => (u.email || '').toLowerCase() === (cu.email || '').toLowerCase()) || state.currentUser || {}).depo,
       }),
     }).catch(() => null);
     if (!res?.ok) return null;
@@ -721,7 +724,18 @@ function oppTeklifBtns(o, pad){
   var isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);
   var existing=isDraft?btn("✏️ Taslağı Aç",function(){openQuotationWithSSO(qId);},'#fffbeb','#b45309',pad,{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn("🔗 Teklif Programı",function(){openQuotationWithSSO(qId);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});
   var convertBtn=btn("🔄 Format",function(){convertQuotationFormat(qId,o.quotationFormat||(lp&&lp.quotationFormat)||"SYSTEM_SALES");},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',border:'1px solid #c4b5fd',borderRadius:'7px'});
-  return [existing,convertBtn];
+  var out=[existing,convertBtn];
+  if(o.stage==='KAZANILDI'){
+    _ensureStockStatus();
+    var ss=_stockStatusCache.map[qId];
+    if(ss && ss.hasStock){
+      var done=ss.allShipped, short=ss.shortageLines>0;
+      var lbl=done?'📦 Sevk edildi':(short?'📦 Stok eksik ('+ss.shortageLines+')':'📦 Rezerve');
+      var bg=done?'#f1f5f9':(short?'#fef2f2':'#ecfdf5'), fg=done?'#475569':(short?'#b91c1c':'#15803d'), bd=done?'#cbd5e1':(short?'#fecaca':'#86efac');
+      out.push(btn(lbl,function(){openStockWithSSO(qId);},bg,fg,pad,{fontSize:'12px',border:'1px solid '+bd,borderRadius:'7px',whiteSpace:'nowrap'}));
+    }
+  }
+  return out;
 }
 
 // Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
@@ -1593,11 +1607,12 @@ async function saveServiceOpp(form, isEdit) {
 // Fırsat "KAZANILDI" olduğunda bağlı teklifi Teklif Programı'nda APPROVED durumuna çeker.
 // Karlılık (profit) yalnızca APPROVED teklifleri topladığı için bu adım olmadan
 // kazanılan satış karlılıkta "veri yok" kalır. Endpoint idempotenttir (tekrar tetiklenirse hata vermez).
-async function approveWonQuotation(opp) {
+async function approveWonQuotation(opp, force) {
   try {
     if (typeof TEKLIF_APPROVE_URL === 'undefined' || !TEKLIF_API_KEY) return;
     if (!opp || opp.stage !== 'KAZANILDI' || !opp.quotationId) return;
-    if (opp.quotationStatus === 'APPROVED') return;
+    // force: KAZANILDI'ya geri dönüşte stok rezervi yeniden kurulsun diye endpoint (idempotent) yine çağrılır.
+    if (opp.quotationStatus === 'APPROVED' && !force) return;
     // Hazırlayan: bağlı teklif talebinden; satış temsilcisi: fırsat sahibi.
     const prop = (state.proposals || []).find(p => p.quotationId === opp.quotationId);
     const res = await fetch(TEKLIF_APPROVE_URL, {
@@ -1607,6 +1622,7 @@ async function approveWonQuotation(opp) {
         quotationId: opp.quotationId,
         salesRep: opp.assignedTo || '',
         preparedBy: (prop && prop.preparedBy) || '',
+        wonAt: opp.wonAt || null,
       }),
     });
     const body = await res.json().catch(() => null);
@@ -1618,6 +1634,50 @@ async function approveWonQuotation(opp) {
     showToast('✅ Teklif onaylandı — karlılığa dahil edildi.');
   } catch (e) { /* sessiz: kazanma kaydını engellemez */ }
 }
+
+// Stok: fırsat KAZANILDI'dan çıktığında / silindiğinde teklifin rezervini bırakır (teklif durumuna dokunmaz). Sessiz.
+async function releaseQuotationStock(quotationId) {
+  try {
+    if (!quotationId) return;
+    await fetch(TEKLIF_APP_URL + '/api/v1/crm/release-quotation-stock', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+      body: JSON.stringify({ quotationId }),
+    });
+    _stockStatusCache.at = 0;
+  } catch (e) { /* sessiz */ }
+}
+// Stok durumu rozeti için önbellek (fırsat başına teklif stok özeti).
+const _stockStatusCache = { map: {}, at: 0, loading: false };
+function _ensureStockStatus() {
+  const now = Date.now();
+  if (_stockStatusCache.loading || now - _stockStatusCache.at < 60000) return;
+  const ids = (state.opportunities || []).filter(o => o.stage === 'KAZANILDI' && o.quotationId && !o.quotationDeleted).map(o => o.quotationId);
+  if (!ids.length) return;
+  _stockStatusCache.loading = true;
+  fetch(TEKLIF_APP_URL + '/api/v1/crm/stock-status?ids=' + encodeURIComponent(ids.slice(0, 200).join(',')), { headers: { 'x-crm-key': TEKLIF_API_KEY } })
+    .then(r => r.ok ? r.json() : null)
+    .then(b => {
+      _stockStatusCache.at = Date.now();
+      _stockStatusCache.loading = false;
+      if (b && b.success && b.data) {
+        const changed = JSON.stringify(b.data) !== JSON.stringify(_stockStatusCache.map);
+        _stockStatusCache.map = b.data;
+        if (changed) render();
+      }
+    })
+    .catch(() => { _stockStatusCache.at = Date.now(); _stockStatusCache.loading = false; });
+}
+// Teklif Programı → Stok (SSO). qid verilirse o projenin stok sayfası açılır.
+async function openStockWithSSO(quotationId) {
+  const _win = openLoadingTab();
+  const token = await getCrmSessionToken();
+  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.'); return; }
+  const path = quotationId ? '/stock/projects/' + encodeURIComponent(quotationId) : '/stock';
+  const _url = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=${encodeURIComponent(path)}`;
+  if (_win) _win.location.href = _url; else window.open(_url, '_blank');
+}
+window.openStockWithSSO = openStockWithSSO;
 
 async function saveOpp(form, isEdit) {
   setState({saving:true});
@@ -1631,7 +1691,9 @@ async function saveOpp(form, isEdit) {
   setState({opportunities:list, modal:null, saving:false});
   showToast('✅ Fırsat kaydedildi!');
   // Kazanıldı + bağlı teklif varsa → teklifi APPROVED'a çek (karlılık dahli).
-  if (data.stage === 'KAZANILDI' && data.quotationId) approveWonQuotation(data);
+  if (data.stage === 'KAZANILDI' && data.quotationId) approveWonQuotation(data, !!(prevOpp && prevOpp.stage !== 'KAZANILDI'));
+  // Stok: KAZANILDI'dan çıkıldıysa (KAÇTI / NO GO / ERTELENDİ vb.) rezerv serbest kalır.
+  if (prevOpp && prevOpp.stage === 'KAZANILDI' && data.stage !== 'KAZANILDI' && prevOpp.quotationId) releaseQuotationStock(prevOpp.quotationId);
   // GAP 2: KAZANILDI → muhasebeye sipariş onay + sipariş formu görevleri
   if (data.stage === 'KAZANILDI' && (!prevOpp || prevOpp.stage !== 'KAZANILDI')) {
     const cn = _custName(data.customerId);
@@ -3698,6 +3760,9 @@ function buildAdminModal() {
         const cbETarget = document.createElement('input');
         cbETarget.type='checkbox'; cbETarget.checked=eu.hasTarget!==false; cbETarget.style.accentColor='#10b981';
         cbETarget.addEventListener('change',e=>eu.hasTarget=e.target.checked);
+        const cbEDepo = document.createElement('input');
+        cbEDepo.type='checkbox'; cbEDepo.checked=!!eu.depo; cbEDepo.style.accentColor='#f59e0b';
+        cbEDepo.addEventListener('change',e=>eu.depo=e.target.checked);
         const eDept = sel([{v:'',l:'— Departman seçin —'},...DEPARTMENTS], eu.department||'', v=>eu.department=v);
         const editPanel = h('div',{style:{marginTop:'12px',background:'#0d1f35',border:'1px solid #2563eb',borderRadius:'10px',padding:'14px'}},
           h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#60a5fa',marginBottom:'10px'}},'✏️ Kullanıcı Düzenle'),
@@ -3705,12 +3770,13 @@ function buildAdminModal() {
           row(field('Departman',eDept,true),h('div',{style:{flex:1}})),
           h('div',{style:{display:'flex',gap:'20px',marginBottom:'12px',flexWrap:'wrap'}},
             h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T3,cursor:'pointer'}},cbEAdmin,h('span',{},'Yönetici yetkisi')),
-            h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T3,cursor:'pointer'}},cbETarget,h('span',{},'Satış & Servis Hedefi girilsin'))
+            h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T3,cursor:'pointer'}},cbETarget,h('span',{},'Satış & Servis Hedefi girilsin')),
+            h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T3,cursor:'pointer'}},cbEDepo,h('span',{},'Depo yetkisi (stok sevk hazırlama)'))
           ),
           h('div',{style:{display:'flex',gap:'8px'}},
             btn('✓ Kaydet',async()=>{
               if(!eu.displayName){flash('⚠ Ad boş olamaz.',false);return;}
-              const list=users.map(x=>x.email===u.email?{...x,displayName:eu.displayName,isAdmin:eu.isAdmin,hasTarget:eu.hasTarget!==false,department:eu.department||''}:x);
+              const list=users.map(x=>x.email===u.email?{...x,displayName:eu.displayName,isAdmin:eu.isAdmin,hasTarget:eu.hasTarget!==false,department:eu.department||'',depo:!!eu.depo}:x);
               await persistUsers(list); editingUser=null; flash('✅ Kullanıcı güncellendi.');
             },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','8px 14px',{flex:'1',fontSize:'12px'}),
             btn('İptal',()=>{editingUser=null;rerender();},'#21262d','#8b949e','8px 12px',{fontSize:'12px'})
@@ -3768,6 +3834,9 @@ function buildAdminModal() {
       const cbTarget=h('input',{type:'checkbox',style:{accentColor:'#10b981'}});
       cbTarget.checked=newU.hasTarget!==false;
       cbTarget.addEventListener('change',e=>newU.hasTarget=e.target.checked);
+      const cbDepo=h('input',{type:'checkbox',style:{accentColor:'#f59e0b'}});
+      cbDepo.checked=!!newU.depo;
+      cbDepo.addEventListener('change',e=>newU.depo=e.target.checked);
       const nDept=sel([{v:'',l:'— Departman seçin —'},...DEPARTMENTS], newU.department||'', v=>newU.department=v);
       const addBox = h('div',{style:{background:G,border:'1px solid #6366f1',borderRadius:'10px',padding:'14px',marginBottom:'10px'}},
         row(field('Görünen Ad *',nName,true),field('Şifre *',nPw,true)),
@@ -3775,7 +3844,8 @@ function buildAdminModal() {
         row(field('Departman',nDept,true),h('div',{style:{flex:1}})),
         h('div',{style:{display:'flex',gap:'20px',marginBottom:'12px',flexWrap:'wrap'}},
           h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T2,cursor:'pointer'}},cbAdmin,h('span',{},'Yönetici yetkisi ver')),
-          h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T2,cursor:'pointer'}},cbTarget,h('span',{},'Satış & Servis Hedefi girilsin'))
+          h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T2,cursor:'pointer'}},cbTarget,h('span',{},'Satış & Servis Hedefi girilsin')),
+          h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',color:T2,cursor:'pointer'}},cbDepo,h('span',{},'Depo yetkisi (stok sevk hazırlama)'))
         ),
         h('div',{style:{display:'flex',gap:'8px'}},
           btn('✓ Ekle',async()=>{
@@ -3792,8 +3862,8 @@ function buildAdminModal() {
               else { flash('⚠ Hesap oluşturulamadı: '+(err.code==='auth/weak-password'?'Şifre zayıf.':err.message),false); return; }
             }
             const {password, ...rest} = newU;
-            await persistUsers([...users,{...rest,active:true,hasTarget:newU.hasTarget!==false,department:newU.department||'',createdAt:today()}]);
-            newU={email:'',password:'',displayName:'',isAdmin:false,hasTarget:true,department:''}; adding=false; flash('✅ Kullanıcı eklendi.');
+            await persistUsers([...users,{...rest,active:true,hasTarget:newU.hasTarget!==false,department:newU.department||'',depo:!!newU.depo,createdAt:today()}]);
+            newU={email:'',password:'',displayName:'',isAdmin:false,hasTarget:true,department:'',depo:false}; adding=false; flash('✅ Kullanıcı eklendi.');
           },'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{flex:'1'}),
           btn('İptal',()=>{adding=false;rerender();},'#21262d','#8b949e')
         )
@@ -5314,6 +5384,7 @@ function renderOpportunities() {
   const r=await cascadeDeleteTasksFor('opportunity',o.id);
   if(r.manuals.length && !confirm(r.manuals.length+' bağlı manuel görev var. Fırsatla birlikte silinsin mi? (İptal: görevler kalır)')){ /* manuelleri bırak */ }
   else { for(const m of r.manuals){ await deleteDoc('tasks',m.id); } setState({tasks:(state.tasks||[]).filter(x=>!r.manuals.some(mm=>mm.id===x.id))}); }
+  if(o.stage==='KAZANILDI' && o.quotationId) releaseQuotationStock(o.quotationId);
   await deleteDoc('opportunities',o.id); setState({opportunities:state.opportunities.filter(x=>x.id!==o.id)});
   showToast('✅ Fırsat silindi'+(r.deletedAuto?(' · '+r.deletedAuto+' otomatik görev temizlendi'):'')); },'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
@@ -8022,6 +8093,7 @@ async function projDelete(o){
   const r=await cascadeDeleteTasksFor('opportunity', o.id);
   for(const m of (r.manuals||[])){ await deleteDoc('tasks', m.id); }
   if(r.manuals && r.manuals.length) setState({tasks:(state.tasks||[]).filter(x=>!r.manuals.some(mm=>mm.id===x.id))});
+  if(o.stage==='KAZANILDI' && o.quotationId) releaseQuotationStock(o.quotationId);
   await deleteDoc('opportunities', o.id);
   setState({opportunities:(state.opportunities||[]).filter(x=>x.id!==o.id), modal:null});
   showToast('🗑 Proje silindi'+(r.deletedAuto?(' · '+r.deletedAuto+' otomatik görev'):''));
@@ -9613,6 +9685,7 @@ function render() {
           h('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#2563eb,#1d4ed8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:'700',color:'#fff',flexShrink:'0'}},(cu?.displayName||'?').slice(0,2).toUpperCase()),
           window.innerWidth<=768?h('span'):h('span',{style:{fontSize:'13px',color:'#0f1f35',fontWeight:'700',maxWidth:'90px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},cu?.displayName||'')
         ),
+        window.innerWidth<=768?h('span'):btn('📦 Stok',()=>openStockWithSSO(),'rgba(255,255,255,.3)','#0f1f35','7px 14px',{fontSize:'13px',border:'1px solid rgba(15,31,53,.25)',borderRadius:'8px',fontWeight:'700'}),
         cu?.isAdmin ? h('div',{id:'desk-btns',style:{display:window.innerWidth<=768?'none':'flex',gap:'10px'}},
           btn('🎯 Hedefler',()=>openTargetsModal(),'rgba(255,255,255,.3)','#0f1f35','7px 14px',{fontSize:'13px',border:'1px solid rgba(15,31,53,.25)',borderRadius:'8px',fontWeight:'700'}),
           btn('👥 Kullanıcılar',()=>setState({modal:{type:'admin',item:null}}),'rgba(255,255,255,.3)','#0f1f35','7px 14px',{fontSize:'13px',border:'1px solid rgba(15,31,53,.25)',borderRadius:'8px',fontWeight:'700'})
