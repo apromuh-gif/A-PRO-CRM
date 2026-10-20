@@ -10528,9 +10528,31 @@ function startNotificationTimer() {
   // Tarayıcı açık olsa da checkAllMails çağrılmıyor → çift mail önlenir.
   // (Ekran içi bildirim ve ses checkAllNotifications ile devam ediyor.)
   // Teklif programı referans senkronu (atanan teklif no → fırsat REF.)
+  // Her sekme/kullanıcı bağlı HER teklif için sunucuyu sorguladığından (36+ çağrı/tur) Vercel CPU limiti
+  // doluyordu. Artık: yalnız sekme GÖRÜNÜRKEN, en sık 15 dk'da bir ve birden çok sekmede yalnız biri
+  // (localStorage ortak zaman damgası) çalışır. Sekmeye dönünce süre dolmuşsa hemen tazelenir.
   if(window._qrefInterval) clearInterval(window._qrefInterval);
-  window._qrefInterval = setInterval(syncQuotationRefs, 300000);
-  setTimeout(syncQuotationRefs, 10000);
+  window._qrefInterval = setInterval(maybeSyncQuotationRefs, 60000); // yalnız kontrol (ağ yok)
+  setTimeout(maybeSyncQuotationRefs, 10000);
+  if(!window._qrefVisBound){
+    window._qrefVisBound = true;
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState === 'visible') maybeSyncQuotationRefs();
+    });
+  }
+}
+
+var QREF_MIN_GAP_MS = 15 * 60 * 1000;
+function maybeSyncQuotationRefs() {
+  try {
+    if(document.visibilityState !== 'visible') return;
+    var now = Date.now();
+    var last = Number(localStorage.getItem('_qrefLastSync')) || 0;
+    if(now - last < QREF_MIN_GAP_MS) return;
+    // Önce damgala: aynı anda açık diğer sekmeler tekrar çalıştırmasın.
+    localStorage.setItem('_qrefLastSync', String(now));
+  } catch(e) { /* localStorage yoksa (gizli mod vb.) yine de çalıştır */ }
+  syncQuotationRefs();
 }
 
 
