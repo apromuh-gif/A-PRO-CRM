@@ -367,6 +367,9 @@ EPC & Anahtar Teslim Projeler · İnşaat & Taahhüt · Yangın & Güvenlik Sist
 | 7 Haz 2026 | Web | NextAura web sitesi: badge güncelleme, hero logo tam ekran, sektör carousel (EPC/İnşaat/MEP/SiEnt), stats bar, pause-on-hover, "Sorunlar" bölümü kaldırıldı, slayt zemin renk uyumu |
 | 28 Tem 2026 | Faz 2 | Performans/Prim Faz 2: kriter bazlı manuel girdi, görev metriği ayrımı, karlılık marj% entegrasyonu, Test Modu |
 | 29 Tem 2026 | Faz 3 | Prim modeli (taban + aşım tavanlı/ivmeli, birey & karlılık aşımı), Kriter Performans Görünümü grafiği, rapor sadeleştirme, YTD hedef kartı |
+| 15 Eki 2026 | v3.x | "Son Düzenleyen" kullanıcı adı CRM listesinden çözülür; Gönderilme Tarihi otomatik ve salt-okunur; satış kullanıcısı manuel kalem net fiyatı (Teklif Programı) |
+| 19 Eki 2026 | **Stok** | **Stok modülü entegrasyonu** (Teklif Programı `/stock`): kullanıcıya **Depo yetkisi** kutusu; üst menüde **Stok** butonu (SSO); kazanılmış fırsatta **Rezerve / Stok eksik / Sevk edildi** rozeti; `wonAt` iletimi; KAZANILDI'dan çıkış/silinmede rezerv bırakma; **Araçlar → Stok rezervlerini yeniden kur**; stok başlangıç tarihi 19.10.2026 |
+| 19 Eki 2026 | Görevler | **Çoklu departman** (ana + ek departman: görev ataması ve stok onay yetkisi için; performans/prim ana departmana bağlı); Devret listesi tüm ekibi gösterir; departmansız kullanıcılar atamaya dahil; şablon görevler en az iş yükü olana atanır; hidrolik/çizim/BOQ görevleri Proje Grubu'na bağlandı; yönetici (`isAdmin`) sistem görevlerini devredip onaylayabilir; atanmamış görev uyarısı |
 
 ---
 
