@@ -9786,6 +9786,7 @@ function render() {
               {icon:'✉️', label:'Mail Testi',      color:'#1d4ed8', action:()=>{ menu.remove(); testMailNotification(); }},
               {icon:'🔊', label:'Ses Testi',       color:'#059669', action:()=>{ menu.remove(); try{const ctx=window._audioCtx||(window._audioCtx=new(window.AudioContext||window.webkitAudioContext)());if(ctx.state==='suspended'){ctx.resume().then(()=>playBeep('win'));}else{playBeep('win');}}catch(e){} }},
               {sep:true},
+              {icon:'🔄', label:'Teklifleri şimdi eşitle', color:'#0369a1', action:()=>{ menu.remove(); syncQuotationRefsNow(); }},
               {icon:'🔁', label:'Teklif Temsilcisi Eşle', color:'#15803d', action:()=>{ menu.remove(); backfillTeklifSalesReps(); }},
               {icon:'🏆', label:'Kazanılanları Onayla', color:'#4f46e5', action:()=>{ menu.remove(); approveWonQuotationsBulk(); }},
               {icon:'🔄', label:'Stok rezervlerini yeniden kur', color:'#4f46e5', action:()=>{ menu.remove(); resyncWonStockReservations(); }},
@@ -10555,6 +10556,16 @@ function maybeSyncQuotationRefs() {
   syncQuotationRefs();
 }
 
+// Araçlar menüsünden "Teklifleri şimdi eşitle": 15 dk beklemeden hemen eşitler (tarayıcı önbelleğini atlar).
+async function syncQuotationRefsNow() {
+  showToast('🔄 Teklifler eşitleniyor…', '#0369a1');
+  try { localStorage.setItem('_qrefLastSync', String(Date.now())); } catch(e) {}
+  window._qrefFresh = true;
+  try { await syncQuotationRefs(); }
+  finally { window._qrefFresh = false; }
+  showToast('✅ Teklifler eşitlendi.');
+}
+
 
 // ═══════════════════════════════════════════════════════
 // EMAİL BİLDİRİM SİSTEMİ (EmailJS)
@@ -10622,7 +10633,7 @@ async function syncQuotationRefs() {
     ])];
     for (const qid of ids) {
       const res = await fetch(
-        `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?id=${encodeURIComponent(qid)}`,
+        `${TEKLIF_APP_URL}/api/v1/crm/quotation-status?id=${encodeURIComponent(qid)}${window._qrefFresh ? '&_=' + Date.now() : ''}`,
         { headers: { 'x-crm-key': TEKLIF_API_KEY } }
       ).catch(() => null);
       if (!res || !res.ok) continue; // geçici hata → dokunma
