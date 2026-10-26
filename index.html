@@ -4927,7 +4927,7 @@ function renderDashboard() {
 // ═══════════════════════════════════════════════════════
 // TEDARİKÇİLER
 // ═══════════════════════════════════════════════════════
-const SUPPLIER_TYPES = ['Sistem Tedarikçisi','Malzeme Tedarikçisi','Kaynakçı Ustası','Mekanik Boru Ustası','Formen','Mekanik Montaj Ekibi','Yangın Dolabı Tedarikçisi','Hidrant Tedarikçisi','Yangın Pompası Tedarikçisi','Modüler Su Deposu Tedarikçisi','HDPE Boru Tedarikçisi','Metal Boru Tedarikçisi','Kıvılcım Algılama ve Söndürme Sistemi','Sismik Malzeme Tedarikçisi','Yivli Malzeme Tedarikçisi','Sigorta Firması','Nakliye Firması','Araç Tamir ve Servis Firması','Kırtasiye & Ozalit Firması'];
+const SUPPLIER_TYPES = ['Sistem Tedarikçisi','Malzeme Tedarikçisi','Kaynakçı Ustası','Mekanik Boru Ustası','Formen','Mekanik Montaj Ekibi','Yangın Dolabı Tedarikçisi','Hidrant Tedarikçisi','Yangın Pompası Tedarikçisi','Modüler Su Deposu Tedarikçisi','HDPE Boru Tedarikçisi','Metal Boru Tedarikçisi','Kıvılcım Algılama ve Söndürme Sistemi','Sismik Malzeme Tedarikçisi','Yivli Malzeme Tedarikçisi','Pasif Yangın Durdurucu Tedarikçisi','Sigorta Firması','Nakliye Firması','Araç Tamir ve Servis Firması','Kırtasiye & Ozalit Firması'];
 
 
 
@@ -4940,7 +4940,7 @@ function renderSuppliers() {
   const f = state.filters;
   const EMPTY=FILTER_EMPTY;
   const filtered = (state.suppliers||[]).filter(s=>{
-    if(f.supQ){const _q=f.supQ.toLowerCase();if(!(s.firmName||'').toLowerCase().includes(_q)&&!(s.contacts||[]).some(ct=>(ct.name||'').toLowerCase().includes(_q)))return false;}
+    if(f.supQ){const _q=f.supQ.toLowerCase();if(!(s.firmName||'').toLowerCase().includes(_q)&&!(s.notes||'').toLowerCase().includes(_q)&&!(s.contacts||[]).some(ct=>(ct.name||'').toLowerCase().includes(_q)))return false;}
     if(f.supName){if(f.supName===EMPTY){if((s.firmName||'').trim())return false;}else if(!(s.firmName||'').toLowerCase().includes(f.supName.toLowerCase()))return false;}
     if(f.supType){const _st=Array.isArray(s.supplierType)?s.supplierType:[s.supplierType||''];if(f.supType===EMPTY){if(_st.some(x=>x.trim()))return false;}else if(!_st.includes(f.supType))return false;}
     return true;
@@ -5007,6 +5007,7 @@ function renderSuppliers() {
           btn('Sil',()=>{if(confirm('Tedarikçiyi silmek istediğinizden emin misiniz?')){deleteDoc('suppliers',s.id).then(()=>setState({suppliers:state.suppliers.filter(x=>x.id!==s.id)}));}},'#fef2f2','#dc2626','7px 13px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
         ),
       ),
+      (s.notes||'').trim()?h('div',{style:{fontSize:'12px',color:T2,background:G2,border:`1px solid ${G3}`,borderRadius:'8px',padding:'8px 11px',marginBottom:'8px',whiteSpace:'pre-wrap'}},'📝 '+s.notes.trim()):h('span'),
       (s.contacts||[]).length?contGrid:h('div',{style:{color:T4,fontSize:'12px',fontStyle:'italic',marginTop:'8px'}},'Henüz kişi eklenmedi.')
     );
     list.appendChild(card);
@@ -5023,7 +5024,7 @@ function renderSuppliers() {
 }
 
 function buildSupplierModal(item) {
-  const f = item ? JSON.parse(JSON.stringify(item)) : {firmName:'',supplierType:[],city:'',phone:'',email:'',web:'',contacts:[],createdAt:today()};
+  const f = item ? JSON.parse(JSON.stringify(item)) : {firmName:'',supplierType:[],city:'',phone:'',email:'',web:'',notes:'',contacts:[],createdAt:today()};
   if(typeof f.supplierType==='string') f.supplierType = f.supplierType ? [f.supplierType] : [];
   let addMode = false;
   let nc = {name:'',title:'',email:'',phone:''};
@@ -5100,6 +5101,9 @@ function buildSupplierModal(item) {
     const fEmail=inp('info@firma.com',f.email,v=>f.email=v);
     const fWeb=inp('www.firma.com',f.web,v=>f.web=v);
 
+    const fNotes=h('textarea',{placeholder:'Notlar…',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'70px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
+    fNotes.addEventListener('input',e=>f.notes=e.target.value);
+
     return h('div',{},
       field('Firma Adı *',fName),
       field('Tedarikçi Türü',fType),
@@ -5112,6 +5116,7 @@ function buildSupplierModal(item) {
         ),
         contactsDiv
       ),
+      field('Notlar',fNotes),
       h('div',{style:{display:'flex',gap:'10px'}},
         btn('Kaydet',()=>{if(f.firmName)saveSupplier(f,!!item);},'linear-gradient(135deg,#16a34a,#15803d)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
         btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
