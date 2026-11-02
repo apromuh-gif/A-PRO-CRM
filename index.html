@@ -248,6 +248,7 @@ const NAVY="#1e3a5f",NAVY2="#264875",ACC="#2563eb";
 // ═══════════════════════════════════════════════════════
 const TEKLIF_APP_URL  = 'https://apro-platform.vercel.app';
 const TEKLIF_API_URL  = TEKLIF_APP_URL + '/api/v1/crm/open-quotation';
+const TEKLIF_COPY_URL = TEKLIF_APP_URL + '/api/v1/crm/copy-quotation';
 const TEKLIF_SYNC_URL = TEKLIF_APP_URL + '/api/v1/crm/customers';
 const TEKLIF_AUTH_URL = TEKLIF_APP_URL + '/api/v1/crm/auth';
 const TEKLIF_USERS_URL      = TEKLIF_APP_URL + '/api/v1/crm/users';
@@ -747,7 +748,11 @@ function oppTeklifBtns(o, pad){
   const lp=state.proposals.find(function(p){return p.opportunityId===o.id&&p.quotationId&&!p.quotationDeleted;});
   const qId=(o.quotationDeleted?'':o.quotationId)||(lp&&lp.quotationId);
   var _teklifClick=function(){var cust=state.customers.find(function(c){return c.id===o.customerId;});if(cust)teklifOlustur(cust,o.title,o.id);else alert("Müşteri bulunamadı.");};
-  if(!qId) return [btn("📋 Teklif Oluştur",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'})];
+  if(!qId) return [
+    btn("📋 Teklif Oluştur",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}),
+    btn("⧉ Teklifi Kopyala",function(){teklifKopyala(o);},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',border:'1px solid #c4b5fd',borderRadius:'7px'}),
+    btn("🔗 Mevcut Teklifi Bağla",function(){linkExistingQuotation(o);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',border:'1px solid #93c5fd',borderRadius:'7px'})
+  ];
   var crmSent=["Gönderildi","Revize","Randevu","Onaylandı","Reddedildi"];
   var qStatus=o.quotationStatus||(lp&&lp.quotationStatus);
   var isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);
@@ -765,6 +770,197 @@ function oppTeklifBtns(o, pad){
     }
   }
   return out;
+}
+
+// Teklifi fırsata ve (varsa/yoksa oluşturarak) fırsat-teklif talebi kaydına bağlar. Bağla ve Kopyala ortak kullanır.
+async function attachQuotationToOpportunity(o, quotationId, quotationUrl, status, format) {
+  const st = status || 'DRAFT';
+  const oppUpd = { ...o, quotationId, quotationUrl, quotationDeleted: false, quotationStatus: st, ...(format ? { quotationFormat: format } : {}), ...stamp() };
+  await saveDoc('opportunities', o.id, oppUpd);
+  // Bu fırsata ait bağsız (veya silinmiş bağlı) talep varsa onu güncelle, yoksa yeni oluştur
+  const existingProp = state.proposals.find(p => p.opportunityId === o.id && (!p.quotationId || p.quotationDeleted));
+  let proposals;
+  if (existingProp) {
+    const pUpd = { ...existingProp, quotationId, quotationUrl, quotationDeleted: false, quotationStatus: st, source: 'opportunity', ...stamp() };
+    await saveDoc('proposals', existingProp.id, pUpd);
+    proposals = state.proposals.map(p => p.id === existingProp.id ? pUpd : p);
+  } else {
+    const propId = genId();
+    const propData = {
+      id: propId, title: o.title || 'Teklif', customerId: o.customerId || '', opportunityId: o.id,
+      preparedBy: state.currentUser?.displayName || '', amount: 0,
+      status: 'Hazırlanıyor', createdAt: today(), validUntil: '', sentDate: '', notes: '',
+      quotationId, quotationUrl, quotationStatus: st, source: 'opportunity', ...stamp(),
+    };
+    await saveDoc('proposals', propId, propData);
+    proposals = [...state.proposals, propData];
+  }
+  setState({ opportunities: state.opportunities.map(x => x.id === o.id ? oppUpd : x), proposals });
+}
+
+// Kopyalanacak teklifi seçtirir: CRM'de fırsata/teklif talebine bağlı mevcut teklifler, aranabilir liste.
+// "Kopyala →" tıklamasıyla senkron yükleme sekmesi açılır (pop-up engelleyici güvenli).
+function selectSourceQuotation() {
+  return new Promise(resolve => {
+    const custName = id => { const c = state.customers.find(x => x.id === id); return c ? (c.firmName || c.name || '') : ''; };
+    const statusTr = { DRAFT:'Taslak', PREPARED:'Hazırlandı', SENT:'Gönderildi', APPROVED:'Onaylandı', REJECTED:'Reddedildi', ARCHIVED:'Arşiv' };
+    const seen = new Set(), items = [];
+    const add = (qid, title, customerId, ref, status, value, ts) => {
+      if (!qid || seen.has(qid)) return;
+      seen.add(qid);
+      const customer = custName(customerId);
+      items.push({ qid, title: title || '', customer, ref: ref || '', status: status || '', value: Number(value) || 0, ts: String(ts || ''),
+        hay: (String(title || '') + ' ' + customer + ' ' + String(ref || '')).toLocaleLowerCase('tr') });
+    };
+    state.opportunities.filter(o => o.quotationId && !o.quotationDeleted).forEach(o => add(o.quotationId, o.title, o.customerId, o.tenderRef, o.quotationStatus, o.value, o.updatedAt));
+    state.proposals.filter(p => p.quotationId && !p.quotationDeleted).forEach(p => add(p.quotationId, p.title, p.customerId, '', p.quotationStatus, p.amount, p.updatedAt));
+    items.sort((a, b) => b.ts.localeCompare(a.ts));
+
+    let selected = null;
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;animation:fu .2s ease;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:18px;padding:24px;width:560px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(0,0,0,.3);';
+    const title = document.createElement('div');
+    title.style.cssText = 'font-size:17px;font-weight:800;color:#0f1f35;margin-bottom:4px;';
+    title.textContent = '⧉ Kopyalanacak Teklifi Seçin';
+    const sub = document.createElement('div');
+    sub.style.cssText = 'font-size:12px;color:#64748b;margin-bottom:12px;';
+    sub.textContent = 'Seçilen teklifin kalemleri, modülleri ve parametreleri bu fırsat için yeni bir taslak teklif olarak kopyalanır. Kaynak teklif değişmez.';
+    const search = document.createElement('input');
+    search.type = 'text'; search.placeholder = 'Ara: proje, müşteri veya teklif no…';
+    search.style.cssText = 'width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;font-family:inherit;font-size:14px;margin-bottom:10px;';
+    const listEl = document.createElement('div');
+    listEl.style.cssText = 'flex:1;overflow-y:auto;border:1px solid #e2e8f0;border-radius:10px;min-height:120px;margin-bottom:12px;';
+    const confirmBtn = document.createElement('button');
+    confirmBtn.textContent = 'Kopyala →';
+    confirmBtn.disabled = true;
+    confirmBtn.style.cssText = 'width:100%;padding:11px;border:none;border-radius:10px;background:#cbd5e1;color:#fff;cursor:not-allowed;font-family:inherit;font-size:14px;font-weight:700;margin-bottom:8px;';
+    const cancel = document.createElement('button');
+    cancel.textContent = 'İptal';
+    cancel.style.cssText = 'width:100%;padding:9px;border:1px solid #e2e8f0;border-radius:8px;background:transparent;cursor:pointer;font-family:inherit;font-size:13px;color:#64748b;';
+
+    function renderList() {
+      const q = search.value.trim().toLocaleLowerCase('tr');
+      const shown = items.filter(it => !q || it.hay.includes(q)).slice(0, 60);
+      listEl.innerHTML = '';
+      if (!shown.length) {
+        const empty = document.createElement('div');
+        empty.style.cssText = 'padding:20px;text-align:center;color:#94a3b8;font-size:13px;';
+        empty.textContent = items.length ? 'Eşleşen teklif yok.' : 'CRM\'ye bağlı teklif bulunamadı.';
+        listEl.appendChild(empty);
+        return;
+      }
+      shown.forEach(it => {
+        const row = document.createElement('div');
+        const on = selected === it.qid;
+        row.style.cssText = 'padding:10px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;' + (on ? 'background:#eff6ff;' : '');
+        const l1 = document.createElement('div');
+        l1.style.cssText = 'font-size:13px;font-weight:700;color:#0f1f35;';
+        l1.textContent = it.title || '(başlıksız)';
+        const l2 = document.createElement('div');
+        l2.style.cssText = 'font-size:12px;color:#64748b;margin-top:2px;';
+        l2.textContent = [it.customer, it.ref, statusTr[it.status] || it.status, it.value > 0 ? it.value.toLocaleString('tr-TR', { maximumFractionDigits: 0 }) + ' €' : ''].filter(Boolean).join(' · ');
+        row.appendChild(l1); row.appendChild(l2);
+        row.onclick = () => {
+          selected = it.qid;
+          confirmBtn.disabled = false;
+          confirmBtn.style.background = '#2563eb';
+          confirmBtn.style.cursor = 'pointer';
+          renderList();
+        };
+        listEl.appendChild(row);
+      });
+    }
+    search.oninput = renderList;
+    confirmBtn.onclick = () => { if (!selected) return; const win = openLoadingTab(); overlay.remove(); resolve({ qid: selected, win }); };
+    cancel.onclick = () => { overlay.remove(); resolve(null); };
+    overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); resolve(null); } };
+    box.appendChild(title); box.appendChild(sub); box.appendChild(search); box.appendChild(listEl); box.appendChild(confirmBtn); box.appendChild(cancel);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    renderList();
+    search.focus();
+  });
+}
+
+// Fırsat için mevcut bir teklifi kopyalayıp bu fırsata bağlı yeni taslak teklif açar (tek adım).
+// Müşteri/temsilci/hazırlayan fırsattan gelir; kalemler, modüller ve parametreler kaynak tekliften kopyalanır.
+async function teklifKopyala(o) {
+  const customer = state.customers.find(c => c.id === o.customerId);
+  if (!customer) { alert('Müşteri bulunamadı.'); return; }
+  const sel = await selectSourceQuotation();
+  if (!sel) return;
+  const _win = sel.win;
+  try {
+    const res = await fetch(TEKLIF_COPY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+      body: JSON.stringify({
+        sourceQuotationId: sel.qid,
+        customerName: customer.firmName || customer.name || 'Bilinmeyen',
+        phone: customer.phone || '',
+        email: customer.email || '',
+        crmCustomerId: customer.id || '',
+        crmOpportunityId: o.id || '',
+        crmOpportunityTitle: o.title || '',
+        salesRep: o.assignedTo || state.currentUser?.displayName || '',
+        preparedBy: state.currentUser?.displayName || '',
+      }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(body?.error?.message ?? ('Sunucu hatası (HTTP ' + res.status + ')'));
+    const { quotationId, quotationUrl } = body.data;
+    await attachQuotationToOpportunity(o, quotationId, quotationUrl, 'DRAFT');
+    const sessionToken = await getCrmSessionToken();
+    if (!sessionToken) {
+      try { _win?.close(); } catch {}
+      showToast('⚠️ Teklif kopyalandı. Teklif Programı açılamadı, "Taslağı Aç" ile tekrar deneyin.');
+    } else {
+      const openUrl = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations/${quotationId}`;
+      if (_win) _win.location.href = openUrl; else window.open(openUrl, '_blank');
+      showToast('✅ Teklif kopyalandı ve fırsata bağlandı.');
+    }
+    syncQuotationRefsNow();
+  } catch (e) {
+    try { _win?.close(); } catch {}
+    alert('Teklif kopyalanamadı: ' + (e.message || e));
+  }
+}
+
+// Mevcut (ör. kopyalanmış) bir teklifi fırsata bağlar.
+// Giriş: teklif numarası (A-Pro-T-26-0075); taslak teklifin numarası yoksa teklif sayfasının adresi (…/quotations/<id>).
+// Bağ kurulunca durum/REF./değer/temsilci bilgisi normal eşitleme (syncQuotationRefs) ile gelir.
+async function linkExistingQuotation(o) {
+  const raw = (prompt('Bu fırsata bağlanacak teklifin numarasını yazın (örn. A-Pro-T-26-0075).\nTaslak teklifin numarası yoksa teklif sayfasının adresini yapıştırın.\n\nFırsat: ' + (o.title || '')) || '').trim();
+  if (!raw) return;
+  let query = '';
+  const mUrl = raw.match(/\/quotations\/([A-Za-z0-9_-]{8,})/);
+  if (mUrl) query = 'id=' + encodeURIComponent(mUrl[1]);
+  else if (/^[\w.-]{3,60}$/.test(raw) && /-T-\d|-BT-\d/i.test(raw)) query = 'number=' + encodeURIComponent(raw.replace(/-R\d+$/i, ''));
+  else if (/^[A-Za-z0-9_-]{20,}$/.test(raw)) query = 'id=' + encodeURIComponent(raw);
+  else { alert('Geçerli bir teklif numarası (örn. A-Pro-T-26-0075) veya teklif sayfası adresi girin.'); return; }
+  try {
+    const res = await fetch(TEKLIF_APP_URL + '/api/v1/crm/quotation-status?' + query + '&_=' + Date.now(), { headers: { 'x-crm-key': TEKLIF_API_KEY } });
+    const d = (await res.json().catch(() => null))?.data;
+    if (!res.ok || !d) { alert('Teklif sorgulanamadı. (HTTP ' + res.status + ')'); return; }
+    if (d.exists !== true || !d.id) { alert('Bu numarayla teklif bulunamadı: ' + raw); return; }
+    const other = state.opportunities.find(x => x.id !== o.id && x.quotationId === d.id && !x.quotationDeleted);
+    if (other) { alert('Bu teklif zaten başka bir fırsata bağlı:\n"' + (other.title || other.id) + '"\n\nBir teklif tek fırsata bağlanabilir.'); return; }
+    const total = tpValueEur(d);
+    let msg = 'Teklif: ' + (d.number || '(taslak — numara henüz yok)') + '\nDurum: ' + (d.status || '-') +
+      '\nTutar: ' + (total ? total.toLocaleString('tr-TR', { maximumFractionDigits: 0 }) + ' €' : '-') +
+      '\nSatış temsilcisi: ' + (d.salesRep || '-') + '\n\nFırsat: ' + (o.title || '') + '\n\nBu teklif fırsata bağlansın mı?';
+    if (d.salesRep && o.assignedTo && d.salesRep !== o.assignedTo) {
+      msg += '\n\n⚠️ Teklifteki satış temsilcisi (' + d.salesRep + ') fırsat sahibinden (' + o.assignedTo + ') farklı; eşitlemede fırsat sahibi ' + d.salesRep + ' olarak güncellenir. Önce teklif programında temsilciyi düzeltmeniz önerilir.';
+    }
+    if (!confirm(msg)) return;
+    await attachQuotationToOpportunity(o, d.id, TEKLIF_APP_URL + '/quotations/' + d.id, d.status, d.format);
+    showToast('🔗 Teklif fırsata bağlandı.');
+    await syncQuotationRefsNow();
+  } catch (e) {
+    alert('Teklif bağlanamadı: ' + (e.message || e));
+  }
 }
 
 // Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
