@@ -402,34 +402,48 @@ window.backfillOppCloseDates = backfillOppCloseDates;
 async function getCrmSessionToken() {
   // state.currentUser her zaman güvenilir; firebase.auth().currentUser
   // zaman zaman auth restore gecikmesi nedeniyle null olabilir.
+  // Başarısızlık nedeni window._crmAuthErr'e yazılır (toast'ta gösterilir → mobilde teşhis edilebilir).
   const _attempt = async () => {
     const cu = state.currentUser || firebase.auth().currentUser;
-    if (!cu?.email) return null;
+    if (!cu?.email) { window._crmAuthErr = 'kullanıcı e-postası yok'; return null; }
     const _meRec = (state.users || []).find(u => (u.email || '').toLowerCase() === (cu.email || '').toLowerCase()) || state.currentUser || {};
-    const res = await fetch(TEKLIF_AUTH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
-      body: JSON.stringify({
-        email:  cu.email,
-        name:   cu.displayName || cu.email,
-        crmUid: cu.uid,
-        // Stok yetkileri CRM kullanıcı kaydından gelir (kişiler değişebilir → e-posta değil alan esas).
-        department: _meRec.department || '',
-        extraDepartments: (_meRec.extraDepts || []).filter(d => d && d !== _meRec.department),
-        depo: !!_meRec.depo,
-      }),
-    }).catch(() => null);
-    if (!res?.ok) return null;
+    let res;
+    try {
+      res = await fetch(TEKLIF_AUTH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
+        body: JSON.stringify({
+          email:  cu.email,
+          name:   cu.displayName || cu.email,
+          crmUid: cu.uid,
+          // Stok yetkileri CRM kullanıcı kaydından gelir (kişiler değişebilir → e-posta değil alan esas).
+          department: _meRec.department || '',
+          extraDepartments: (_meRec.extraDepts || []).filter(d => d && d !== _meRec.department),
+          depo: !!_meRec.depo,
+        }),
+      });
+    } catch (e) { window._crmAuthErr = 'bağlantı hatası (' + ((e && e.message) || e) + ')'; return null; }
+    if (!res.ok) {
+      const eb = await res.json().catch(() => null);
+      window._crmAuthErr = 'HTTP ' + res.status + (eb?.error?.message ? ' — ' + eb.error.message : '');
+      return null;
+    }
     const body = await res.json().catch(() => null);
-    return body?.data?.token ?? null;
+    const t = body?.data?.token ?? null;
+    if (!t) window._crmAuthErr = 'yanıtta oturum kodu yok';
+    return t;
   };
   try {
-    const t = await _attempt();
-    if (t) return t;
-    // İlk denemede başarısız → 600ms bekle, tekrar dene
-    await new Promise(r => setTimeout(r, 600));
-    return await _attempt();
-  } catch { return null; }
+    window._crmAuthErr = '';
+    // Sunucu/veritabanı uyku modundan uyanırken (özellikle mobil ağda) ilk denemeler başarısız olabilir:
+    // 3 deneme, artan bekleme (0.6 sn, 2.5 sn).
+    for (const wait of [0, 600, 2500]) {
+      if (wait) await new Promise(r => setTimeout(r, wait));
+      const t = await _attempt();
+      if (t) return t;
+    }
+    return null;
+  } catch (e) { window._crmAuthErr = String((e && e.message) || e); return null; }
 }
 
 // Teklif referansına revizyon eki: revizyon ≥2 ise "...-R2" eklenir (zaten ekliyse tekrarlamaz).
@@ -549,7 +563,7 @@ async function openQuotationWithSSO(quotationId, existingWin) {
   } catch {}
   // 2. Teklif mevcut → SSO ile doğrudan aç
   const token = await getCrmSessionToken();
-  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.'); return; }
+  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.' + (window._crmAuthErr ? ' [' + window._crmAuthErr + ']' : '')); return; }
   const _url = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=/quotations/${quotationId}`;
   if (_win) _win.location.href = _url; else window.open(_url, '_blank');
 }
@@ -1904,7 +1918,7 @@ function _ensureStockStatus() {
 async function openStockWithSSO(quotationId) {
   const _win = openLoadingTab();
   const token = await getCrmSessionToken();
-  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.'); return; }
+  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.' + (window._crmAuthErr ? ' [' + window._crmAuthErr + ']' : '')); return; }
   const path = quotationId ? '/stock/projects/' + encodeURIComponent(quotationId) : '/stock';
   const _url = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=${encodeURIComponent(path)}`;
   if (_win) _win.location.href = _url; else window.open(_url, '_blank');
