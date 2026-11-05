@@ -9964,6 +9964,7 @@ function render() {
           h('div',{style:{width:'28px',height:'28px',borderRadius:'50%',background:'linear-gradient(135deg,#2563eb,#1d4ed8)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:'700',color:'#fff',flexShrink:'0'}},(cu?.displayName||'?').slice(0,2).toUpperCase()),
           window.innerWidth<=768?h('span'):h('span',{style:{fontSize:'13px',color:'#0f1f35',fontWeight:'700',maxWidth:'90px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},cu?.displayName||'')
         ),
+        notifBellBtn(),
         window.innerWidth<=768?h('span'):btn([stockIcon('#4f46e5',16),'Stok'],()=>openStockWithSSO(),'rgba(255,255,255,.3)','#0f1f35','7px 14px',{fontSize:'13px',border:'1px solid rgba(15,31,53,.25)',borderRadius:'8px',fontWeight:'700'}),
         cu?.isAdmin ? h('div',{id:'desk-btns',style:{display:window.innerWidth<=768?'none':'flex',gap:'10px'}},
           btn('🎯 Hedefler',()=>openTargetsModal(),'rgba(255,255,255,.3)','#0f1f35','7px 14px',{fontSize:'13px',border:'1px solid rgba(15,31,53,.25)',borderRadius:'8px',fontWeight:'700'}),
@@ -10338,6 +10339,7 @@ function showNotification(key, title, body, type, targetUser) {
     if(cu.displayName!==targetUser && !isAdmin) return;
   }
   window._notifiedKeys.add(key);
+  _notifHistAdd(key, title, body, type, targetUser); // kalıcı geçmiş: toast kaybolsa da 🔔 panelinden görülür
   playBeep(type||'info');
   const colors={info:'#2563eb',warning:'#d97706',urgent:'#dc2626',win:'#16a34a',lose:'#dc2626'};
   const icons ={info:'🔔',warning:'⚠️',urgent:'🚨',win:'🏆',lose:'❌'};
@@ -10357,7 +10359,122 @@ function showNotification(key, title, body, type, targetUser) {
   if(Notification && Notification.permission==='granted') {
     try{ new Notification(title,{body}); }catch(e){}
   }
-  setTimeout(()=>{ if(notif.parentNode) notif.remove(); }, 8000);
+  // Acil bildirim kullanıcı kapatana kadar kalır; diğerleri 45 sn (fare üzerindeyken kapanmaz).
+  // Kaçırılanlar her zaman 🔔 panelinde durur.
+  if(type!=='urgent') {
+    let hover=false;
+    notif.addEventListener('mouseenter',()=>{hover=true;});
+    notif.addEventListener('mouseleave',()=>{hover=false;});
+    const tryClose=()=>{ if(!notif.parentNode) return; if(hover) { setTimeout(tryClose,5000); return; } notif.remove(); };
+    setTimeout(tryClose, 45000);
+  }
+}
+
+// ── BİLDİRİM GEÇMİŞİ (kullanıcı başına, bu cihazda saklanır) ──────────────
+function _notifHistKey() {
+  const cu=state.currentUser;
+  return 'apro_notif_hist_'+((cu&&(cu.email||cu.displayName))||'anon');
+}
+function _notifHistLoad() {
+  try { return JSON.parse(localStorage.getItem(_notifHistKey())||'[]')||[]; } catch(e) { return []; }
+}
+function _notifHistSave(arr) {
+  try { localStorage.setItem(_notifHistKey(), JSON.stringify(arr.slice(0,100))); } catch(e) {}
+}
+function _notifIsMine(x) {
+  const cu=state.currentUser; if(!cu) return false;
+  const tg=x.tg;
+  return !tg || tg==='all' || tg==='admin' || tg==='rep' || tg===cu.displayName;
+}
+function _notifHistAdd(key, title, body, type, target) {
+  const arr=_notifHistLoad();
+  if(arr.some(x=>x.k===key)) return;
+  arr.unshift({k:key, t:title, b:body, ty:type||'info', tg:target||'all', ts:Date.now(), r:0});
+  _notifHistSave(arr);
+  _notifBadgeUpdate();
+}
+function _notifUnreadCount() {
+  return _notifHistLoad().filter(x=>!x.r && _notifIsMine(x)).length;
+}
+function _notifBadgeUpdate() {
+  const el=document.getElementById('notif-badge'); if(!el) return;
+  const n=_notifUnreadCount();
+  el.textContent=n>99?'99+':String(n);
+  el.style.display=n?'flex':'none';
+}
+function _notifAgo(ts) {
+  const m=Math.floor((Date.now()-ts)/60000);
+  if(m<1) return 'şimdi';
+  if(m<60) return m+' dk önce';
+  const hh=Math.floor(m/60);
+  if(hh<24) return hh+' sa önce';
+  const d=new Date(ts);
+  return String(d.getDate()).padStart(2,'0')+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+d.getFullYear()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
+function toggleNotifPanel(anchor, showAll) {
+  const ex=document.getElementById('notif-panel');
+  if(ex && showAll===undefined) { ex.remove(); return; }
+  if(ex) ex.remove();
+  const cu=state.currentUser; if(!cu) return;
+  const isAdmin=!!cu.isAdmin;
+  const colors={info:'#2563eb',warning:'#d97706',urgent:'#dc2626',win:'#16a34a',lose:'#dc2626'};
+  const icons ={info:'🔔',warning:'⚠️',urgent:'🚨',win:'🏆',lose:'❌'};
+  const all=_notifHistLoad();
+  const list=all.filter(x=>showAll ? true : _notifIsMine(x));
+  const mob=window.innerWidth<=768;
+  const panel=document.createElement('div');
+  panel.id='notif-panel';
+  panel.style.cssText='position:fixed;z-index:1000000;background:#fff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.22);font-family:sans-serif;display:flex;flex-direction:column;'
+    +(mob?'left:8px;right:8px;top:56px;max-height:75vh;':'width:380px;max-height:70vh;');
+  const rect=anchor.getBoundingClientRect();
+  if(!mob){ panel.style.top=(rect.bottom+8)+'px'; panel.style.right=Math.max(8,window.innerWidth-rect.right-120)+'px'; }
+  const head=h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'12px 14px',borderBottom:'1px solid #e2e8f0'}},
+    h('div',{style:{fontWeight:'800',fontSize:'14px',color:'#0f1f35'}},'🔔 Bildirimlerim'),
+    h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
+      isAdmin ? h('button',{style:{background:'#eef2ff',border:'1px solid #c7d2fe',color:'#3730a3',borderRadius:'7px',padding:'4px 9px',fontSize:'11px',fontWeight:'700',cursor:'pointer'},onclick:(e)=>{e.stopPropagation();toggleNotifPanel(anchor,!showAll);}},showAll?'Yalnız benimkiler':'Tüm ekip') : null,
+      h('button',{style:{background:'#fee2e2',border:'1px solid #fecaca',color:'#b91c1c',borderRadius:'7px',padding:'4px 9px',fontSize:'11px',fontWeight:'700',cursor:'pointer'},onclick:(e)=>{
+        e.stopPropagation();
+        if(!confirm('Bildirim geçmişi temizlensin mi?')) return;
+        const keep=_notifHistLoad().filter(x=>!_notifIsMine(x)); _notifHistSave(keep); _notifBadgeUpdate(); toggleNotifPanel(anchor,showAll);
+      }},'Temizle'),
+      h('button',{style:{background:'none',border:'none',color:'#94a3b8',fontSize:'20px',lineHeight:'1',cursor:'pointer',padding:'0 2px'},onclick:(e)=>{e.stopPropagation();panel.remove();}},'×')
+    )
+  );
+  const body=h('div',{style:{overflowY:'auto',padding:'6px'}});
+  if(!list.length) {
+    body.appendChild(h('div',{style:{padding:'28px 12px',textAlign:'center',color:'#94a3b8',fontSize:'13px'}},'Henüz bildirim yok.'));
+  } else {
+    list.forEach(x=>{
+      body.appendChild(h('div',{style:{display:'flex',gap:'10px',padding:'10px',borderRadius:'10px',borderLeft:'4px solid '+(colors[x.ty]||'#2563eb'),background:x.r?'#fff':'#eff6ff',marginBottom:'4px'}},
+        h('span',{style:{fontSize:'18px',flexShrink:'0'}},icons[x.ty]||'🔔'),
+        h('div',{style:{flex:'1',minWidth:'0'}},
+          h('div',{style:{fontWeight:'800',fontSize:'12.5px',color:'#0f1f35'}},x.t),
+          h('div',{style:{fontSize:'12px',color:'#4a6080',lineHeight:'1.4',wordBreak:'break-word'}},x.b),
+          h('div',{style:{fontSize:'10.5px',color:'#94a3b8',marginTop:'3px'}},_notifAgo(x.ts)+(showAll&&x.tg&&x.tg!=='all'&&x.tg!=='admin'&&x.tg!=='rep'?' · '+x.tg:''))
+        )
+      ));
+    });
+  }
+  panel.appendChild(head); panel.appendChild(body);
+  document.body.appendChild(panel);
+  // Açılınca okundu say (bu açılışta vurgu kalır)
+  const upd=_notifHistLoad(); let ch=false;
+  upd.forEach(x=>{ if(!x.r && _notifIsMine(x)) { x.r=1; ch=true; } });
+  if(ch) { _notifHistSave(upd); _notifBadgeUpdate(); }
+  setTimeout(()=>document.addEventListener('click',function hd(e){
+    const p=document.getElementById('notif-panel');
+    if(!p){ document.removeEventListener('click',hd,true); return; }
+    if(!p.contains(e.target) && !anchor.contains(e.target)){ p.remove(); document.removeEventListener('click',hd,true); }
+  },true),10);
+}
+function notifBellBtn() {
+  const mob=window.innerWidth<=768;
+  const n=_notifUnreadCount();
+  const b=h('button',{id:'notif-bell',title:'Bildirimlerim',style:{position:'relative',background:'rgba(255,255,255,.3)',border:'1px solid rgba(15,31,53,.25)',borderRadius:'8px',padding:mob?'5px 9px':'6px 12px',fontSize:mob?'17px':'18px',cursor:'pointer',lineHeight:'1',flexShrink:'0'},onclick:(e)=>{e.stopPropagation();toggleNotifPanel(b);}},
+    '🔔',
+    h('span',{id:'notif-badge',style:{position:'absolute',top:'-6px',right:'-6px',minWidth:'18px',height:'18px',padding:'0 4px',borderRadius:'9px',background:'#dc2626',color:'#fff',fontSize:'10px',fontWeight:'800',alignItems:'center',justifyContent:'center',boxSizing:'border-box',display:n?'flex':'none'}},n>99?'99+':String(n))
+  );
+  return b;
 }
 
 function _toTR(d) {
