@@ -195,8 +195,8 @@ const DEFAULT_EVAL_CONFIG = {
 
 // ═══ GÖREV MOTORU SABİTLERİ (Faz 1) ═══
 const TASK_CONTEXTS = [
-  { v:'sirket', l:'🏢 Şirket', c:'#b45309' },
-  { v:'proje',  l:'📋 Proje',  c:'#1e3a6e' },
+  { v:'sirket', l:'🏢 Muhasebe ve İdari İşler', c:'#b45309' },
+  { v:'proje',  l:'📋 Proje',  c:'#be185d' },
   { v:'servis', l:'🔧 Servis', c:'#0e7490' },
   { v:'bakim',  l:'🔁 Bakım',  c:'#15803d' },
 ];
@@ -9459,7 +9459,7 @@ function renderTaskGrouped(tasks, isAdmin, myName){
     groups[key].tasks.push(t);
   });
   const CTX_ICON = {servis:'🔧',proje:'📋',bakim:'🔁',sirket:'🏢'};
-  const CTX_COLOR = {servis:'#0e7490',proje:'#1e3a6e',bakim:'#15803d',sirket:'#b45309'};
+  const CTX_COLOR = {servis:'#0e7490',proje:'#be185d',bakim:'#15803d',sirket:'#b45309'};
   const sortedKeys = Object.keys(groups).sort((a,b)=>{
     if(a==='_genel') return 1; if(b==='_genel') return -1;
     return (groups[a].linkLabel||'').localeCompare(groups[b].linkLabel||'','tr');
