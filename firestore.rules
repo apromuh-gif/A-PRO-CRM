@@ -68,6 +68,14 @@ service cloud.firestore {
         && (resource.data.status != 'tamam' || isAdmin());
       allow delete: if isAdmin();
     }
+    // Saha raporu fotoğrafları (küçültülmüş JPEG, rapordan ayrı doküman). Değiştirilemez; oluşturma boyut sınırlı.
+    // Silme: yönetici veya fotoğrafı yükleyen (rapor düzenlerken kaldırma); kapanıştan 3 ay sonra toplu temizlik admin'dedir.
+    match /fieldPhotos/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.dataURL.size() < 700000;
+      allow update: if false;
+      allow delete: if signedIn() && (isAdmin() || resource.data.get('createdBy', '') == myName());
+    }
     match /fieldReports/{id} {
       allow read: if signedIn();
       allow create: if signedIn();

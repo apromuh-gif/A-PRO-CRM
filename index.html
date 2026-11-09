@@ -6477,19 +6477,22 @@ function printServiceForm(sf){
 // SAHA RAPORU (Field Report) — Proje bazlı günlük/periyodik saha imalat raporu
 // ═══════════════════════════════════════════════════════
 const FR_WEATHER = [{v:'gunesli',l:'Güneşli'},{v:'bulutlu',l:'Bulutlu'},{v:'yagmurlu',l:'Yağmurlu'},{v:'karli',l:'Karlı'},{v:'ruzgarli',l:'Rüzgarlı'}];
-const FR_DEFAULT_FREQ = 3;
+const FR_DEFAULT_FREQ = 1;   // günlük (iş günü). Projeye özel: opp.reportFreqDays
+const FR_REWORK_CAUSES = [{v:'uygulama',l:'Uygulama hatası'},{v:'tasarim',l:'Tasarım hatası'},{v:'musteri',l:'Müşteri değişikliği'},{v:'malzeme',l:'Malzeme / tedarik'}];
 function normFieldReport(fr){
   fr = fr || {};
   return Object.assign({
     id:fr.id, customerId:'', projectId:'', linkType:'', linkId:'',
     reportDate:today(), weather:'', temperature:'',
-    personnelOnSite:[], workItems:[], materialsUsed:[],
-    safetyOk:true, safetyIncidents:[], reworkItems:[],
+    personnelOnSite:[], crewUsers:[], workerCount:'', workItems:[], materialsUsed:[],
+    noWork:false, safetyOk:true, safetyIncidents:[], reworkItems:[], reworkOk:true,
     budgetSpent:0, generalNotes:'', nextDayPlan:'',
     createdBy:'', staffSign:{name:'',dataURL:'',at:''},
     status:'taslak', createdAt:today(), completedAt:''
   }, fr, {
     personnelOnSite: Array.isArray(fr.personnelOnSite)?fr.personnelOnSite:[],
+    crewUsers: Array.isArray(fr.crewUsers)?fr.crewUsers:[],
+    reworkOk: fr.reworkOk!==undefined ? !!fr.reworkOk : !(Array.isArray(fr.reworkItems)&&fr.reworkItems.length),
     workItems: Array.isArray(fr.workItems)?fr.workItems:[],
     materialsUsed: Array.isArray(fr.materialsUsed)?fr.materialsUsed:[],
     safetyIncidents: Array.isArray(fr.safetyIncidents)?fr.safetyIncidents:[],
@@ -6502,18 +6505,26 @@ async function _frPersist(fr, msg){
   fr._editedAt = today();
   if(!fr.createdAt) fr.createdAt = today();
   setState({saving:true});
-  await saveDoc('fieldReports', fr.id, fr);
+  try{ await frPersistPhotos(fr); }
+  catch(e){ setState({saving:false}); showToast('❌ Fotoğraflar kaydedilemedi: '+((e&&e.message)||e),'#dc2626'); return; }
+  var rec = Object.assign({}, fr);
+  ['_newPhotos','_delPhotoIds','_photos','_photosLoaded','_photosLoading'].forEach(function(k){ delete rec[k]; });
+  await saveDoc('fieldReports', rec.id, rec);
   var list = (state.fieldReports||[]).slice();
-  var i = list.findIndex(function(x){return x.id===fr.id;});
-  if(i>=0) list[i]=fr; else list.push(fr);
+  var i = list.findIndex(function(x){return x.id===rec.id;});
+  if(i>=0) list[i]=rec; else list.push(rec);
   setState({fieldReports:list, modal:null, saving:false});
   showToast(msg);
 }
 async function frSave(fr){
   var missing=[];
+  fr.workItems=(fr.workItems||[]).filter(function(w){return (w.desc||'').trim();});
+  if(fr.reworkOk) fr.reworkItems=[]; else fr.reworkItems=(fr.reworkItems||[]).filter(function(w){return (w.desc||'').trim();});
   if(!fr.projectId) missing.push('Proje');
-  if(!fr.workItems.length) missing.push('En az 1 iş kalemi');
-  if(!(fr.staffSign&&fr.staffSign.dataURL)) missing.push('İmza');
+  if(!fr.noWork){
+    if(!fr.workItems.length) missing.push('En az 1 iş kalemi');
+    if(!(fr.staffSign&&fr.staffSign.dataURL)) missing.push('İmza');
+  }
   if(missing.length){showToast('Eksik: '+missing.join(', '),'#d97706');return;}
   fr.status='tamam'; fr.completedAt=today();
   await _frPersist(fr,'Saha raporu kaydedildi');
@@ -6531,9 +6542,149 @@ async function frDelete(id){
     if(typed!=='SİL'){showToast('İptal.','#64748b');return;}
   } else if(!isAdmin){showToast('Silme yetkisi yalnız admin.','#d97706');return;}
   else if(!confirm('Saha raporunu silmek istiyor musunuz?')) return;
+  try{ await frDeletePhotosBy('reportId', id); }catch(e){}
   await deleteDoc('fieldReports',id);
   setState({fieldReports:(state.fieldReports||[]).filter(function(x){return x.id!==id;}),modal:null});
   showToast('Saha raporu silindi');
+}
+// ═══ SAHA RAPORU FOTOĞRAFLARI (Firestore 'fieldPhotos' — ücretsiz yol) ═══
+// Fotoğraf tarayıcıda küçültülür (≈1280px JPEG, çoğu 100–250 KB) ve rapordan AYRI dokümanlar olarak saklanır:
+// giriş ekranı yavaşlamaz (yalnız rapor açılınca yüklenir), rapor dokümanı şişmez. Rapor başına en fazla 6 adet.
+// Kapanıştan 3 ay sonra OTOMATİK silinir (frAutoCleanup); elle çalıştırma: Projeler → Kapanan projeler → 🧹.
+const FR_MAX_PHOTOS = 6;
+function frCompressImage(file, cb){
+  var rd=new FileReader();
+  rd.onerror=function(){ cb('Dosya okunamadı'); };
+  rd.onload=function(){
+    var img=new Image();
+    img.onerror=function(){ cb('Görsel açılamadı'); };
+    img.onload=function(){
+      var maxSide=1280, q=0.7, out=null;
+      for(var attempt=0; attempt<6; attempt++){
+        var sc=Math.min(1, maxSide/Math.max(img.width,img.height));
+        var w=Math.max(1,Math.round(img.width*sc)), hh=Math.max(1,Math.round(img.height*sc));
+        var cv=document.createElement('canvas'); cv.width=w; cv.height=hh;
+        var cx=cv.getContext('2d'); cx.fillStyle='#fff'; cx.fillRect(0,0,w,hh); cx.drawImage(img,0,0,w,hh);
+        var d=cv.toDataURL('image/jpeg', q);
+        out={ dataURL:d, w:w, h:hh, size:Math.round((d.length-23)*0.75) };
+        if(out.size<=250000) break;
+        q=Math.max(0.45,q-0.08); maxSide=Math.round(maxSide*0.85);
+      }
+      if(out.size>600000){ cb('Fotoğraf küçültülemedi (çok büyük)'); return; }
+      cb(null,out);
+    };
+    img.src=rd.result;
+  };
+  rd.readAsDataURL(file);
+}
+async function frLoadPhotos(reportId){
+  var snap=await db.collection('fieldPhotos').where('reportId','==',reportId).get();
+  return snap.docs.map(function(d){return d.data();}).sort(function(a,b){return String(a.createdAt||'').localeCompare(String(b.createdAt||''))||String(a.id).localeCompare(String(b.id));});
+}
+async function frPersistPhotos(fr){
+  var add=fr._newPhotos||[], del=fr._delPhotoIds||[];
+  if(!add.length && !del.length) return;
+  var cu=(state.currentUser&&state.currentUser.displayName)||'';
+  var batch=db.batch();
+  add.forEach(function(p){
+    batch.set(db.collection('fieldPhotos').doc(p.id),{ id:p.id, reportId:fr.id, projectId:fr.projectId||'', dataURL:p.dataURL, w:p.w, h:p.h, size:p.size, createdBy:cu, createdAt:today() });
+  });
+  del.forEach(function(id){ batch.delete(db.collection('fieldPhotos').doc(id)); });
+  await batch.commit();
+  if(fr._photosLoaded){
+    var keep=(fr._photos||[]).filter(function(x){ return del.indexOf(x.id)<0; });
+    fr.photoCount=keep.length+add.length;
+  } else if(add.length){ fr.photoCount=(fr.photoCount||0)+add.length-del.length; }
+}
+async function frDeletePhotosBy(field, val){
+  var snap=await db.collection('fieldPhotos').where(field,'==',val).get();
+  var ids=snap.docs.map(function(d){return d.id;});
+  for(var i=0;i<ids.length;i+=400){
+    var b=db.batch(); ids.slice(i,i+400).forEach(function(id){ b.delete(db.collection('fieldPhotos').doc(id)); }); await b.commit();
+  }
+  return ids.length;
+}
+function frLightbox(src){
+  var ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.88);display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:12px;';
+  var im=document.createElement('img'); im.src=src; im.style.cssText='max-width:100%;max-height:100%;border-radius:6px;';
+  ov.appendChild(im); ov.onclick=function(){ ov.remove(); }; document.body.appendChild(ov);
+}
+// Kapanış tarihinden 3 ay geçen projeler (fotoğrafları silinebilir).
+function frCleanupProjects(){
+  var lim=today();
+  return (state.opportunities||[]).filter(function(o){ return o.execClosedAt && _addMonth(String(o.execClosedAt).slice(0,10),3)<=lim; });
+}
+async function frCleanupPhotos(){
+  var projs=frCleanupProjects();
+  if(!projs.length){ showToast('Kapanışından 3 ay geçen proje yok.','#0891b2'); return; }
+  showToast('🔎 Fotoğraflar taranıyor…','#0369a1');
+  var items=[];
+  try{
+    for(var i=0;i<projs.length;i++){
+      var snap=await db.collection('fieldPhotos').where('projectId','==',projs[i].id).get();
+      snap.docs.forEach(function(d){ items.push({id:d.id,size:Number(d.data().size)||0,proj:projs[i].id}); });
+    }
+  }catch(e){ showToast('❌ Taranamadı: '+((e&&e.message)||e),'#dc2626'); return; }
+  if(!items.length){ showToast('Silinecek fotoğraf yok.','#0891b2'); return; }
+  var mb=(items.reduce(function(a,x){return a+x.size;},0)/1048576).toFixed(1);
+  var pc={}; items.forEach(function(x){pc[x.proj]=1;});
+  if(!confirm('Kapanışından 3 ay geçen '+Object.keys(pc).length+' projeye ait '+items.length+' fotoğraf (≈'+mb+' MB) KALICI olarak silinecek.\n\nSaha raporlarının yazıları ve imzalar kalır, yalnızca fotoğraflar silinir. Devam edilsin mi?')) return;
+  try{
+    for(var j=0;j<items.length;j+=400){
+      var b=db.batch(); items.slice(j,j+400).forEach(function(x){ b.delete(db.collection('fieldPhotos').doc(x.id)); }); await b.commit();
+    }
+    var repList=(state.fieldReports||[]).map(function(r){ return pc[r.projectId] ? Object.assign({},r,{photoCount:0,photosDeletedAt:today()}) : r; });
+    for(var k=0;k<repList.length;k++){ var r0=(state.fieldReports||[])[k]; if(pc[r0.projectId] && (r0.photoCount||r0.photoCount===undefined)) await db.collection('fieldReports').doc(String(r0.id)).set({photoCount:0,photosDeletedAt:today()},{merge:true}); }
+    setState({fieldReports:repList});
+    showToast('🧹 '+items.length+' fotoğraf silindi (≈'+mb+' MB boşaldı).','#16a34a');
+  }catch(e){ showToast('❌ Silinemedi: '+((e&&e.message)||e),'#dc2626'); }
+}
+// OTOMATİK temizlik: proje kapanışından 3 ay geçince saha raporu fotoğrafları silinir (rapor yazıları/imzalar kalır).
+// Silme yetkisi yöneticidedir → yönetici CRM'i açtığında günde en fazla bir kez çalışır. Temizlenen proje işaretlenir (photosCleanedAt) → tekrar taranmaz.
+async function frAutoCleanup(){
+  try{
+    var cu=state.currentUser;
+    if(!cu || !cu.isAdmin || state.testMode || !state.opportunities) return;
+    var key='frAutoClean_'+today();
+    if(localStorage.getItem(key)) return;
+    localStorage.setItem(key,'1');
+    Object.keys(localStorage).forEach(function(k){ if(k.indexOf('frAutoClean_')===0 && k!==key) localStorage.removeItem(k); });
+    var projs=frCleanupProjects().filter(function(o){ return !o.photosCleanedAt; });
+    if(!projs.length) return;
+    var total=0, bytes=0, done={};
+    for(var i=0;i<projs.length;i++){
+      var o=projs[i];
+      var snap=await db.collection('fieldPhotos').where('projectId','==',o.id).get();
+      var ids=snap.docs.map(function(d){ bytes+=Number(d.data().size)||0; return d.id; });
+      for(var j=0;j<ids.length;j+=400){
+        var b=db.batch(); ids.slice(j,j+400).forEach(function(id){ b.delete(db.collection('fieldPhotos').doc(id)); }); await b.commit();
+      }
+      total+=ids.length; done[o.id]=1;
+      await _oppPatch(o,{ photosCleanedAt:today() });
+    }
+    if(total){
+      var reps=(state.fieldReports||[]);
+      for(var k=0;k<reps.length;k++){
+        if(done[reps[k].projectId] && reps[k].photoCount!==0) await db.collection('fieldReports').doc(String(reps[k].id)).set({photoCount:0,photosDeletedAt:today()},{merge:true});
+      }
+      setState({fieldReports:reps.map(function(r){ return done[r.projectId] ? Object.assign({},r,{photoCount:0,photosDeletedAt:today()}) : r; })});
+      showToast('🧹 Kapanışından 3 ay geçen projelerin '+total+' fotoğrafı otomatik silindi (≈'+(bytes/1048576).toFixed(1)+' MB).','#16a34a');
+    }
+  }catch(e){ console.warn('Fotoğraf otomatik temizliği:', e && e.message); }
+}
+async function frPrintWithPhotos(fr){
+  var photos=[];
+  try{
+    if(fr._photosLoaded) photos=(fr._photos||[]).filter(function(x){return (fr._delPhotoIds||[]).indexOf(x.id)<0;}).concat(fr._newPhotos||[]);
+    else if((state.fieldReports||[]).some(function(x){return x.id===fr.id;}) && fr.photoCount!==0) photos=await frLoadPhotos(fr.id);
+  }catch(e){}
+  printFieldReport(fr, photos);
+}
+// Projenin atanmış saha sorumlusu (yoksa boş).
+function _frLead(projectId){
+  var o=projectId?(state.opportunities||[]).find(function(x){return x.id===projectId;}):null;
+  return (o&&o.execSiteLead)||'';
 }
 function openFieldReport(opts){
   opts=opts||{};
@@ -6542,7 +6693,8 @@ function openFieldReport(opts){
     id:genId(), customerId:opts.customerId||'', projectId:opts.projectId||'',
     linkType:opts.linkType||'project', linkId:opts.linkId||opts.projectId||'',
     createdBy:(state.currentUser&&state.currentUser.displayName)||'',
-    staffSign:{name:(state.currentUser&&state.currentUser.displayName)||'',dataURL:'',at:''},
+    staffSign:{name:_frLead(opts.projectId||opts.linkId)||(state.currentUser&&state.currentUser.displayName)||'',dataURL:'',at:''},
+    crewUsers:_frLead(opts.projectId||opts.linkId)?[_frLead(opts.projectId||opts.linkId)]:[],
     createdAt:today(), reportDate:today()
   });
   setState({modal:{type:'fieldreport',item:fr}});
@@ -6557,7 +6709,7 @@ function buildFieldReportModal(fr){
   );
   var header=h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px',marginBottom:'12px'}},
     h('div',{style:{flex:'1 1 280px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Proje'),
-      _clSelect(projOpts,fr.projectId,function(v){fr.projectId=v;fr.linkId=v;var o=(state.opportunities||[]).find(function(x){return x.id===v;});if(o)fr.customerId=o.customerId||'';rerender();})),
+      _clSelect(projOpts,fr.projectId,function(v){fr.projectId=v;fr.linkId=v;var o=(state.opportunities||[]).find(function(x){return x.id===v;});if(o)fr.customerId=o.customerId||'';var ld=_frLead(v);if(ld){ if(!(fr.staffSign&&fr.staffSign.dataURL)) fr.staffSign.name=ld; if(!fr.crewUsers.length) fr.crewUsers=[ld]; }rerender();})),
     h('div',{style:{flex:'0 0 150px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Rapor Tarihi'),
       h('input',{type:'date',value:fr.reportDate||today(),oninput:function(e){fr.reportDate=e.target.value;},style:_clInputStyle()})),
     h('div',{style:{flex:'0 0 130px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Hava'),
@@ -6579,15 +6731,41 @@ function buildFieldReportModal(fr){
       ...rows
     );
   }
-  var workSec=arrSection('YAPILAN İŞLER',fr.workItems,'İş Kalemi',[
-    {k:'desc',p:'İş tanımı',flex:'2 1 200px'},{k:'quantity',p:'Miktar',flex:'0 0 70px'},{k:'unit',p:'Birim',flex:'0 0 70px'},{k:'note',p:'Not',flex:'1 1 120px'}
+  var workSec0=arrSection('YAPILAN İŞLER',fr.workItems,'İş Kalemi',[
+    {k:'desc',p:'İş tanımı',flex:'2 1 200px'},{k:'quantity',p:'Miktar',flex:'0 0 70px'},{k:'unit',p:'Birim',flex:'0 0 70px'},{k:'pct',p:'% bitti',flex:'0 0 70px'},{k:'note',p:'Not',flex:'1 1 120px'}
   ]);
+  // Projenin açık aşama görevlerinden tek tıkla iş kalemi ekle (ilerleme görevlerle eşleşsin)
+  var _openTasks=(fr.projectId?(state.tasks||[]).map(normTask).filter(function(t){return t.linkType==='opportunity'&&t.linkId===fr.projectId&&!taskIsClosed(t);}):[]);
+  var workSec=h('div',{},
+    workSec0,
+    _openTasks.length?h('div',{style:{marginBottom:'12px',marginTop:'-6px'}},
+      _clSelect([{v:'',l:'+ Projenin açık görevlerinden iş kalemi ekle…'}].concat(_openTasks.map(function(t){return {v:t.id,l:t.title};})),'',function(v){
+        if(!v) return; var t=_openTasks.find(function(x){return x.id===v;}); if(!t) return;
+        fr.workItems.push({desc:t.title,quantity:'',unit:'',pct:'',note:'',taskId:t.id}); rerender();
+      })):h('span'));
   var matSec=arrSection('KULLANILAN MALZEME',fr.materialsUsed,'Malzeme',[
     {k:'name',p:'Malzeme adı',flex:'2 1 200px'},{k:'quantity',p:'Miktar',flex:'0 0 70px'},{k:'unit',p:'Birim',flex:'0 0 70px'}
   ]);
-  var persSec=arrSection('SAHADA BULUNAN PERSONEL',fr.personnelOnSite,'Personel',[
-    {k:'name',p:'Ad Soyad',flex:'2 1 200px'},{k:'role',p:'Görevi',flex:'1 1 120px'}
-  ]);
+  // Sahada bulunan personel: CRM kullanıcılarından tek tıkla seçim + taşeron/diğer için serbest satır + toplam kişi sayısı
+  var crewUsersAll=(state.users||[]).filter(function(u){return u.active!==false&&u.displayName;})
+    .sort(function(a,b){return (userInDept(b,'saha')-userInDept(a,'saha'))||a.displayName.localeCompare(b.displayName,'tr');});
+  var crewChips=h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px',marginBottom:'8px'}},
+    ...crewUsersAll.map(function(u){
+      var on=fr.crewUsers.indexOf(u.displayName)>=0;
+      return h('span',{onclick:function(){ var i=fr.crewUsers.indexOf(u.displayName); if(i>=0) fr.crewUsers.splice(i,1); else fr.crewUsers.push(u.displayName); rerender(); },
+        style:{cursor:'pointer',userSelect:'none',fontSize:'12px',fontWeight:'600',padding:'5px 10px',borderRadius:'14px',border:'1px solid '+(on?'#16a34a':'#cbd5e1'),background:on?'#dcfce7':'#fff',color:on?'#15803d':'#475569'}},
+        (on?'✓ ':'')+u.displayName+(userInDept(u,'saha')?'':''));
+    }));
+  var persSec=h('div',{style:{marginBottom:'12px'}},
+    h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',marginBottom:'6px'}},'SAHADA BULUNAN PERSONEL'),
+    crewChips,
+    arrSection('Taşeron / diğer personel',fr.personnelOnSite,'Kişi',[
+      {k:'name',p:'Ad Soyad / firma',flex:'2 1 200px'},{k:'role',p:'Görevi',flex:'1 1 120px'}
+    ]),
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',fontSize:'12px',color:'#64748b'}},
+      'Sahadaki toplam kişi sayısı:',
+      h('input',{type:'number',min:'0',value:fr.workerCount||'',placeholder:'0',oninput:function(e){fr.workerCount=e.target.value;},style:Object.assign(_clInputStyle(),{width:'90px',padding:'5px 8px',fontSize:'12px'})}))
+  );
   var safetySec=h('div',{style:{marginBottom:'12px'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}},
       h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',flex:'1'}},'İŞ GÜVENLİĞİ'),
@@ -6598,9 +6776,27 @@ function buildFieldReportModal(fr){
       {k:'desc',p:'Açıklama',flex:'2 1 200px'},{k:'severity',p:'Seviye (dusuk/orta/yuksek)',flex:'1 1 120px'}
     ]):h('span')
   );
-  var reworkSec=arrSection('YENİDEN-İŞ',fr.reworkItems,'Kalem',[
-    {k:'desc',p:'Açıklama',flex:'2 1 200px'},{k:'reason',p:'Nedeni',flex:'1 1 150px'}
-  ]);
+  // Yeniden-iş: varsayılan "yok" (tek tık); varsa kalem + KAYNAĞI. Yalnız uygulama hatası işçilik kalitesi puanını düşürür.
+  var reworkRows=(fr.reworkItems||[]).map(function(w,idx){
+    return h('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginBottom:'4px',flexWrap:'wrap'}},
+      h('input',{value:w.desc||'',placeholder:'Açıklama',oninput:function(e){w.desc=e.target.value;},style:Object.assign(_clInputStyle(),{flex:'2 1 200px',padding:'6px 8px',fontSize:'12px'})}),
+      h('div',{style:{flex:'1 1 150px'}},_clSelect(FR_REWORK_CAUSES,w.cause||'uygulama',function(v){w.cause=v;})),
+      h('input',{value:w.reason||'',placeholder:'Not (ops.)',oninput:function(e){w.reason=e.target.value;},style:Object.assign(_clInputStyle(),{flex:'1 1 120px',padding:'6px 8px',fontSize:'12px'})}),
+      btn('✕',function(){fr.reworkItems.splice(idx,1);rerender();},'#fef2f2','#dc2626','5px 8px',{fontSize:'11px'}));
+  });
+  var reworkSec=h('div',{style:{marginBottom:'12px'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',flex:'1'}},'YENİDEN-İŞ'),
+      h('label',{style:{display:'flex',alignItems:'center',gap:'4px',fontSize:'12px',cursor:'pointer'}},
+        h('input',{type:'checkbox',checked:fr.reworkOk,onchange:function(e){fr.reworkOk=e.target.checked; if(!fr.reworkOk && !fr.reworkItems.length) fr.reworkItems.push({desc:'',cause:'uygulama',reason:''}); rerender();}}),
+        'Yeniden-iş yok'),
+      !fr.reworkOk?btn('+ Kalem',function(){fr.reworkItems.push({desc:'',cause:'uygulama',reason:''});rerender();},'#eef2ff','#4338ca','5px 10px',{fontSize:'11px'}):h('span')),
+    ...(!fr.reworkOk?reworkRows:[]));
+  var noWorkRow=h('div',{style:{display:'flex',alignItems:'center',gap:'8px',margin:'0 0 12px',padding:'8px 10px',background:fr.noWork?'#fef3c7':'#f8fafc',border:'1px solid '+(fr.noWork?'#fcd34d':'#e2e8f0'),borderRadius:'8px'}},
+    h('label',{style:{display:'flex',alignItems:'center',gap:'6px',fontSize:'13px',fontWeight:'600',cursor:'pointer',flex:'1'}},
+      h('input',{type:'checkbox',checked:!!fr.noWork,onchange:function(e){fr.noWork=e.target.checked;rerender();}}),
+      'Bugün sahada çalışma yapılmadı'),
+    h('span',{style:{fontSize:'11px',color:'#64748b'}},'(rapor yine de kayıtlı sayılır; iş kalemi ve imza gerekmez)'));
   var budgetRow=h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'12px'}},
     h('div',{style:{flex:'0 0 160px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Günlük Harcama (€)'),
       h('input',{type:'number',value:fr.budgetSpent||'',placeholder:'0',oninput:function(e){fr.budgetSpent=Number(e.target.value)||0;},style:_clInputStyle()})),
@@ -6615,16 +6811,70 @@ function buildFieldReportModal(fr){
       clSignPad(fr,fr.staffSign,'Saha Sorumlusu','frsig-staff',(state.users||[]).filter(function(u){return u.active!==false;}).map(function(u){return u.displayName;}).sort(function(a,b){return a.localeCompare(b,'tr');})))
   );
   var isExisting=(state.fieldReports||[]).some(function(x){return x.id===fr.id;});
+  // Fotoğraflar: mevcut rapor için Firestore'dan bir kez yükle (yeni raporda boş)
+  if(!fr._photosLoaded){
+    if(!isExisting){ fr._photosLoaded=true; fr._photos=[]; }
+    else if(!fr._photosLoading){
+      fr._photosLoading=true;
+      frLoadPhotos(fr.id).then(function(list){
+        var cur=state.modal&&state.modal.item; if(!cur||cur.id!==fr.id) return;
+        cur._photos=list; cur._photosLoaded=true; cur._photosLoading=false; _clRerender();
+      }).catch(function(){
+        var cur=state.modal&&state.modal.item; if(cur&&cur.id===fr.id){ cur._photos=[]; cur._photosLoaded=true; cur._photosLoading=false; _clRerender(); }
+      });
+    }
+  }
+  var _gone=fr._delPhotoIds||[];
+  var photoList=((fr._photos||[]).filter(function(x){return _gone.indexOf(x.id)<0;})).concat(fr._newPhotos||[]);
+  var photoInput=h('input',{type:'file',accept:'image/*',multiple:'multiple',style:{display:'none'},onchange:function(e){
+    var files=Array.prototype.slice.call(e.target.files||[]); e.target.value='';
+    var cur=state.modal&&state.modal.item; if(!cur) return;
+    var room=FR_MAX_PHOTOS-(((cur._photos||[]).filter(function(x){return (cur._delPhotoIds||[]).indexOf(x.id)<0;}).length)+((cur._newPhotos||[]).length));
+    if(files.length>room) showToast('En fazla '+FR_MAX_PHOTOS+' fotoğraf eklenebilir.','#d97706');
+    files=files.slice(0,Math.max(0,room)); if(!files.length) return;
+    var left=files.length;
+    files.forEach(function(f){
+      frCompressImage(f,function(err,res){
+        left--;
+        var c2=state.modal&&state.modal.item;
+        if(err){ showToast('⚠ '+err,'#d97706'); }
+        else if(c2){ c2._newPhotos=c2._newPhotos||[]; c2._newPhotos.push({id:genId(),dataURL:res.dataURL,w:res.w,h:res.h,size:res.size}); }
+        if(left===0) _clRerender();
+      });
+    });
+  }});
+  var thumbs=photoList.map(function(p){
+    var isNew=(fr._newPhotos||[]).indexOf(p)>=0;
+    return h('div',{style:{position:'relative',width:'112px',height:'84px'}},
+      h('img',{src:p.dataURL,onclick:function(){frLightbox(p.dataURL);},style:{width:'112px',height:'84px',objectFit:'cover',borderRadius:'8px',border:'1px solid '+(isNew?'#16a34a':'#cbd5e1'),cursor:'zoom-in'}}),
+      h('span',{onclick:function(){
+        var c3=state.modal&&state.modal.item; if(!c3) return;
+        var ni=(c3._newPhotos||[]).findIndex(function(x){return x.id===p.id;});
+        if(ni>=0) c3._newPhotos.splice(ni,1); else { c3._delPhotoIds=c3._delPhotoIds||[]; c3._delPhotoIds.push(p.id); }
+        _clRerender();
+      },style:{position:'absolute',top:'-6px',right:'-6px',width:'20px',height:'20px',borderRadius:'50%',background:'#dc2626',color:'#fff',fontSize:'12px',lineHeight:'20px',textAlign:'center',cursor:'pointer',fontWeight:'700'}},'✕'));
+  });
+  var photoSec=h('div',{style:{marginBottom:'12px'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}},
+      h('div',{style:{fontWeight:'700',fontSize:'12px',color:'#0f1f35',flex:'1'}},'📷 FOTOĞRAFLAR ('+photoList.length+'/'+FR_MAX_PHOTOS+')'),
+      photoInput,
+      photoList.length<FR_MAX_PHOTOS?btn('+ Fotoğraf',function(){photoInput.click();},'#eef2ff','#4338ca','5px 10px',{fontSize:'11px'}):h('span')),
+    photoList.length?h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px'}},...thumbs)
+      :h('div',{style:{fontSize:'12px',color:'#94a3b8'}},fr._photosLoaded?'Fotoğraf eklenmedi.':'Fotoğraflar yükleniyor…'),
+    h('div',{style:{fontSize:'11px',color:'#94a3b8',marginTop:'6px'}},'Fotoğraflar otomatik küçültülür. Kaydet/Taslak ile kaydedilir; proje kapanışından 3 ay sonra otomatik silinir (rapor yazısı kalır).'));
   var footer=h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
     btn('Kaydet',function(){frSave(fr);},'#16a34a','#fff','8px 14px'),
     btn('Taslak',function(){frSaveDraft(fr);},'#64748b','#fff','8px 14px'),
-    btn('Yazdır',function(){printFieldReport(fr);},'#0891b2','#fff','8px 14px'),
+    btn('Yazdır',function(){frPrintWithPhotos(fr);},'#0891b2','#fff','8px 14px'),
     isExisting?btn('Sil',function(){frDelete(fr.id);},'#dc2626','#fff','8px 14px'):'',
     btn('Kapat',function(){setState({modal:null});},'#64748b','#fff','8px 14px'));
-  var body=h('div',{},header,persSec,workSec,matSec,safetySec,reworkSec,budgetRow,signSec,footer);
+  var noteOnly=h('div',{style:{marginBottom:'12px'}},h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Neden çalışılmadı? (ops.)'),
+    h('input',{value:fr.generalNotes||'',placeholder:'Hava koşulları, malzeme bekleniyor, resmi tatil…',oninput:function(e){fr.generalNotes=e.target.value;},style:_clInputStyle()}));
+  var body=fr.noWork ? h('div',{},header,noWorkRow,noteOnly,footer) : h('div',{},header,noWorkRow,persSec,workSec,matSec,safetySec,reworkSec,budgetRow,photoSec,signSec,footer);
   return modal('Saha Raporu',body,function(){setState({modal:null});},'860px');
 }
-function printFieldReport(fr){
+function printFieldReport(fr, photos){
+  photos=Array.isArray(photos)?photos:[];
   fr=normFieldReport(fr);
   var proj=fr.projectId?(state.opportunities||[]).find(function(x){return x.id===fr.projectId;}):null;
   var cust=fr.customerId?(state.customers||[]).find(function(x){return x.id===fr.customerId;}):null;
@@ -6637,10 +6887,12 @@ function printFieldReport(fr){
     +infoRow('Sıcaklık',fr.temperature?(fr.temperature+' °C'):'—')
     +infoRow('Referans',String(fr.id).slice(-8).toUpperCase())
     +'</tbody></table>';
-  var persRows=(fr.personnelOnSite||[]).map(function(p,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(p.name||'')+'</td><td>'+escapeHtml(p.role||'')+'</td></tr>';}).join('');
+  var _crewAll=(fr.crewUsers||[]).map(function(n){var u=(state.users||[]).find(function(x){return x.displayName===n;});return {name:n,role:(u&&DEPT_LABEL[u.department])||'Saha'};}).concat(fr.personnelOnSite||[]);
+  var persRows=_crewAll.map(function(p,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(p.name||'')+'</td><td>'+escapeHtml(p.role||'')+'</td></tr>';}).join('')
+    +(fr.workerCount?'<tr><td></td><td colspan="2"><b>Toplam kişi sayısı: '+escapeHtml(String(fr.workerCount))+'</b></td></tr>':'');
   var persTable=persRows?'<table class="wtable"><thead><tr><th>#</th><th>Ad Soyad</th><th>Görevi</th></tr></thead><tbody>'+persRows+'</tbody></table>':'<p style="color:#94a3b8;font-size:12px;">Personel girilmemiş.</p>';
-  var workRows=(fr.workItems||[]).map(function(w,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(w.desc||'')+'</td><td>'+escapeHtml(w.quantity||'')+'</td><td>'+escapeHtml(w.unit||'')+'</td><td>'+escapeHtml(w.note||'')+'</td></tr>';}).join('');
-  var workTable=workRows?'<table class="wtable"><thead><tr><th>#</th><th>İş Tanımı</th><th>Miktar</th><th>Birim</th><th>Not</th></tr></thead><tbody>'+workRows+'</tbody></table>':'';
+  var workRows=(fr.workItems||[]).map(function(w,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(w.desc||'')+'</td><td>'+escapeHtml(w.quantity||'')+'</td><td>'+escapeHtml(w.unit||'')+'</td><td>'+escapeHtml(w.pct?(w.pct+' %'):'')+'</td><td>'+escapeHtml(w.note||'')+'</td></tr>';}).join('');
+  var workTable=workRows?'<table class="wtable"><thead><tr><th>#</th><th>İş Tanımı</th><th>Miktar</th><th>Birim</th><th>% Bitti</th><th>Not</th></tr></thead><tbody>'+workRows+'</tbody></table>':(fr.noWork?'<p style="font-size:13px;font-weight:700;color:#b45309;">Bugün sahada çalışma yapılmamıştır.</p>':'');
   var matRows=(fr.materialsUsed||[]).map(function(m,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(m.name||'')+'</td><td>'+escapeHtml(m.quantity||'')+'</td><td>'+escapeHtml(m.unit||'')+'</td></tr>';}).join('');
   var matTable=matRows?'<table class="wtable"><thead><tr><th>#</th><th>Malzeme</th><th>Miktar</th><th>Birim</th></tr></thead><tbody>'+matRows+'</tbody></table>':'<p style="color:#94a3b8;font-size:12px;">Malzeme girilmemiş.</p>';
   var safetyHtml=fr.safetyOk?'<span style="color:#16a34a;font-weight:700;">✅ Uygunsuzluk yok</span>':'';
@@ -6651,8 +6903,8 @@ function printFieldReport(fr){
   }
   var reworkHtml='';
   if(fr.reworkItems.length){
-    reworkHtml='<table class="wtable"><thead><tr><th>#</th><th>Açıklama</th><th>Nedeni</th></tr></thead><tbody>';
-    fr.reworkItems.forEach(function(r,i){reworkHtml+='<tr><td>'+(i+1)+'</td><td>'+escapeHtml(r.desc||'')+'</td><td>'+escapeHtml(r.reason||'')+'</td></tr>';});
+    reworkHtml='<table class="wtable"><thead><tr><th>#</th><th>Açıklama</th><th>Kaynağı</th><th>Not</th></tr></thead><tbody>';
+    fr.reworkItems.forEach(function(r,i){reworkHtml+='<tr><td>'+(i+1)+'</td><td>'+escapeHtml(r.desc||'')+'</td><td>'+escapeHtml((FR_REWORK_CAUSES.find(function(c){return c.v===(r.cause||'uygulama');})||{}).l||'')+'</td><td>'+escapeHtml(r.reason||'')+'</td></tr>';});
     reworkHtml+='</tbody></table>';
   }
   var signImg=fr.staffSign&&fr.staffSign.dataURL?'<img src="'+fr.staffSign.dataURL+'" class="sig"/>':'<div class="sig"></div>';
@@ -6669,6 +6921,7 @@ function printFieldReport(fr){
     +(fr.budgetSpent?'<div class="secbar">Harcama</div><p style="font-size:13px;">'+eur(fr.budgetSpent)+'</p>':'')
     +(fr.generalNotes?'<div class="secbar">Genel Notlar</div><p style="font-size:12.5px;white-space:pre-wrap;">'+escapeHtml(fr.generalNotes)+'</p>':'')
     +(fr.nextDayPlan?'<div class="secbar">Ertesi Gün Planı</div><p style="font-size:12.5px;white-space:pre-wrap;">'+escapeHtml(fr.nextDayPlan)+'</p>':'')
+    +(photos.length?'<div class="secbar">Fotoğraflar</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'+photos.filter(function(p){return p&&typeof p.dataURL==='string'&&p.dataURL.indexOf('data:image/jpeg;base64,')===0;}).map(function(p){return '<img src="'+p.dataURL+'" style="width:49%;max-height:300px;object-fit:contain;border:1px solid #e2e8f0;"/>';}).join('')+'</div>':'')
     +'<div class="signbox"><div class="role">Saha Sorumlusu</div>'+signImg+'<div class="sigline">Ad Soyad: '+escapeHtml((fr.staffSign&&fr.staffSign.name)||'')+'</div><div class="sigline">Tarih: '+escapeHtml(fr.staffSign&&fr.staffSign.at?_toTR(fr.staffSign.at):'')+'</div><div class="sigline">İmza (ıslak): ______________________</div></div>'
     +'<div class="foot">A-PRO Mühendislik · Saha İmalat Raporu · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
   var ep=document.getElementById('print-overlay');if(ep)ep.remove();
@@ -6687,7 +6940,7 @@ function frListBlock(opts){
     return h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'6px 8px',border:'1px solid #e2e8f0',borderRadius:'8px',marginBottom:'6px',background:'#fff'}},
       h('span',{style:{flex:'1',fontSize:'13px'}},(idx+1)+'. '+_toTR(fr.reportDate)+' · '+(fr.status==='tamam'?'✅ Tamam':'✏️ Taslak')+(fr.createdBy?' · '+fr.createdBy:'')),
       btn('Aç',function(){openFieldReport({id:fr.id});},'#2563eb','#fff','5px 12px',{fontSize:'12px'}),
-      btn('PDF',function(){printFieldReport(fr);},'#0891b2','#fff','5px 12px',{fontSize:'12px'}));
+      btn('PDF',function(){frPrintWithPhotos(fr);},'#0891b2','#fff','5px 12px',{fontSize:'12px'}));
   });
   return h('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #e2e8f0'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
@@ -7616,27 +7869,25 @@ function personelAutoMetric(kod, name, period, dept){
       return onTime/closed.length;
     }
     case 'saha_rapor': {
-      var projs=(state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&!o.execClosedAt&&o.assignedTo===name;});
+      // Beklenen rapor: yalnız SAHA HAZIRLIK ve İMALAT/MONTAJ aşamalarındaki iş günleri (Pzt–Cum) / rapor sıklığı (varsayılan günlük).
+      // Gerçekleşen: projenin tamamlanmış raporlarının farklı tarih sayısı ("çalışılmadı" kaydı da sayılır). Puan projenin saha sorumlusuna yazılır.
+      var projs=siteOwnedProjects(name,true).filter(projIsActive);
       if(!projs.length) return null;
       var allFr=(state.fieldReports||[]).filter(function(r){return r.status==='tamam';});
       var expected=0,filed=0;
-      var periodYear=_periodYear(period);
       projs.forEach(function(p){
         var freq=Number(p.reportFreqDays)||FR_DEFAULT_FREQ;
-        var start=p.execStartDate||p.wonDate||p.createdAt||'';
-        if(!start) return;
-        var s=_toDate(start),e=new Date();
-        if(String(s.getFullYear())>String(periodYear)) return;
-        var dayCount=Math.max(0,Math.floor((e-s)/(86400000)));
-        var exp=Math.floor(dayCount/freq);
+        var exp=Math.floor(projSiteWorkdays(p)/freq);
+        if(!exp) return;
         expected+=exp;
-        var pReports=allFr.filter(function(r){return r.projectId===p.id&&r.createdBy===name;});
-        filed+=Math.min(pReports.length,exp);
+        var dates={};
+        allFr.filter(function(r){return r.projectId===p.id;}).forEach(function(r){ dates[String(r.reportDate||'').slice(0,10)]=1; });
+        filed+=Math.min(Object.keys(dates).length,exp);
       });
       return expected>0?(filed/expected):null;
     }
     case 'proje_butce': {
-      var projs2=(state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&o.assignedTo===name;});
+      var projs2=siteOwnedProjects(name,false);
       if(!projs2.length) return null;
       var scored=0,total2=0;
       projs2.forEach(function(p){
@@ -7650,7 +7901,7 @@ function personelAutoMetric(kod, name, period, dept){
       return total2>0?(scored/total2):null;
     }
     case 'is_guvenligi': {
-      var projs3=(state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&o.assignedTo===name;});
+      var projs3=siteOwnedProjects(name,false);
       if(!projs3.length) return null;
       var incidents=0,reportCount=0;
       projs3.forEach(function(p){
@@ -7662,13 +7913,13 @@ function personelAutoMetric(kod, name, period, dept){
       return Math.max(0,1-(incidents/reportCount));
     }
     case 'iscilik_kalite': {
-      var projs4=(state.opportunities||[]).filter(function(o){return o.stage==='KAZANILDI'&&o.assignedTo===name;});
+      var projs4=siteOwnedProjects(name,false);
       if(!projs4.length) return null;
       var reworkCount=0,reportCount2=0;
       projs4.forEach(function(p){
         var pReports=(state.fieldReports||[]).filter(function(r){return r.projectId===p.id&&r.status==='tamam';});
         reportCount2+=pReports.length;
-        pReports.forEach(function(r){reworkCount+=(r.reworkItems||[]).length;});
+        pReports.forEach(function(r){reworkCount+=(r.reworkItems||[]).filter(function(w){return !w.cause||w.cause==='uygulama';}).length;});   // müşteri/tasarım/malzeme kaynaklı yeniden-iş personeli cezalandırmaz
       });
       if(!reportCount2) return null;
       return Math.max(0,1-(reworkCount/reportCount2));
@@ -7678,6 +7929,30 @@ function personelAutoMetric(kod, name, period, dept){
       return st.total? st.ratio : null;
     }
   }
+}
+// Saha kriterlerinin sahibi: projenin SAHA SORUMLUSU (atanmamış eski projelerde fırsatın satış temsilcisi — önceki davranış).
+function siteOwnedProjects(name, onlyActive){
+  return (state.opportunities||[]).filter(function(o){
+    return o.stage==='KAZANILDI' && (!onlyActive || !o.execClosedAt) && ((o.execSiteLead||o.assignedTo)===name);
+  });
+}
+// Projenin SAHADA çalışılması beklenen iş günü sayısı: yalnız 'Saha Hazırlık' ve 'İmalat/Montaj' aşamalarında geçen Pzt–Cum günleri.
+function projSiteWorkdays(o){
+  var hist=(o.execStageHistory||[]).slice().sort(function(a,b){return String(a.at).localeCompare(String(b.at));});
+  var endISO=o.execClosedAt?String(o.execClosedAt).slice(0,10):today();
+  var segs=[];
+  if(hist.length){ hist.forEach(function(hh,i){ segs.push({stage:hh.stage, from:String(hh.at).slice(0,10), to:(i+1<hist.length?String(hist[i+1].at).slice(0,10):endISO), last:i+1>=hist.length}); }); }
+  else segs.push({stage:projStage(o), from:String(o.execStartedAt||o.createdAt||endISO).slice(0,10), to:endISO, last:true});
+  var days=0;
+  segs.forEach(function(sg){
+    if(sg.stage!=='saha' && sg.stage!=='montaj') return;
+    var d=_toDate(sg.from), end=_toDate(sg.to);
+    for(var i=0;i<800 && (sg.last ? d<=end : d<end);i++){
+      var w=d.getDay(); if(w!==0&&w!==6) days++;
+      d=new Date(d.getFullYear(),d.getMonth(),d.getDate()+1);
+    }
+  });
+  return days;
 }
 // YILLIK hedefe göre HAM (tavansız) gerçekleşme oranı — prim KAZANIMI ve AŞIMI bunu kullanır.
 // Yalnızca hedef (birey/şirket) ve karlılık için anlamlı; diğerlerinde null (bunlar oran×elapsed ile hesaplanır).
@@ -8682,6 +8957,7 @@ async function projDelete(o){
   for(const m of (r.manuals||[])){ await deleteDoc('tasks', m.id); }
   if(r.manuals && r.manuals.length) setState({tasks:(state.tasks||[]).filter(x=>!r.manuals.some(mm=>mm.id===x.id))});
   if(o.stage==='KAZANILDI' && o.quotationId) releaseQuotationStock(o.quotationId);
+  try{ await frDeletePhotosBy('projectId', o.id); }catch(e){}
   await deleteDoc('opportunities', o.id);
   setState({opportunities:(state.opportunities||[]).filter(x=>x.id!==o.id), modal:null});
   showToast('🗑 Proje silindi'+(r.deletedAuto?(' · '+r.deletedAuto+' otomatik görev'):''));
@@ -10048,6 +10324,7 @@ function renderProjeler(){
 
   const closedBox = closed.length ? h('div',{style:{marginTop:'16px'}},
     btn((PMOD.projShowClosed?'▾':'▸')+' Kapanan projeler ('+closed.length+')',()=>{PMOD.projShowClosed=!PMOD.projShowClosed;render();},'#eef2f7','#334155','7px 12px',{fontSize:'12px'}),
+    isAdmin ? btn('🧹 Fotoğraf temizliğini şimdi çalıştır',()=>frCleanupPhotos(),'#fff7ed','#c2410c','7px 12px',{fontSize:'12px',marginLeft:'8px',border:'1px solid #fed7aa'}) : h('span'),
     PMOD.projShowClosed ? h('div',{style:{marginTop:'8px'}}, ...closed.map(o=>projListRow(o,isAdmin))) : h('span')
   ) : h('span');
 
@@ -11120,6 +11397,7 @@ function checkAllNotifications() {
   // Artık "telafili": oluşturma günü ile son gün arasında CRM ilk açıldığında oluşur (id sabit → çift görev olmaz).
   taxCalendarSync();
   projectMonthlySync();
+  frAutoCleanup();
 }
 
 const _TR_AYLAR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
