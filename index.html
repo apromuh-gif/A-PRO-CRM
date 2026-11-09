@@ -2026,8 +2026,10 @@ async function saveOpp(form, isEdit) {
   if (data.stage === 'KAZANILDI' && (!prevOpp || prevOpp.stage !== 'KAZANILDI')) {
     const cn = _custName(data.customerId);
     const lbl = (data.title||'Proje') + (cn ? ' — ' + cn : '');
-    autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:'muhasebe', context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:5, priority:'yuksek' });
-    autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:'muhasebe', context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:7, priority:'orta' });
+    // Proje Grubu'na; teklifi HAZIRLAYAN kişiye (bulunamazsa Proje Grubu'nda en az yüklü kişiye).
+    const _prep = oppPreparer(data) || undefined;
+    autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:'proje', assignedTo:_prep, context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:5, priority:'yuksek' });
+    autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:'proje', assignedTo:_prep, context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:7, priority:'orta' });
   }
 }
 async function saveProp(form, isEdit) {
@@ -8428,6 +8430,17 @@ const TASK_TEMPLATES = {
   ],
 };
 function _offsetDay(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+// Fırsatın bağlı teklifini HAZIRLAYAN kişi (aktif kullanıcı değilse boş döner → çağıran departman dengesine düşer).
+function oppPreparer(o){
+  const p = (state.proposals||[]).find(x=>(o.quotationId && x.quotationId===o.quotationId) || x.opportunityId===o.id);
+  const name = p && p.preparedBy;
+  return (name && taskPeople().some(u=>u.displayName===name)) ? name : '';
+}
+// Fırsat kaydına yalnız verilen alanları yazar (merge) — tüm dokümanı ezmez.
+async function _oppPatch(o, patch){
+  if(!state.testMode) await db.collection('opportunities').doc(String(o.id)).set(patch, { merge:true });
+  setState({ opportunities:(state.opportunities||[]).map(x=>x.id===o.id ? Object.assign({}, x, patch) : x) });
+}
 // Departmandaki açık görev sayısı en az olan personeli döndürür.
 function leastBusyInDept(dept){
   const people = taskPeople().filter(u=>userInDept(u,dept));
@@ -8516,7 +8529,6 @@ const PROJECT_STAGE_TEMPLATES = {
   saha: [
     { title:'Saha ölçü doğrulama',              dept:'saha',     dueOffset:2,  priority:'orta'  },
     { title:'İSG / izin dosyası',               dept:'muhasebe', dueOffset:3,  priority:'yuksek' },
-    { title:'Ekip / ekipman mobilizasyon',      dept:'muhasebe', dueOffset:4,  priority:'orta'  },
   ],
   montaj: [
     { title:'Boru / sprinkler montajı',         dept:'saha',     dueOffset:10, priority:'yuksek' },
@@ -8527,7 +8539,7 @@ const PROJECT_STAGE_TEMPLATES = {
     { title:'Geçici kabul',                     dept:'saha',     dueOffset:3,  priority:'orta'  },
     { title:'As-built (imalat sonu çizim)',     dept:'saha',     dueOffset:5,  priority:'orta'  },
     { title:'Kesin kabul',                      dept:'saha',     dueOffset:7,  priority:'orta'  },
-    { title:'Hakediş dosyası',                  dept:'proje',    dueOffset:5,  priority:'yuksek' },
+    { title:'Hakediş dosyası',                  dept:'saha',     dueOffset:5,  priority:'yuksek' },   // projenin saha sorumlusuna
   ],
 };
 
@@ -8551,8 +8563,10 @@ async function suggestStageTasks(o, stage, opts){
   const people = personelPeople();
   const firstInDept = dept => leastBusyInDept(dept); // departmanda en az açık görevi olan kişi (dengeli dağıtım)
   const existing = new Set((state.tasks||[]).map(normTask).filter(t=>t.linkType==='opportunity'&&t.linkId===o.id).map(t=>t.title));
+  // Şantiye/Saha departmanlı şablon görevler projenin SAHA SORUMLUSUNA gider (yoksa saha departmanında en az yüklü kişi seçilip projeye sabitlenir).
+  const siteLead = tpl.some(x=>x.dept==='saha') ? await ensureSiteLead(o) : '';
   const toAdd = tpl.filter(x=>!existing.has(x.title)).map(x=>normTask({
-    id: genId(), title:x.title, desc:'', assignedTo:firstInDept(x.dept), department:x.dept,
+    id: genId(), title:x.title, desc:'', assignedTo:(x.dept==='saha' && siteLead) ? siteLead : firstInDept(x.dept), department:x.dept,
     assignedBy:(state.currentUser&&state.currentUser.displayName)||'', context:'proje',
     linkType:'opportunity', linkId:o.id, linkLabel:o.title||'Proje', execStage:stage,
     dueDate:_offsetDay(x.dueOffset), dueTime:'', startDate:'',
@@ -8570,9 +8584,47 @@ async function suggestStageTasks(o, stage, opts){
 async function projStart(o){
   const now=today(), me=(state.currentUser&&state.currentUser.displayName)||'';
   const upd=Object.assign({}, o, { execActive:true, execStage:'teknik', execStartedAt:now, execClosedAt:null,
+    execSiteLead: o.execSiteLead || leastBusyInDept('saha') || '',           // saha sorumlusu: icra başlarken saha ekibinde en az yüklü kişi (projeye sabit)
     execStageHistory:[...(o.execStageHistory||[]), {stage:'teknik', at:now, by:me}] });
   await personelSaveDoc('opportunities', upd);
   await suggestStageTasks(upd, 'teknik', {silent:true});
+  // İcra ile birlikte: Mobilizasyon ve saha giriş işlemleri → İdari İşler (Muhasebe & İdari İşler departmanı, en az yüklü kişi)
+  const cn=_custName(o.customerId); const lbl=(o.title||'Proje')+(cn?' — '+cn:'');
+  autoCreateTask({ dedupeKey:'mobilizasyon_'+o.id, title:'\u{1F69A} Mobilizasyon ve saha giriş işlemleri — '+lbl, dept:'muhasebe', context:'idari', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'Proje', execStage:'saha', dueOffset:5, priority:'orta' });
+}
+// Projenin saha sorumlusu (yoksa saha departmanında en az yüklü kişi seçilip projeye kaydedilir).
+async function ensureSiteLead(o){
+  const cur=(state.opportunities||[]).find(x=>x.id===o.id)||o;
+  if(cur.execSiteLead) return cur.execSiteLead;
+  const lead=leastBusyInDept('saha');
+  if(!lead) return '';
+  await _oppPatch(cur, { execSiteLead:lead });
+  return lead;
+}
+// Saha sorumlusunu değiştir (yönetici); istenirse açık saha görevleri de yeni kişiye devredilir.
+async function projSetSiteLead(o, name){
+  const old=o.execSiteLead||'';
+  if(name===old) return;
+  await _oppPatch(o, { execSiteLead:name });
+  if(!name || !old) return;
+  const open=(state.tasks||[]).map(normTask).filter(t=>t.linkType==='opportunity'&&t.linkId===o.id&&!taskIsClosed(t)&&t.autoGenerated&&t.assignedTo===old&&t.department==='saha');
+  if(open.length && confirm(open.length+' açık saha görevi de '+name+' kişisine devredilsin mi?')){
+    for(const t of open){ await taskReassign(t, name, 'diger', 'Saha sorumlusu değişti', t.dueDate); }
+  }
+}
+// Aylık hakediş: aktif her proje için, ayın 20'sinden itibaren (telafili) o ayın hakediş görevi — saha sorumlusuna; vade ayın son iş günü.
+function projectMonthlySync(){
+  if(!state.currentUser) return;
+  const n0=new Date(); if(n0.getDate()<20) return;
+  const y=n0.getFullYear(), m=n0.getMonth(), mm=String(m+1).padStart(2,'0');
+  const due=_ymd(_taxBizDay(new Date(y, m+1, 0)));
+  (state.opportunities||[]).filter(projIsActive).forEach(async o=>{
+    const key='hakedis_'+o.id+'_'+y+'_'+mm;
+    if((state.tasks||[]).some(t=>t.dedupeKey===key)) return;
+    const lead=await ensureSiteLead(o);
+    const cn=_custName(o.customerId);
+    autoCreateTask({ id:key, dedupeKey:key, title:'\u{1F4D1} Hakediş dosyası — '+(o.title||'Proje')+(cn?' — '+cn:'')+' — '+_TR_AYLAR[m]+' '+y, dept:'saha', assignedTo:lead||undefined, context:'proje', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'Proje', execStage:'hakedis', dueDate:due, priority:'yuksek' });
+  });
 }
 // Sonraki aşamaya geç (sıralı; açık görev varsa uyar).
 async function projAdvance(o){
@@ -8600,9 +8652,10 @@ async function projClose(o){
   const warrantyScope = o.warrantyScope || (o.contractorId ? 'yalniz_malzeme' : 'malzeme_iscilik');
   const upd=Object.assign({}, o, { execClosedAt:closeDateISO, warrantyEndDate:warrantyEnd, warrantyScope:warrantyScope });
   await personelSaveDoc('opportunities', upd);
-  // GAP 5: Proje kapanışında muhasebeye kesin hakediş görevi
+  // Proje kapanışında son hakediş görevi — saha sorumlusuna (aylık hakedişler projectMonthlySync ile açılır)
   const cn = _custName(o.customerId);
-  autoCreateTask({ dedupeKey:'hakedis_kesin_'+o.id, title:'\u{1F4D1} Kesin hakediş dosyası — '+(o.title||'')+(cn?' — '+cn:''), dept:'muhasebe', context:'proje', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', dueOffset:7, priority:'yuksek' });
+  const _lead = await ensureSiteLead(o);
+  autoCreateTask({ dedupeKey:'hakedis_kapanis_'+o.id, title:'\u{1F4D1} Hakediş dosyası (kapanış) — '+(o.title||'')+(cn?' — '+cn:''), dept:'saha', assignedTo:_lead||undefined, context:'proje', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', execStage:'hakedis', dueOffset:7, priority:'yuksek' });
 }
 // Yönetici geri-adım: kapanmışsa yeniden aç, değilse bir önceki aşamaya çek.
 async function projRollback(o){
@@ -9906,8 +9959,14 @@ function buildProjeModal(oppId){
     : h('div',{style:{padding:'16px',textAlign:'center',color:T4}},'Bu projeye bağlı görev yok. "Bu aşamaya görev öner" ile başlayın.');
 
   const cust=(state.customers||[]).find(c=>c.id===o.customerId)||null;
+  const _sl=o.execSiteLead||'';
+  const _slOpts=[{v:'',l:'— Atanmadı —'}, ...taskPeople().slice().sort((a,b)=>(userInDept(b,'saha')-userInDept(a,'saha'))||a.displayName.localeCompare(b.displayName,'tr')).map(u=>({v:u.displayName,l:u.displayName+(userInDept(u,'saha')?' (Şantiye / Saha)':'')}))];
+  const siteLeadBar=h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'10px',fontSize:'13px',color:T3}},
+    h('span',{style:{fontWeight:'700'}},'👷 Saha sorumlusu:'),
+    isAdmin ? sel(_slOpts, _sl, v=>projSetSiteLead(o, v), {maxWidth:'300px',padding:'6px 10px',fontSize:'13px'}) : h('span',{style:{fontWeight:'700',color:'#0f1f35'}}, _sl||'—'));
   const content=h('div',{},
     cust?h('div',{style:{fontSize:'13px',color:T3,marginBottom:'10px'}},'👤 '+(cust.firmName||cust.name||'')):h('span'),
+    siteLeadBar,
     strip, actBar,
     h('div',{style:{borderTop:'1px solid #e2e8f0',paddingTop:'12px'}}, tasksBox)
   );
@@ -11060,6 +11119,7 @@ function checkAllNotifications() {
   // Eskiden görev yalnız o gün 09:00–09:04 arasında CRM açıksa oluşuyordu; kaçırılırsa o ay hiç oluşmuyordu.
   // Artık "telafili": oluşturma günü ile son gün arasında CRM ilk açıldığında oluşur (id sabit → çift görev olmaz).
   taxCalendarSync();
+  projectMonthlySync();
 }
 
 const _TR_AYLAR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
