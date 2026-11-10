@@ -771,7 +771,12 @@ async function convertQuotationFormat(quotationId,currentFormat){
 }
 
 // Fırsat satırı: yalnız MEVCUT teklifin düğmeleri (Taslağı Aç / Teklif Programı / Format / Stok). Oluştur-Kopyala-Bağla artık Teklif Talebi satırında.
-function oppTeklifBtns(o, pad){ return _teklifBtnsFor(o, pad, false); }
+function oppTeklifBtns(o, pad){
+  const btns = _teklifBtnsFor(o, pad, false);
+  const hasTalep = !!(o && o.id) && (state.proposals||[]).some(function(p){ return p.opportunityId===o.id && p.source==='request'; });
+  if(!hasTalep) return btns;   // eski fırsat: talebi listede olmadığı için düğmeler burada kalır
+  return btns.filter(function(b){ return b && b.textContent && /Rezerve|Stok eksik|Sevk edildi/.test(b.textContent); });   // yalnız stok
+}
 // Teklif Talebi satırı: teklif yoksa Oluştur/Kopyala/Bağla, varsa Taslağı Aç/Format.
 function propTeklifBtns(p, pad){
   if(p.source==='opportunity') return [];
@@ -788,8 +793,7 @@ function _teklifBtnsFor(o, pad, allowCreate){
   if(!qId && !allowCreate) return [];
   if(!qId) return [
     btn("📋 Teklif Oluştur",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}),
-    btn("⧉ Teklifi Kopyala",function(){teklifKopyala(o);},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',border:'1px solid #c4b5fd',borderRadius:'7px'}),
-    btn("🔗 Mevcut Teklifi Bağla",function(){linkExistingQuotation(o);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',border:'1px solid #93c5fd',borderRadius:'7px'})
+    btn("⧉ Teklifi Kopyala",function(){teklifKopyala(o);},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',border:'1px solid #c4b5fd',borderRadius:'7px'})
   ];
   var crmSent=["Gönderildi","Revize","Randevu","Onaylandı","Reddedildi"];
   var qStatus=o.quotationStatus||(lp&&lp.quotationStatus);
@@ -6075,7 +6079,6 @@ function renderOpportunities() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},
         btn('Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),
         ...oppTeklifBtns(o,'6px 12px'),
-        (_CARRY_OPEN_STAGES.indexOf(o.stage)>=0)?btn('↦ '+(recFY(o)+1),()=>carryOverOpp(o),'#fef3c7','#92400e','6px 10px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',whiteSpace:'nowrap'}):h('span'),
         btn('Sil',()=>delItem('opportunities',o.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})
       ))
     );
@@ -6110,7 +6113,6 @@ function renderOpportunities() {
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             ...oppTeklifBtns(o,'7px 12px'),
             btn('✏️ Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#fff3cd','#d97706','7px 14px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',flex:'1'}),
-            (_CARRY_OPEN_STAGES.indexOf(o.stage)>=0)?btn('↦ '+(recFY(o)+1),()=>carryOverOpp(o),'#fef3c7','#92400e','7px 12px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):h('span'),
             h('span'),
             btn('🗑️',async()=>{ if(!confirm('Bu fırsatı silmek istediğinizden emin misiniz?')) return;
   const r=await cascadeDeleteTasksFor('opportunity',o.id);
@@ -9887,52 +9889,60 @@ function taskDueReminders(){
 // Hiçbir fırsat otomatik taşınmaz. Yönetici, devam eden AÇIK fırsatlardan bir sonraki mali yıla
 // sayılmasını istediklerini elle işaretler → o.fiscalYear = sonrakiYıl. İşaret kaldırılırsa kapanış yılına döner.
 const _CARRY_OPEN_STAGES = ['TEKLİF','SICAK-1','SICAK-2','ERTELENDİ'];
-function openCarryoverModal(fromYear){ setState({modal:{type:'carryover', fromYear:Number(fromYear)}}); }
-// Tek fırsatı sonradan (fırsat bazlı) bir sonraki mali yıla taşı — bulunduğu bölüm yılının +1'ine.
-async function carryOverOpp(o){
-  const to = recFY(o)+1;
-  if(!confirm('"'+(o.title||'Fırsat')+'" fırsatı '+to+' mali yılına taşınsın mı?\n\nBu fırsat '+to+' bölümüne geçer ve '+to+' hedef/primlerine sayılır.')) return;
-  const upd = {...o, fiscalYear: to, ...stamp()};
-  await saveDoc('opportunities', o.id, upd);
-  setState({opportunities: (state.opportunities||[]).map(x=>x.id===o.id?upd:x)});
-  if(o.quotationId){ const r=await _syncQuotationFiscalYear(o.quotationId, to); showToast('↦ '+to+' yılına taşındı.'+(r.ok?'':' ⚠ teklif kârı senkronlanamadı'), r.ok?'#16a34a':'#d97706'); }
-  else showToast('↦ '+to+' mali yılına taşındı.','#16a34a');
-}
-function buildCarryoverModal(fromYear){
-  fromYear = Number(fromYear); const toYear = fromYear+1;
+function openCarryoverModal(fromYear, toYear){ setState({modal:{type:'carryover', fromYear:Number(fromYear)||activeFiscalYear(), toYear:Number(toYear)||((Number(fromYear)||activeFiscalYear())+1)}}); }
+// Fırsatları mali yıla taşı: Araçlar → "Fırsatları Mali Yıla Taşı". Kaynak/hedef yıl seçilir, fırsat adı veya müşteriyle aranır,
+// işaretlenenler hedef yıla taşınır (hedef yılın 1. ayından itibaren sayılır). İşareti kaldırılan, daha önce taşınmışsa kapanış yılına döner.
+// Yalnız AÇIK aşamadaki fırsatlar (TEKLİF, SICAK-1, SICAK-2, ERTELENDİ) taşınabilir; kazanılan/kaybedilen kendi tarihine göre sayılır.
+function buildCarryoverModal(fromYear, toYear){
+  fromYear = Number(fromYear)||activeFiscalYear(); toYear = Number(toYear)||(fromYear+1);
+  const years = [...new Set([..._allFiscalYears(), activeFiscalYear()+2, fromYear, toYear])].sort((a,b)=>b-a);
+  const yrSel = (val, onCh)=> sel(years.map(y=>({v:String(y),l:'Mali Yıl '+y})), String(val), onCh, {maxWidth:'170px',padding:'7px 10px',fontSize:'13px'});
   const cands = (state.opportunities||[])
     .filter(o=>_CARRY_OPEN_STAGES.indexOf(o.stage)>=0 && (_pOppFY(o)===fromYear || Number(o.fiscalYear)===toYear))
     .sort((a,b)=>String(a.title||'').localeCompare(String(b.title||''),'tr'));
-  const boxes = [];
+  const picked = {}; cands.forEach(o=>{ picked[o.id] = Number(o.fiscalYear)===toYear; });
+  const custName = o => { const c=(state.customers||[]).find(x=>x.id===o.customerId); return (c&&c.firmName)||o.customer||o.customerName||'-'; };
   const container = h('div',{});
-  container.appendChild(h('div',{style:{fontSize:'12px',color:'#92400e',lineHeight:'1.6',marginBottom:'12px',background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'10px',padding:'10px 12px'}},
-    'Devam eden (açık) fırsatlardan '+fromYear+' → '+toYear+' mali yılına TAŞINACAK olanları işaretleyin. İşaretliler '+toYear+' hedefine (1. aydan itibaren) sayılır. Hiçbir şey otomatik taşınmaz; yalnızca seçtikleriniz.'));
-  if(!cands.length){
-    container.appendChild(h('div',{style:{padding:'20px',textAlign:'center',color:T4}},'Taşınabilecek açık fırsat yok.'));
-  } else {
-    cands.forEach(o=>{
+  container.appendChild(h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap',marginBottom:'10px'}},
+    h('span',{style:{fontSize:'13px',fontWeight:'700',color:'#0f1f35'}},'Kaynak:'), yrSel(fromYear, v=>setState({modal:{type:'carryover',fromYear:Number(v),toYear}})),
+    h('span',{style:{fontSize:'18px',color:'#b45309'}},'→'),
+    h('span',{style:{fontSize:'13px',fontWeight:'700',color:'#0f1f35'}},'Hedef:'), yrSel(toYear, v=>setState({modal:{type:'carryover',fromYear,toYear:Number(v)}}))));
+  container.appendChild(h('div',{style:{fontSize:'12px',color:'#92400e',lineHeight:'1.6',marginBottom:'10px',background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'10px',padding:'10px 12px'}},
+    fromYear===toYear ? '⚠ Kaynak ve hedef yıl aynı — farklı bir hedef yıl seçin.'
+    : fromYear+' mali yılındaki AÇIK fırsatlardan '+toYear+' hedef/primine sayılacak olanları işaretleyin. İşaretliler '+toYear+' hedefine (1. aydan itibaren) sayılır; hiçbir şey otomatik taşınmaz.'));
+  const search = h('input',{type:'text',placeholder:'🔍 Fırsat adı veya müşteri ara…',style:{width:'100%',padding:'8px 11px',border:'1px solid '+G4,borderRadius:'8px',fontSize:'13px',boxSizing:'border-box',marginBottom:'8px',outline:'none'}});
+  const listDiv = h('div',{style:{maxHeight:'46vh',overflowY:'auto',border:'1px solid #e2e8f0',borderRadius:'10px',background:'#fff'}});
+  const countEl = h('div',{style:{fontSize:'11px',color:T4,margin:'6px 2px 0'}});
+  function renderList(){
+    listDiv.innerHTML=''; const q=(search.value||'').trim().toLowerCase();
+    const shown = cands.filter(o=>!q || (o.title||'').toLowerCase().includes(q) || custName(o).toLowerCase().includes(q));
+    if(!shown.length) listDiv.appendChild(h('div',{style:{padding:'20px',textAlign:'center',color:T4}},cands.length?'Aramaya uyan fırsat yok.':'Taşınabilecek açık fırsat yok.'));
+    shown.forEach(o=>{
       const cb = h('input',{type:'checkbox',style:{width:'18px',height:'18px',cursor:'pointer',flexShrink:'0'}});
-      cb.checked = Number(o.fiscalYear)===toYear;
-      boxes.push({o,cb});
-      container.appendChild(h('div',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',borderBottom:'1px solid #eef2f7'}},
+      cb.checked = !!picked[o.id];
+      cb.addEventListener('change',e=>{ picked[o.id]=e.target.checked; updCount(); });
+      listDiv.appendChild(h('label',{style:{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',borderBottom:'1px solid #eef2f7',cursor:'pointer'}},
         cb,
         h('div',{style:{flex:'1',minWidth:'0'}},
           h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35'}},o.title||'(başlıksız)'),
-          h('div',{style:{fontSize:'11px',color:T4}},(o.customer||o.customerName||'-')+' · '+o.stage+' · '+eur(Number(o.value)||0)+' · '+(o.assignedTo||'-')+' · Kapanış: '+(_pOppDate(o)||'-')+(Number(o.fiscalYear)?(' · ⤳ '+o.fiscalYear):''))
-        )
-      ));
+          h('div',{style:{fontSize:'11px',color:T4}},custName(o)+' · '+o.stage+' · '+eur(Number(o.value)||0)+' · '+(o.assignedTo||'-')+(Number(o.fiscalYear)?(' · ⤳ '+o.fiscalYear):'')))));
     });
   }
-  const saveBtn = btn('💾 Devri Kaydet', async()=>{
+  function updCount(){ const n=cands.filter(o=>picked[o.id]).length; countEl.textContent=n+' fırsat '+toYear+' yılına taşınacak şekilde işaretli ('+cands.length+' aday).'; }
+  search.addEventListener('input',renderList);
+  container.appendChild(search); container.appendChild(listDiv); container.appendChild(countEl);
+  renderList(); updCount();
+  const saveBtn = btn('💾 Taşı / Kaydet', async()=>{
+    if(fromYear===toYear){ showToast('⚠ Kaynak ve hedef yıl aynı.','#d97706'); return; }
     let n=0, qWarn=0;
-    for(const {o,cb} of boxes){
-      const want = cb.checked;
+    for(const o of cands){
+      const want = !!picked[o.id];
       const isCarried = Number(o.fiscalYear)===toYear;
       if(want && !isCarried){
         await personelSaveDoc('opportunities', {...o, fiscalYear:toYear}); n++;
         // Bağlı teklif varsa kârı da toYear'a hizala (karlılık YTD marjı fırsat devriyle örtüşür).
         if(o.quotationId){ const r=await _syncQuotationFiscalYear(o.quotationId, toYear); if(!r.ok) qWarn++; }
-      } else if(!want && Number(o.fiscalYear)){
+      } else if(!want && isCarried){
         const r={...o}; delete r.fiscalYear; await personelSaveDoc('opportunities', r); n++;
         if(o.quotationId){ const rr=await _syncQuotationFiscalYear(o.quotationId, null); if(!rr.ok) qWarn++; }
       }
@@ -9941,7 +9951,7 @@ function buildCarryoverModal(fromYear){
     setState({modal:null});
   },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','9px 16px',{flex:'1'});
   container.appendChild(h('div',{style:{display:'flex',gap:'8px',marginTop:'14px'}}, saveBtn, btn('Kapat',()=>setState({modal:null}),'#e8eef7','#4a6080','9px 14px')));
-  return modal('🔄 '+fromYear+' → '+toYear+' Fırsat Devri', container, ()=>setState({modal:null}), '640px');
+  return modal('🔄 Fırsatları Mali Yıla Taşı', container, ()=>setState({modal:null}), '700px');
 }
 
 // ── MALİ YIL YÖNETİMİ (Araçlar → Mali Yıl) ──
@@ -11051,6 +11061,7 @@ function render() {
             const items = [
               ...(window.innerWidth<=768&&cu?.isAdmin?[{icon:'🎯',label:'Hedefler',color:'#0f1f35',action:()=>{menu.remove();openTargetsModal();}},{icon:'👥',label:'Kullanıcılar',color:'#0f1f35',action:()=>{menu.remove();setState({modal:{type:'admin',item:null}});}},{sep:true}]:[]),
               {icon:'📅', label:'Mali Yıl (Yıl Geçişi)', color:'#b45309', action:()=>{ menu.remove(); openFiscalYearModal(); }},
+              {icon:'🔄', label:'Fırsatları Mali Yıla Taşı', color:'#b45309', action:()=>{ menu.remove(); openCarryoverModal(activeFiscalYear()); }},
               {sep:true},
               {icon:'📅', label:'Aylık Rapor',     color:'#2563eb', action:()=>{ menu.remove(); generateMonthlyReport(); }},
               {icon:'📊', label:'3 Aylık Rapor',   color:'#7c3aed', action:()=>{ menu.remove(); generateQuarterlyReport(); }},
@@ -11272,7 +11283,7 @@ function render() {
     else if(type==='admin') m=buildAdminModal();
     else if(type==='supplier') m=buildSupplierModal(state.modal.data||null);
     else if(type==='targets') m=buildTargetsModal();
-    else if(type==='carryover') m=buildCarryoverModal(state.modal.fromYear);
+    else if(type==='carryover') m=buildCarryoverModal(state.modal.fromYear, state.modal.toYear);
     else if(type==='fiscalyear') m=buildFiscalYearModal();
     else if(type==='task') m=buildTaskModal(state.modal.taskId);
     else if(type==='proplist') m=buildPropListModal(state.modal.title, state.modal.items);
