@@ -87,6 +87,16 @@ const SEC_O = ["KAMU","ÖZEL SEKTÖR","ASKERİ-SAVUNMA SANAYİ","PETRO-KİMYA","
 const STAGES = ["KAZANILDI","TEKLİF","SICAK-1","SICAK-2","KAÇTI","NO GO","FIRSAT ÖLDÜ","ERTELENDİ"];
 // Filtrelerde "boş/atanmamış" kayıtları seçmek için kullanılan özel değer (gerçek veride bulunmaz).
 const FILTER_EMPTY = '__BOS__';
+// Satış türü: teklif talebinde ZORUNLU seçilir, fırsata taşınır; KAZANILDI olunca hangi sürecin işleyeceğini belirler. Kapsam değişirse sonradan değiştirilebilir.
+//   urun    → sipariş onay, sipariş formu, sevkiyat/teslim takibi, fatura ve tahsilat
+//   sistem  → ürün süreci + Check list + devreye alma (teknik servis)
+//   anahtar → proje icrası (teknik/satın alma/saha/montaj/hakediş aşamaları)
+const SALES_TYPES = [
+  { v:'urun',    l:'Ürün-Malzeme Satışı', c:'#0284c7' },
+  { v:'sistem',  l:'Sistem Satışı',       c:'#7c3aed' },
+  { v:'anahtar', l:'Anahtar Teslim',      c:'#16a34a' }
+];
+function salesTypeLabel(v){ const t=SALES_TYPES.find(x=>x.v===v); return t?t.l:''; }
 const JOB_ST = ["SON KULLANICI","ALMIŞ MÜTEAHHİT","ALMIŞ TAŞERON","MÜTEAHHİT İHALESİ","TAŞERON İHALESİ","KEŞİF","BAYİ","OEM"];
 const PROP_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Reddedildi"];
 const SERV_ST = ["Gönderildi","Revize","Onaylandı","Randevu"];
@@ -1305,7 +1315,7 @@ function normTask(t){
 // ---- Faz 2: Proje icra erişimcileri (okuma-anında varsayılan, migration yok) ----
 function projStage(o){ return (o && typeof PROJECT_STAGES!=='undefined' && PROJECT_STAGES.includes(o.execStage)) ? o.execStage : 'teknik'; }
 function projIsActive(o){ return !!(o && o.execActive===true && !o.execClosedAt); }
-function projIsAwaiting(o){ return !!(o && o.stage==='KAZANILDI' && o.execActive!==true); }
+function projIsAwaiting(o){ return !!(o && o.stage==='KAZANILDI' && o.execActive!==true && (!o.salesType || o.salesType==='anahtar')); }
 function projIsClosed(o){ return !!(o && o.execActive===true && o.execClosedAt); }
 // ===== FAZ 3a: Arıza servis icra — salt-okuma güvenli erişimciler =====
 function servExecStage(s){ return (s && typeof SERVICE_STAGES!=='undefined' && SERVICE_STAGES.includes(s.execStage)) ? s.execStage : 'talep'; }
@@ -2083,20 +2093,37 @@ async function saveOpp(form, isEdit) {
       }
     }
   }
+  if(form.stage==='KAZANILDI' && !form.salesType){
+    showToast('⛔ KAZANILDI için Satış Türü (Ürün-Malzeme / Sistem / Anahtar Teslim) seçilmelidir.','#dc2626');
+    return;
+  }
+  {
+    const _pv2 = isEdit ? (state.opportunities||[]).find(o=>o.id===form.id) : null;
+    if((Number(form.leadTimeDays)||0) !== (Number(_pv2&&_pv2.leadTimeDays)||0) && !_canSetLeadTime()){
+      showToast('⛔ Tedarik süresini yalnız Satın Alma sorumlusu (veya yönetici) girebilir.','#dc2626');
+      return;
+    }
+  }
   setState({saving:true});
   const id = isEdit ? form.id : genId();
   // K2: kazanma/kayıp tarihini AŞAMANIN DEĞİŞTİĞİ AN damgala. Prim ve yıllık hedef atfı
   // (_pOppDate) artık "Ön Gör. Sipariş Tarihi"ne değil gerçek kapanış tarihine bakıyor.
   const prevOpp = isEdit ? (state.opportunities||[]).find(o=>o.id===id) : null;
   const data = {...form, id, ...stamp(), ..._oppCloseStamp(form, prevOpp), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear(), ...((!isEdit && !form.source) ? {source:'manual'} : {})};
+  const _leadChanged = (Number(data.leadTimeDays)||0) > 0 && (Number(data.leadTimeDays)||0) !== (Number(prevOpp&&prevOpp.leadTimeDays)||0);
+  if(_leadChanged) Object.assign(data, { leadTimeDays:Number(data.leadTimeDays), leadTimeSetAt:today(), leadTimeSetBy:((state.currentUser&&state.currentUser.displayName)||''), expectedDelivery:_addDays(today(), Number(data.leadTimeDays)) });
   await saveDoc('opportunities', id, data);
   const list = isEdit ? state.opportunities.map(o=>o.id===id?data:o) : [...state.opportunities, data];
   setState({opportunities:list, modal:null, saving:false});
   showToast('✅ Fırsat kaydedildi!');
-  // KAZANILDI'ya her geçişte (teklifli ya da teklifsiz) proje icrası otomatik başlar (ayrı "İcraya başlat" adımı gerekmez).
-  if (data.stage === 'KAZANILDI' && data.execActive !== true && !(prevOpp && prevOpp.stage === 'KAZANILDI')) {
-    try { await projStart(data); showToast('🏗 Proje icrası otomatik başlatıldı.', '#16a34a'); }
-    catch (e) { showToast('⚠ Fırsat kaydedildi ama icra başlatılamadı: ' + ((e && e.message) || e) + ' — Projeler sekmesinden "İcraya başlat" ile başlatın.', '#d97706'); }
+  // KAZANILDI'ya geçişte (ya da kazanılmış fırsatın Satış Türü değişince) türe göre süreç başlar: ürün → sipariş/sevkiyat/fatura-tahsilat;
+  // sistem → ürün süreci + check list + devreye alma; anahtar teslim → proje icrası. Görevler dedupeKey'li: tekrar çağrılsa çift oluşmaz.
+  if (data.stage === 'KAZANILDI' && (!(prevOpp && prevOpp.stage === 'KAZANILDI') || (prevOpp.salesType||'') !== (data.salesType||''))) {
+    try { await applyWonFlow(data); }
+    catch (e) { showToast('⚠ Fırsat kaydedildi ama süreç görevleri oluşturulamadı: ' + ((e && e.message) || e), '#d97706'); }
+  }
+  if (_leadChanged && data.stage === 'KAZANILDI' && (data.salesType === 'urun' || data.salesType === 'sistem')) {
+    try { await applyLeadTime(data); } catch (e) { showToast('⚠ Sevkiyat görevi oluşturulamadı: ' + ((e && e.message) || e), '#d97706'); }
   }
   // Kazanıldı + bağlı teklif varsa → teklifi APPROVED'a çek (karlılık dahli).
   if (data.stage === 'KAZANILDI' && data.quotationId) approveWonQuotation(data, !!(prevOpp && prevOpp.stage !== 'KAZANILDI'));
@@ -2117,6 +2144,92 @@ async function ensureOrderTasks(o){
   await autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:5, priority:'yuksek' });
   await autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:7, priority:'orta' });
 }
+// Kazanılan fırsatın Satış Türü'ne göre süreci başlatır (idempotent).
+async function applyWonFlow(o){
+  const t = o.salesType;
+  if(t==='anahtar'){
+    if(o.execActive!==true){ await projStart(o); showToast('🏗 Anahtar teslim: proje icrası başlatıldı.','#16a34a'); }
+    else await ensureOrderTasks(o);
+  } else if(t==='urun' || t==='sistem'){
+    await ensureOrderTasks(o);
+    await ensureProductTasks(o);
+    if(t==='sistem') await ensureSystemTasks(o);
+    showToast('📦 '+salesTypeLabel(t)+': süreç görevleri oluşturuldu.','#0284c7');
+  }
+}
+function _wonLbl(o){ const cn=_custName(o.customerId); return (o.title||'Proje')+(cn?' — '+cn:''); }
+// Ürün satışı süreci: sevkiyat ve fatura MALZEME TEDARİK SÜRESİNE bağlıdır.
+//   KAZANILDI → satın alma "Tedarik süresini gir (gün)" görevi alır; süre girilince sevkiyat görevi (sipariş/süre tarihine vadeli) açılır.
+//   Sevkiyat tamamlanınca → fatura görevi (teslimden 1 hafta sonra) + (mevcut zincirle) tahsilat; kısmi sevkiyat varsa yeni sevkiyat planlanır.
+async function ensureProductTasks(o){
+  const id=o.id, lbl=_wonLbl(o);
+  if(Number(o.leadTimeDays)>0){ await ensureShipmentTask(o,1,_addDays(o.leadTimeSetAt||today(), Number(o.leadTimeDays))); return; }
+  await autoCreateTask({ dedupeKey:'tedarik_suresi_'+id, title:'\u{23F1}\u{FE0F} Tedarik süresini gir (gün) — '+lbl,
+    desc:'Malzeme tedarik süresini (gün) girin: Fırsatlar → ilgili fırsat → Düzenle → "Tedarik süresi (gün)". Süre girilince sevkiyat görevi o tarihe vadeli otomatik açılır.',
+    dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:3, priority:'yuksek' });
+}
+async function ensureShipmentTask(o, n, due){
+  const lbl=_wonLbl(o);
+  return autoCreateTask({ dedupeKey:'sevkiyat_'+o.id+'_'+n, title:'\u{1F69B} Sevkiyat / teslim takibi — '+lbl+(n>1?' (Sevkiyat '+n+')':''),
+    dept:'stok', context:'idari', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', dueDate:due, priority:'orta' });
+}
+// Satın alma tedarik süresini girince: süre görevi kapanır, 1. sevkiyat görevi (süre sonuna vadeli) açılır / vadesi güncellenir.
+async function applyLeadTime(o){
+  const days=Number(o.leadTimeDays)||0; if(!(days>0)) return;
+  const due=_addDays(o.leadTimeSetAt||today(), days);
+  const all=(state.tasks||[]).map(normTask);
+  const tk=all.find(t=>t.dedupeKey==='tedarik_suresi_'+o.id);
+  if(tk && !taskIsClosed(tk)) await personelSaveDoc('tasks', Object.assign({}, tk, { status:'tamamlandi', needsApproval:false, completedAt:today(), ...stamp() }));
+  const sk=all.find(t=>t.dedupeKey==='sevkiyat_'+o.id+'_1');
+  if(sk){ if(!taskIsClosed(sk) && sk.dueDate!==due) await personelSaveDoc('tasks', Object.assign({}, sk, { dueDate:due, ...stamp() })); }
+  else await ensureShipmentTask(o,1,due);
+  showToast('\u{1F69B} Tedarik süresi '+days+' gün — sevkiyat görevi '+_toTR(due)+' tarihine vadeli.','#0284c7');
+}
+function _canSetLeadTime(){
+  const cu=state.currentUser; if(!cu) return false; if(cu.isAdmin) return true;
+  const u=(state.users||[]).find(x=>x.displayName===cu.displayName)||cu;
+  return userInDept(u,'satinalma');
+}
+// Sevkiyat görevi tamamlandı → bu sevkiyat için fatura görevi (teslimden 7 gün sonra; tahsilat mevcut zincirle ardından gelir) + kısmi sevkiyat sorusu.
+async function _onShipmentDone(rec){
+  const o=(state.opportunities||[]).find(x=>x.id===rec.linkId); if(!o) return;
+  const m=/^sevkiyat_.+_(\d+)$/.exec(rec.dedupeKey||''); const n=m?Number(m[1]):1;
+  const lbl=_wonLbl(o), done=String(rec.completedAt||today()).slice(0,10);
+  const ft=await autoCreateTask({ dedupeKey:'fatura_'+rec.id, title:'\u{1F9FE} Fatura kesimi — '+lbl+(n>1?' (Sevkiyat '+n+')':''),
+    dept:'fatura', context:'idari', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', dueDate:_addDays(done,7), priority:'orta' });
+  if(!ft) return;   // bu sevkiyat zaten işlendi (tekrar kapatma/yeniden açma): soru bir kez sorulur
+  if(confirm('"'+lbl+'" — Sevkiyat '+n+' tamamlandı; fatura görevi (teslimden 1 hafta sonra) açıldı.\n\nKalan / kısmi sevkiyat var mı?\n\nTamam = Evet, yeni sevkiyat planla\nİptal = Hayır, tüm sevkiyat bitti')){
+    const d=Number(String(prompt('Kalan sevkiyat için tahmini teslim süresi (gün):', String(o.leadTimeDays||''))||'').replace(',','.'));
+    if(d>0){ await ensureShipmentTask(o, n+1, _addDays(today(), d)); showToast('\u{1F69B} Sevkiyat '+(n+1)+' planlandı.','#0284c7'); }
+    else showToast('⚠ Süre girilmedi — yeni sevkiyat görevi açılmadı.','#d97706');
+  } else if(o.salesType==='sistem'){
+    // SON sevkiyat tamamlandı → sistem satışında devreye alma görevi açılır (check list KAZANILDI'da açılmıştı)
+    const dv=await ensureCommissioningTask(o, done);
+    if(dv) showToast('\u{1F527} Son sevkiyat tamamlandı — devreye alma görevi (teknik servis) açıldı.','#7c3aed');
+  }
+}
+// Sistem satışı: ürün sürecine ek olarak Check list (KAZANILDI'da) + devreye alma (SON sevkiyat tamamlanınca) — Teknik Servis.
+async function ensureSystemTasks(o){
+  const id=o.id, lbl=_wonLbl(o);
+  await autoCreateTask({ dedupeKey:'checklist_'+id, title:'\u{2705} Check list hazırlama ve uygulama — '+lbl, dept:'teknik', context:'servis', linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:14, priority:'orta' });
+  // Tür sonradan "Sistem" yapıldıysa ve tüm sevkiyatlar zaten tamamlandıysa devreye alma hemen açılır.
+  const sev=(state.tasks||[]).map(normTask).filter(t=>t.linkId===id && /^sevkiyat_/.test(t.dedupeKey||''));
+  if(sev.length && sev.every(taskIsClosed)) await ensureCommissioningTask(o, today());
+}
+// Devreye alma (teknik servis): son sevkiyatın teslim tarihinden 7 gün sonraya vadeli.
+async function ensureCommissioningTask(o, deliveredOn){
+  return autoCreateTask({ dedupeKey:'devreye_alma_'+o.id, title:'\u{1F527} Devreye alma (teknik servis) — '+_wonLbl(o),
+    desc:'Son sevkiyat teslim edildi; sistemin devreye alınması (check list ile birlikte) planlanmalı.',
+    dept:'teknik', context:'servis', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', dueDate:_addDays(String(deliveredOn).slice(0,10),7), priority:'yuksek' });
+}
+// Satış Türü'nü fırsata yazar; fırsat zaten KAZANILDI ise ilgili süreç hemen başlar/tamamlanır.
+async function setOppSalesType(oppId, type){
+  const o=(state.opportunities||[]).find(x=>x.id===oppId);
+  if(!o || o.salesType===type) return;
+  await _oppPatch(o, { salesType:type, ...stamp() });
+  const cur=(state.opportunities||[]).find(x=>x.id===oppId)||o;
+  if(cur.stage==='KAZANILDI') await applyWonFlow(cur);
+}
 // ═══ TEKLİF TALEBİ → FIRSAT ═══
 // Fırsat yalnız GÖNDERİLEN tekliften doğar (talep durumu ilk kez "Gönderildi" olunca). Yönetici elle fırsat açmaya devam eder.
 // Fırsat kimliği talep kimliğinden türetilir ('opp_'+talepId): çift kayıt/yarış durumunda aynı doküman, "yoksa oluştur" ile korunur.
@@ -2135,7 +2248,7 @@ async function proposalToOpportunity(prop){
       value:Number(prop.amount)||0, stage:'TEKLİF', jobStatus:JOB_ST[0], sector:SEC_O[0], assignedTo:prop.salesRep||'',
       dueDate:'', tenderRef:'', probability:50, notes:prop.notes||'',
       createdAt:today(), fiscalYear:Number(sent.slice(0,4))||activeFiscalYear(),     // mali yıl: teklifin GÖNDERİLDİĞİ yıl
-      source:'proposal', proposalId:prop.id, proposalSentDate:sent,
+      source:'proposal', proposalId:prop.id, proposalSentDate:sent, salesType:prop.salesType||'',
       ...(prop.quotationId ? { quotationId:prop.quotationId, quotationUrl:prop.quotationUrl||'', quotationStatus:prop.quotationStatus||'', ...(prop.quotationFormat?{quotationFormat:prop.quotationFormat}:{}) } : {}),
       ...stamp()
     };
@@ -2417,6 +2530,8 @@ async function saveProp(form, isEdit) {
   showToast('✅ Teklif kaydedildi!');
   // Potansiyelden açılan talep: potansiyel "Teklife dönüştü" olur
   try{ if(!isEdit && data.leadId){ const lp={ status:'Teklife dönüştü', proposalId:id, lastActivityAt:today(), ...stamp() }; await db.collection('leads').doc(String(data.leadId)).set(lp,{merge:true}); setState({ leads:(state.leads||[]).map(l=>l.id===data.leadId?{...l,...lp}:l) }); } }catch(e){}
+  // Satış türü sonradan değiştiyse bağlı fırsata da yansır (KAZANILDI ise ilgili süreç görevleri tamamlanır)
+  try{ if(isEdit && data.opportunityId && data.salesType && ((prevProp&&prevProp.salesType)||'')!==data.salesType) await setOppSalesType(data.opportunityId, data.salesType); }catch(e){}
   // Gönderildi → fırsat oluştur (yeni akış talepleri her kayıtta telafi eder; eski kayıtlar yalnız Gönderildi'ye geçişte)
   try{
     if(data.source!=='opportunity' && data.status==='Gönderildi' && !data.opportunityId && !data.oppSkip){
@@ -2883,6 +2998,9 @@ function buildOppModal(item) {
   const fJob=sel(JOB_ST,f.jobStatus,v=>f.jobStatus=v);
   const repOptions = [{v:'',l:'-- Seçin --'},...usersWithTargets().map(u=>({v:u.displayName,l:u.displayName}))];
   const fAssigned = sel(repOptions, f.assignedTo, v=>f.assignedTo=v);
+  const fLead = inp('Gün', f.leadTimeDays||'', v=>f.leadTimeDays=v, 'number');
+  if(!_canSetLeadTime()){ fLead.disabled=true; fLead.title='Tedarik süresini yalnız Satın Alma sorumlusu (veya yönetici) girer.'; fLead.style.background='#eef2f7'; fLead.style.cursor='not-allowed'; }
+  const fSalesType = sel([{v:'',l:'Seçin…'},...SALES_TYPES.map(t=>({v:t.v,l:t.l}))], f.salesType||'', v=>f.salesType=v);
   const fDue=inp('',f.dueDate,v=>f.dueDate=v,'date');
   // REF. salt-okunur: değer Teklif Programı'ndan (teklif hazırlandı/gönderildi → numara)
   // otomatik gelir. Manuel giriş kapalı — aksi halde sync üzerine yazardı.
@@ -2905,6 +3023,12 @@ function buildOppModal(item) {
     row(field('Aşama',fStage,true),field('Müteahhit',fContr,true)),
     row(field('İdare',fAdmin,true),field('Sektör',fSector,true)),
     row(field('İşin Durumu',fJob,true),field('Satış Temsilcisi',fAssigned,true)),
+    field('Satış Türü (KAZANILDI için zorunlu)',fSalesType),
+    (f.salesType==='urun'||f.salesType==='sistem') ? h('div',{},
+      field('Tedarik süresi (gün) — Satın Alma girer',fLead),
+      (f.leadTimeSetAt ? h('div',{style:{fontSize:'12px',color:'#0369a1',background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'8px',padding:'8px 12px',marginBottom:'10px'}},
+        '\u{1F69B} Tedarik süresi '+f.leadTimeDays+' gün · giren: '+(f.leadTimeSetBy||'-')+' · '+_toTR(f.leadTimeSetAt)+' · tahmini teslim: '+_toTR(f.expectedDelivery||'')+'. Sevkiyat tamamlanınca fatura görevi teslimden 1 hafta sonraya açılır.') : h('span'))
+    ) : h('span'),
     field('Ön Gör. Sipariş Tarihi',fDue),
     field(_refEdit?'Teklif Referansı (kazanılmış — yönetici düzeltebilir, örn. ...-R6)':'Teklif Referansı (tekliften otomatik)',fRef),
     (f.stage==='KAZANILDI' && item && ((f.tpLatestValue && Number(f.tpLatestValue)!==Number(f.value)) || (f.tpLatestRef && f.tpLatestRef!==f.tenderRef)))
@@ -2921,6 +3045,7 @@ function buildOppModal(item) {
           f.execActive=false;
         }
         if(!item){ const _sim=(state.opportunities||[]).filter(function(o){ return o.id!==f.id && ['KAÇTI','NO GO','FIRSAT ÖLDÜ'].indexOf(o.stage)<0 && _dupLevel(f,o)>0; }); if(_sim.length && !confirm('Aynı müşteriye benzer adlı fırsat(lar) var:\n\n'+_sim.slice(0,5).map(function(o){return '• '+(o.title||'')+' ['+(o.stage||'-')+']';}).join('\n')+'\n\nYine de yeni fırsat açılsın mı?')) return; }
+        if(f.stage==='KAZANILDI' && !f.salesType){ showToast('⚠ KAZANILDI için Satış Türü seçin (Ürün-Malzeme / Sistem / Anahtar Teslim).','#dc2626'); return; }
         // Teklifsiz KAZANILDI (yalnız yönetici): kazanma dayanağı sorulur, kayıt "elle kazanıldı" damgası alır.
         if(f.stage==='KAZANILDI' && !(item&&item.stage==='KAZANILDI') && !(f.quotationId && !f.quotationDeleted) && state.currentUser && state.currentUser.isAdmin && Number(f.value)>0){
           const _wb = prompt('Teklif Programı\'nda bağlı teklif yok.\n\nKazanma dayanağını yazın (ör. "Excel teklifi 12.10.2026 + sipariş mektubu"):', f.wonBasis||'');
@@ -2928,7 +3053,7 @@ function buildOppModal(item) {
           if(!_wb.trim()){ showToast('⛔ Kazanma dayanağı boş olamaz.','#dc2626'); return; }
           f.wonBasis=_wb.trim(); f.wonManual=true; f.wonManualBy=(state.currentUser.displayName||''); f.wonManualAt=today();
         }
-        saveOpp({...f,value:Number(f.value)||0},!!item);
+        saveOpp({...f,value:Number(f.value)||0,leadTimeDays:Number(f.leadTimeDays)||0},!!item);
       },'linear-gradient(135deg,#ea580c,#d97706)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#f1f5f9','#4a6080','11px 20px',{fontSize:'14px',border:'1px solid #b0c8e0',borderRadius:'9px'})
     )
@@ -3029,6 +3154,7 @@ function buildPropModal(item) {
   fSentDate.readOnly=true;
   fSentDate.tabIndex=-1;
   fSentDate.title='Teklif "Gönderildi" durumuna alındığında otomatik doldurulur';
+  const fSalesType=sel([{v:'',l:'Seçin…'},...SALES_TYPES.map(t=>({v:t.v,l:t.l}))], f.salesType||'', v=>f.salesType=v);
   const fSt=sel(PROP_ST.filter(s=>s!=='Gönderildi'||f.status==='Gönderildi'),f.status,v=>{
     f.status=v;
     if(v==='Gönderildi'&&!f.sentDate){f.sentDate=today();fSentDate.value=fmtSent(f.sentDate);}
@@ -3042,6 +3168,8 @@ function buildPropModal(item) {
     field('Fırsat Başlığı *',fTitle),
     row(field('Müşteri',fCust,true),field('Satış Temsilcisi *',fRep,true)),
     dupBox,
+    field('Satış Türü *',fSalesType),
+    h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'Ürün-Malzeme Satışı: sipariş, sevkiyat, fatura-tahsilat · Sistem Satışı: ürün süreci + check list + devreye alma · Anahtar Teslim: proje icrası. Kapsam değişirse sonradan değiştirebilirsiniz.'),
     row(field('Hazırlayan *',prepContainer,true),field('Durum',fSt,true)),
     h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'“Gönderildi” durumu elle seçilemez: teklif Teklif Programı’nda gönderilince otomatik atanır ve fırsat otomatik açılır.'),
     field('Fırsat bağlantısı (ops.)',fOpp),
@@ -3050,7 +3178,7 @@ function buildPropModal(item) {
     field('Gönderilme Tarihi (otomatik)',fSentDate),
     field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!_dupGate(f,item)) return;if(!f.validUntil && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Dead Line zorunlu — teklifin hazırlanıp gönderilmesi gereken tarihi girin.','#dc2626');return;}if(['Gönderildi','Revize','Onaylandı'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !(f.quotationId && !f.quotationDeleted)){showToast('⚠ Teklif hazırlanmadan "'+f.status+'" yapılamaz. Önce listeden "Teklif Oluştur" veya "Teklifi Kopyala" ile teklifi hazırlayın.','#dc2626');return;}if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!_dupGate(f,item)) return;if(!f.salesType && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Satış Türü zorunlu — Ürün-Malzeme / Sistem / Anahtar Teslim seçin.','#dc2626');return;}if(!f.validUntil && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Dead Line zorunlu — teklifin hazırlanıp gönderilmesi gereken tarihi girin.','#dc2626');return;}if(['Gönderildi','Revize','Onaylandı'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !(f.quotationId && !f.quotationDeleted)){showToast('⚠ Teklif hazırlanmadan "'+f.status+'" yapılamaz. Önce listeden "Teklif Oluştur" veya "Teklifi Kopyala" ile teklifi hazırlayın.','#dc2626');return;}if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -6434,7 +6562,7 @@ function renderProposals() {
       h('td',{style:{padding:'10px 11px',position:'sticky',left:'0',zIndex:'1',background:i%2===0?'#edf5fc':'#dde8f6',boxShadow:'3px 0 6px rgba(0,0,0,.1)'}},h('div',{style:{fontSize:'13px',fontWeight:'700',maxWidth:'158px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},p.title||'')),
       h('td',{style:{padding:'10px 11px',fontSize:'13px',color:T3}},c?.firmName||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',alignItems:'center',gap:'7px'}},h('div',{style:{width:'25px',height:'25px',borderRadius:'50%',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},(p.preparedBy||'?').split(' ').map(n=>n[0]).join('').slice(0,2)),h('span',{style:{fontSize:'12px',color:T2}},p.preparedBy||''))),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},_propStatusBadge(p),_legacy(p)?h('span',{title:'Fırsattan açılmış eski teklif kaydı',style:{marginLeft:'6px',fontSize:'10px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'2px 7px',borderRadius:'8px'}},'ESKİ'):h('span'),_noQuote(p)?h('span',{title:'Durum Gönderildi ama Teklif Programı\'nda bağlı teklif yok (eski elle kayıt)',style:{marginLeft:'6px',fontSize:'10px',fontWeight:'700',color:'#b91c1c',background:'#fee2e2',padding:'2px 7px',borderRadius:'8px',whiteSpace:'nowrap'}},'⚠ teklif bağlı değil'):h('span')),
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},_propStatusBadge(p),p.salesType?h('span',{title:'Satış türü',style:{marginLeft:'6px',fontSize:'10px',fontWeight:'700',color:'#fff',background:(SALES_TYPES.find(t=>t.v===p.salesType)||{}).c||'#64748b',padding:'2px 7px',borderRadius:'8px',whiteSpace:'nowrap'}},salesTypeLabel(p.salesType)):h('span'),_legacy(p)?h('span',{title:'Fırsattan açılmış eski teklif kaydı',style:{marginLeft:'6px',fontSize:'10px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'2px 7px',borderRadius:'8px'}},'ESKİ'):h('span'),_noQuote(p)?h('span',{title:'Durum Gönderildi ama Teklif Programı\'nda bağlı teklif yok (eski elle kayıt)',style:{marginLeft:'6px',fontSize:'10px',fontWeight:'700',color:'#b91c1c',background:'#fee2e2',padding:'2px 7px',borderRadius:'8px',whiteSpace:'nowrap'}},'⚠ teklif bağlı değil'):h('span')),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.createdAt||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.validUntil||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.sentDate||''),
@@ -10357,6 +10485,7 @@ async function taskApprove(t){
 
 function _triggerTaskChain(rec){
   if(!rec || !rec.title) return;
+  if(rec.linkType==='opportunity' && /^sevkiyat_/.test(rec.dedupeKey||'')) _onShipmentDone(rec).catch(function(){});
   TASK_CHAIN_RULES.forEach(rule=>{
     if(rec.title.indexOf('Fatura')>=0 && rule.trigger==='fatura'){
       const n = rule.next;
