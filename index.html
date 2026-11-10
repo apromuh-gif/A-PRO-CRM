@@ -791,14 +791,14 @@ function _teklifBtnsFor(o, pad, allowCreate){
   var _teklifClick=function(){var cust=state.customers.find(function(c){return c.id===o.customerId;});if(cust)teklifOlustur(cust,o.title,o.id,o._prop);else alert("Müşteri bulunamadı.");};
   if(!qId && !allowCreate) return [];
   if(!qId) return [
-    btn("📋 Teklif Oluştur",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}),
-    btn("⧉ Teklifi Kopyala",function(){teklifKopyala(o);},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',border:'1px solid #c4b5fd',borderRadius:'7px'})
+    btn("📋 Teklif Oluştur",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #86efac',borderRadius:'7px'}),
+    btn("⧉ Teklifi Kopyala",function(){teklifKopyala(o);},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #c4b5fd',borderRadius:'7px'})
   ];
   var crmSent=["Gönderildi","Revize","Randevu","Onaylandı","Reddedildi"];
   var qStatus=o.quotationStatus||(lp&&lp.quotationStatus);
   var isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);
-  var existing=isDraft?btn("✏️ Taslağı Aç",function(){openQuotationWithSSO(qId);},'#fffbeb','#b45309',pad,{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px'}):btn("🔗 Teklif Programı",function(){openQuotationWithSSO(qId);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});
-  var convertBtn=btn("🔄 Format",function(){convertQuotationFormat(qId,o.quotationFormat||(lp&&lp.quotationFormat)||"SYSTEM_SALES");},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',border:'1px solid #c4b5fd',borderRadius:'7px'});
+  var existing=isDraft?btn("✏️ Taslağı Aç",function(){openQuotationWithSSO(qId);},'#fffbeb','#b45309',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #fcd34d',borderRadius:'7px'}):btn("🔗 Teklif Programı",function(){openQuotationWithSSO(qId);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});
+  var convertBtn=btn("🔄 Format",function(){convertQuotationFormat(qId,o.quotationFormat||(lp&&lp.quotationFormat)||"SYSTEM_SALES");},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #c4b5fd',borderRadius:'7px'});
   var out=[existing,convertBtn];
   if(o.stage==='KAZANILDI'){
     _ensureStockStatus();
@@ -807,7 +807,7 @@ function _teklifBtnsFor(o, pad, allowCreate){
       var done=ss.allShipped, short=ss.shortageLines>0;
       var lbl=done?'Sevk edildi':(short?'Stok eksik ('+ss.shortageLines+')':'Rezerve');
       var bg=done?'#f1f5f9':(short?'#fef2f2':'#ecfdf5'), fg=done?'#475569':(short?'#b91c1c':'#15803d'), bd=done?'#cbd5e1':(short?'#fecaca':'#86efac');
-      out.push(btn([stockIcon(fg,14),lbl],function(){openStockWithSSO(qId);},bg,fg,pad,{fontSize:'12px',border:'1px solid '+bd,borderRadius:'7px',whiteSpace:'nowrap'}));
+      out.push(btn([stockIcon(fg,14),lbl],function(){openStockWithSSO(qId);},bg,fg,pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid '+bd,borderRadius:'7px',whiteSpace:'nowrap'}));
     }
   }
   return out;
@@ -2433,6 +2433,36 @@ async function trashAutoPurge(){
   }catch(e){ console.warn('Silinenler temizliği:', e && e.message); }
 }
 function _addDays(iso, n){ const d=_toDate(iso); if(!d) return ''; d.setDate(d.getDate()+Number(n)); return _ymd(d); }
+// Tek seferlik temizlik: 10.11.2026'DAN ÖNCE oluşturulmuş ve Teklif Programı'nda canlı teklifi OLMAYAN tüm talepler (durumu ne olursa olsun).
+// Bu tarihten itibaren açılan talepler (teklifi henüz hazırlanmamış taslaklar dahil) bu temizliğe ASLA girmez.
+const QUOTELESS_CUTOFF = '2026-11-10';
+function _quotelessProposals(){
+  return (state.proposals||[]).filter(function(p){
+    if(p.quotationId && !p.quotationDeleted) return false;                        // canlı teklifi var
+    const created = String(p.createdAt||'').slice(0,10);
+    return !created || created < QUOTELESS_CUTOFF;                                  // yalnız kesim tarihinden ÖNCE
+  });
+}
+async function deleteQuotelessProposals(){
+  if(!_isAdminUser()) return;
+  const list = _quotelessProposals();
+  if(!list.length){ showToast('Silinecek teklifsiz kayıt yok.','#0891b2'); return; }
+  const byPrep = {}; list.forEach(function(p){ const k=p.preparedBy||'(hazırlayan yok)'; byPrep[k]=(byPrep[k]||0)+1; });
+  const sample = list.slice(0,8).map(function(p){ return '• '+(p.title||'(başlıksız)')+' ['+(p.status||'-')+', '+String(p.createdAt||'').slice(0,10)+']'; }).join('\n');
+  const msg = '10.11.2026 öncesi oluşturulmuş, Teklif Programı\'nda teklifi hazırlanmamış '+list.length+' kayıt silinecek:\n\n'+sample+(list.length>8?('\n… ve '+(list.length-8)+' kayıt daha'):'')+
+    '\n\nHazırlayan dağılımı: '+Object.keys(byPrep).map(function(k){return k+' ('+byPrep[k]+')';}).join(', ')+
+    '\n\nEtkisi: Dashboard\'daki teklif sayıları/tutarları ve bu kişilerin teklif hazırlama/takip performansı bu kayıtlar olmadan hesaplanır. Fırsatlar etkilenmez.\n\n'+TRASH_DAYS+' gün boyunca "Silinenler"den geri yüklenebilir. Devam edilsin mi?';
+  if(!confirm(msg)) return;
+  let n=0;
+  for(const p of list){ try{ await _softMark('proposals', p, 'Teklifsiz eski kayıt temizliği (10.11.2026 öncesi)'); n++; }catch(e){} }
+  showToast('🧹 '+n+' teklifsiz kayıt silindi ('+TRASH_DAYS+' gün içinde geri yüklenebilir).','#16a34a');
+}
+function quotelessBar(){
+  if(!_isAdminUser()) return h('span');
+  const n = _quotelessProposals().length;
+  if(!n) return h('span');
+  return h('div',{style:{marginBottom:'10px',display:'inline-block',marginLeft:'8px'}}, btn('🧹 10.11.2026 öncesi teklifsiz kayıtları sil ('+n+')',()=>deleteQuotelessProposals(),'#fef2f2','#b91c1c','6px 12px',{fontSize:'12px',border:'1px solid #fecaca'}));
+}
 function trashCount(){ _trashInit(); return (state.trash.opportunities||[]).length + (state.trash.proposals||[]).length; }
 function trashLink(){
   if(!_isAdminUser()) return h('span');
@@ -2821,7 +2851,7 @@ function buildPropModal(item) {
   fSentDate.readOnly=true;
   fSentDate.tabIndex=-1;
   fSentDate.title='Teklif "Gönderildi" durumuna alındığında otomatik doldurulur';
-  const fSt=sel(PROP_ST,f.status,v=>{
+  const fSt=sel(PROP_ST.filter(s=>s!=='Gönderildi'||f.status==='Gönderildi'),f.status,v=>{
     f.status=v;
     if(v==='Gönderildi'&&!f.sentDate){f.sentDate=today();fSentDate.value=fmtSent(f.sentDate);}
     if(v!=='Gönderildi'&&!origSentDate&&f.sentDate){f.sentDate='';fSentDate.value='';}
@@ -2834,13 +2864,14 @@ function buildPropModal(item) {
     field('Fırsat Başlığı *',fTitle),
     row(field('Müşteri',fCust,true),field('Satış Temsilcisi *',fRep,true)),
     row(field('Hazırlayan *',prepContainer,true),field('Durum',fSt,true)),
+    h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'“Gönderildi” durumu elle seçilemez: teklif Teklif Programı’nda gönderilince otomatik atanır ve fırsat otomatik açılır.'),
     field('Fırsat bağlantısı (ops.)',fOpp),
     h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'Boş bırakırsan teklif “Gönderildi” olduğunda fırsat otomatik açılır (satış temsilcisi ve tutar buradan alınır). Mevcut bir fırsata bağlamak için seç.'),
-    row(field('Talep Tarihi',fCreated,true),field('Dead Line',fValid,true)),
+    row(field('Talep Tarihi',fCreated,true),field('Dead Line *',fValid,true)),
     field('Gönderilme Tarihi (otomatik)',fSentDate),
     field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!f.validUntil && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Dead Line zorunlu — teklifin hazırlanıp gönderilmesi gereken tarihi girin.','#dc2626');return;}if(['Gönderildi','Revize','Onaylandı'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !(f.quotationId && !f.quotationDeleted)){showToast('⚠ Teklif hazırlanmadan "'+f.status+'" yapılamaz. Önce listeden "Teklif Oluştur" veya "Teklifi Kopyala" ile teklifi hazırlayın.','#dc2626');return;}if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -6144,6 +6175,7 @@ function renderProposals() {
   // Artık hiçbir kayıt gizli değil; hangi görünümde ne olduğu ve sayısı açıkça yazılı.
   if(!state.propView) state.propView='aktif';
   const _legacy = p => p.source==='opportunity';                       // eski akış: fırsattan açılan teklif kaydı
+  const _noQuote = p => !_legacy(p) && ['Gönderildi','Revize','Onaylandı'].indexOf(p.status)>=0 && !(p.quotationId && !p.quotationDeleted);   // gönderildi denmiş ama bağlı teklif yok
   const _sentRecent = p => p.status==='Gönderildi' && p.sentDate && Math.floor((today0-_toDate(p.sentDate))/86400000)<=30;
   const _inView = {
     aktif:      p => !_legacy(p) && (p.status==='Hazırlanıyor' || p.status==='Revize' || _sentRecent(p)),
@@ -6153,8 +6185,14 @@ function renderProposals() {
   };
   const _viewDefs = [['aktif','Aktif'],['gonderilen','Gönderilenler'],['eski','Eski (fırsattan açılan)'],['tumu','Tümü']];
   const _viewCnt = {}; _viewDefs.forEach(([k])=>{ _viewCnt[k]=_fyProps.filter(_inView[k]).length; });
-  const viewBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-    ..._viewDefs.map(([k,l])=>btn(l+' ('+_viewCnt[k]+')',()=>{state.propView=k;render();},state.propView===k?'#1e3a6e':'#e8eef7',state.propView===k?'#fff':'#2a5080','7px 13px',{fontSize:'12px',border:'1px solid #b8c8de'})));
+  const _viewColor = { aktif:'#2563eb', gonderilen:'#16a34a', eski:'#d97706', tumu:'#7c3aed' };
+  const viewBar = h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'14px'}},
+    ..._viewDefs.map(([k,l])=>{
+      const on = state.propView===k, c = _viewColor[k];
+      const pill = h('span',{style:{marginLeft:'8px',background:on?'rgba(255,255,255,.28)':c,color:'#fff',borderRadius:'12px',padding:'1px 9px',fontSize:'12px',fontWeight:'800'}},String(_viewCnt[k]));
+      return btn([l,pill],()=>{state.propView=k;render();}, on?c:c+'18', on?'#fff':c, '10px 18px',
+        {fontSize:'14px',fontWeight:'800',borderRadius:'12px',border:'2px solid '+(on?c:c+'66'),boxShadow:on?'0 4px 12px '+c+'55':'none',whiteSpace:'nowrap'});
+    }));
   const propFiltered=_fyProps.filter(p=>{
     if(!(_inView[state.propView]||_inView.aktif)(p)) return false;
     if(pf.q){const _q=pf.q.toLowerCase();const _cn=(custById(p.customerId)?.firmName||'').toLowerCase();if(!(p.title||'').toLowerCase().includes(_q)&&!_cn.includes(_q)&&!(p.preparedBy||'').toLowerCase().includes(_q))return false;}
@@ -6206,12 +6244,12 @@ function renderProposals() {
       h('td',{style:{padding:'10px 11px',position:'sticky',left:'0',zIndex:'1',background:i%2===0?'#edf5fc':'#dde8f6',boxShadow:'3px 0 6px rgba(0,0,0,.1)'}},h('div',{style:{fontSize:'13px',fontWeight:'700',maxWidth:'158px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},p.title||'')),
       h('td',{style:{padding:'10px 11px',fontSize:'13px',color:T3}},c?.firmName||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',alignItems:'center',gap:'7px'}},h('div',{style:{width:'25px',height:'25px',borderRadius:'50%',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},(p.preparedBy||'?').split(' ').map(n=>n[0]).join('').slice(0,2)),h('span',{style:{fontSize:'12px',color:T2}},p.preparedBy||''))),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},badge(p.status,PS[p.status]||T3),_legacy(p)?h('span',{title:'Fırsattan açılmış eski teklif kaydı',style:{marginLeft:'6px',fontSize:'10px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'2px 7px',borderRadius:'8px'}},'ESKİ'):h('span')),
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},badge(p.status,PS[p.status]||T3),_legacy(p)?h('span',{title:'Fırsattan açılmış eski teklif kaydı',style:{marginLeft:'6px',fontSize:'10px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'2px 7px',borderRadius:'8px'}},'ESKİ'):h('span'),_noQuote(p)?h('span',{title:'Durum Gönderildi ama Teklif Programı\'nda bağlı teklif yok (eski elle kayıt)',style:{marginLeft:'6px',fontSize:'10px',fontWeight:'700',color:'#b91c1c',background:'#fee2e2',padding:'2px 7px',borderRadius:'8px',whiteSpace:'nowrap'}},'⚠ teklif bağlı değil'):h('span')),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.createdAt||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.validUntil||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.sentDate||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},p._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},p._editedBy),h('br'),h('span',{style:{color:T4}},p._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',minWidth:'250px'}},btn('Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),...propTeklifBtns(p,'6px 12px'),btn('Sil',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'nowrap',whiteSpace:'nowrap',alignItems:'center'}},btn('Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#1d4ed8','5px 10px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),...propTeklifBtns(p,'5px 9px'),btn('Sil',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','5px 10px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
   });
   const isMobP = window.innerWidth <= 768;
@@ -6220,7 +6258,7 @@ function renderProposals() {
       h('h2',{style:{fontSize:isMobP?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'📄 Teklif Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+propFiltered.length+'/'+state.proposals.length+')')),
       btn('+ Yeni Teklif Talebi',()=>setState({modal:{type:'proposal',item:null}}),'linear-gradient(135deg,#0284c7,#2563eb)','#fff',isMobP?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(2,132,199,.3)'})
     ),
-    trashLink(),
+    h('div',{style:{display:'flex',alignItems:'flex-start',flexWrap:'wrap'}}, trashLink(), quotelessBar()),
     fyEmptyBanner('proposals','teklif'),
     viewBar,
     propFilterBox,
@@ -6235,6 +6273,7 @@ function renderProposals() {
           h('div',{style:{display:'flex',flexWrap:'wrap',gap:'5px',marginBottom:'7px'}},
             badge(p.status,PS[p.status]||T3),
             _legacy(p)?h('span',{style:{fontSize:'10px',fontWeight:'700',color:'#92400e',background:'#fef3c7',padding:'3px 8px',borderRadius:'10px'}},'ESKİ'):h('span'),
+            _noQuote(p)?h('span',{style:{fontSize:'10px',fontWeight:'700',color:'#b91c1c',background:'#fee2e2',padding:'3px 8px',borderRadius:'10px'}},'⚠ teklif bağlı değil'):h('span'),
             c2?h('span',{style:{background:'#eff6ff',color:'#2563eb',padding:'3px 8px',borderRadius:'12px',fontSize:'11px',fontWeight:'600'}},c2.firmName):h('span'),
             p.preparedBy?h('span',{style:{background:'#faf5ff',color:'#7c3aed',padding:'3px 8px',borderRadius:'12px',fontSize:'11px'}},'👤 '+p.preparedBy):h('span')
           ),
@@ -11712,6 +11751,7 @@ function checkAllNotifications() {
       return;
     }
     if(p.status==='Onaylandı'||p.status==='Reddedildi') return;
+    if(!_propDeadlineEligible(p)) return;       // yalnız henüz GÖNDERİLMEMİŞ taslaklar (vadesinde gönderilip yanıt beklenen teklif "süresi geçti" sayılmaz)
     if(!p.validUntil) return;
     const diff=_diffDays(_toISO(p.validUntil));
     // 1 gün önce 08:00
@@ -11804,6 +11844,7 @@ function checkAllNotifications() {
   // Artık "telafili": oluşturma günü ile son gün arasında CRM ilk açıldığında oluşur (id sabit → çift görev olmaz).
   taxCalendarSync();
   proposalOppSweep();
+  proposalStaleSweep();
   leadStaleSweep();
   trashAutoPurge();
   monthlyAccountingSync();
@@ -11813,6 +11854,39 @@ function checkAllNotifications() {
 
 const _TR_AYLAR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
 // Son gün hafta sonuna denk gelirse bir sonraki Pazartesi'ye kaydırır (resmi tatil/bayram listesi YOK — elle kontrol edin).
+// Dead Line bildirimi/gecikme için uygun mu: yeni akış talebi, henüz gönderilmemiş (Hazırlanıyor/Revize). Gönderilmiş ve eski akış kayıtlar hariç.
+function _propDeadlineEligible(p){
+  return !!p && p.source!=='opportunity' && (p.status==='Hazırlanıyor' || p.status==='Revize') && !p.sentDate;
+}
+// Süresiz taslak kontrolü: teklifi hiç oluşturulmamış taslak — 7 gün: hazırlayana görev; 15 gün: yöneticiye görev.
+// Yalnız 10.11.2026 ve sonrasında açılan, yeni akış (source 'request') talepler için (eski kayıtlar gürültü üretmesin).
+function proposalStaleSweep(){
+  if(!state.currentUser || state.testMode) return;
+  const t0 = _toDate(today());
+  (state.proposals||[]).forEach(function(p){
+    if(p.source!=='request' || p.status!=='Hazırlanıyor') return;
+    if(p.quotationId && !p.quotationDeleted) return;
+    const created = String(p.createdAt||'').slice(0,10);
+    if(!created || created < QUOTELESS_CUTOFF) return;
+    const age = Math.floor((t0 - _toDate(created))/86400000);
+    if(age>=7 && p.preparedBy){
+      const k7 = 'prop_stale7_'+p.id;
+      if(!(state.tasks||[]).some(function(t){return t.dedupeKey===k7;}))
+        autoCreateTask({ id:k7, dedupeKey:k7, title:'\u{1F4C4} Teklif hazırlanmadı — '+(p.title||'Talep')+' ('+age+' gündür teklif oluşturulmadı)',
+          desc:'Teklif Talebi 7+ gündür taslakta ve Teklif Programı\'nda teklifi yok. Teklifi oluşturun veya talebi silin/Reddedildi yapın.',
+          dept:'proje', assignedTo:p.preparedBy, context:'genel', dueOffset:2, priority:'orta' });
+    }
+    if(age>=15){
+      (state.users||[]).filter(function(u){ return u.isAdmin && u.active!==false && u.displayName; }).forEach(function(u){
+        const k15 = 'prop_stale15_'+p.id+'_'+u.displayName;
+        if(!(state.tasks||[]).some(function(t){return t.dedupeKey===k15;}))
+          autoCreateTask({ id:k15, dedupeKey:k15, title:'\u{1F6A8} 15+ gündür teklifsiz talep — '+(p.title||'Talep')+' ('+(p.preparedBy||'-')+')',
+            desc:'Teklif Talebi 15+ gündür taslakta, teklif hazırlanmadı. Hazırlayanla görüşün; gerekirse talebi silin.',
+            dept:'proje', assignedTo:u.displayName, context:'genel', dueOffset:3, priority:'yuksek' });
+      });
+    }
+  });
+}
 function _taxBizDay(dt){
   const d = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
   const w = d.getDay();
@@ -12057,6 +12131,7 @@ async function syncQuotationRefs() {
     let updatedOpps = [...state.opportunities];
     let updatedProps = [...state.proposals];
     let changed = false, clearedCount = 0, restoredCount = 0, relinkedCount = 0;
+    const autoSent = [];   // Teklif Programı'nda gönderilen tekliflerin talepleri (aşağıda fırsata dönüştürülür)
 
     // Bağlantısı kopmuş veya silinmiş teklife bağlı fırsatları REF. numarasından kurtar.
     // quotationDeleted:true olanlar da dahil — silinmiş teklif yerine REF ile doğru teklife yeniden bağlar.
@@ -12168,6 +12243,15 @@ async function syncQuotationRefs() {
           changed = true;
           p.amount = total;
         }
+        // Teklif Programı'nda teklif GÖNDERİLDİ (SENT; onaylı/reddedilmiş de gönderilmiş demektir) → talep durumu otomatik "Gönderildi".
+        // Gönderildi elle seçilemez; tek kaynak Teklif Programı'dır. Eski akış (fırsattan açılan) kayıtlara dokunulmaz.
+        if (p.source !== 'opportunity' && p.status === 'Hazırlanıyor' && ['SENT','APPROVED','REJECTED'].indexOf(d.status) >= 0) {
+          const sentUpd = { ...p, status: 'Gönderildi', sentDate: p.sentDate || today(), quotationStatus: d.status, ...syncStamp(lastEditor, lastEditedAt) };
+          await saveDoc('proposals', p.id, sentUpd);
+          updatedProps = updatedProps.map(x => x.id === p.id ? sentUpd : x);
+          changed = true; autoSent.push(sentUpd);
+          continue;
+        }
         if (d.status == null || d.status === p.quotationStatus) {
           const es = editorStampIfNewer(p, lastEditor, lastEditedAt);
           if (!es) continue;
@@ -12190,6 +12274,13 @@ async function syncQuotationRefs() {
       requestAnimationFrame(() => {
         [...document.querySelectorAll('.apro-no-sb')].forEach((el, i) => { if (_scrollSave[i]) el.scrollLeft = _scrollSave[i]; });
       });
+    }
+    // Otomatik "Gönderildi" olan talepler için fırsatı oluştur (yönetici olmayan oturumda da kuralla izinlidir: talep Gönderildi)
+    for (const sp of autoSent) {
+      try {
+        if (!sp.opportunityId && !sp.oppSkip) { await proposalToOpportunity(sp); showToast('🎯 "' + (sp.title||'Teklif') + '" Teklif Programı\'nda gönderildi — fırsat otomatik oluşturuldu.', '#16a34a'); }
+        else showToast('📨 "' + (sp.title||'Teklif') + '" gönderildi olarak işlendi.', '#0284c7');
+      } catch (e) { showToast('⚠ Fırsat oluşturulamadı: ' + ((e && e.message) || e), '#d97706'); }
     }
     if (clearedCount > 0) showToast('🧹 ' + clearedCount + ' teklif teklif programında silinmiş — buton "Teklif Oluştur"a döndü. Teklif geri alınırsa bağlantı kendiliğinden onarılır.');
     if (restoredCount > 0) showToast('↩️ ' + restoredCount + ' teklif geri alınmış — CRM bağlantısı otomatik onarıldı.');
