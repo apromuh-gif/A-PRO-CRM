@@ -6315,10 +6315,9 @@ function renderProposals() {
   // Etkin durum: eski akış kayıtlarında rozet Teklif Programı'ndaki gerçek durumu gösterir; görünümler de AYNI durumu kullanır (rozet ile sekme çelişmesin).
   const _TP2ST = { DRAFT:'Hazırlanıyor', PREPARED:'Hazırlanıyor', SENT:'Gönderildi', APPROVED:'Onaylandı', REJECTED:'Reddedildi' };
   const _eff = p => (_legacy(p) && p.status!=='Revize' && !p.quotationDeleted && _TP2ST[p.quotationStatus]) || p.status;
-  const _sentRecent = p => _eff(p)==='Gönderildi' && p.sentDate && Math.floor((today0-_toDate(p.sentDate))/86400000)<=30;
   const _inView = {
     // Eski akış kayıtları da (durumları Teklif Programı'na göre güncel) bu iki görünüme DAHİL; 'Eski' görünümü yalnız kaynak süzgecidir.
-    aktif:      p => (_eff(p)==='Hazırlanıyor' || _eff(p)==='Revize' || _sentRecent(p)),
+    aktif:      p => (_eff(p)==='Hazırlanıyor' || _eff(p)==='Revize'),   // yalnız devam eden teklif çalışmaları; gönderilenler 'Gönderilenler'de
     gonderilen: p => _eff(p)!=='Hazırlanıyor',
     eski:       p => _legacy(p),
     tumu:       p => true
