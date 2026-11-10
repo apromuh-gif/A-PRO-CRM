@@ -6312,10 +6312,14 @@ function renderProposals() {
   if(!state.propView) state.propView='aktif';
   const _legacy = p => p.source==='opportunity';                       // eski akış: fırsattan açılan teklif kaydı
   const _noQuote = p => !_legacy(p) && ['Gönderildi','Revize','Onaylandı'].indexOf(p.status)>=0 && !(p.quotationId && !p.quotationDeleted);   // gönderildi denmiş ama bağlı teklif yok
-  const _sentRecent = p => p.status==='Gönderildi' && p.sentDate && Math.floor((today0-_toDate(p.sentDate))/86400000)<=30;
+  // Etkin durum: eski akış kayıtlarında rozet Teklif Programı'ndaki gerçek durumu gösterir; görünümler de AYNI durumu kullanır (rozet ile sekme çelişmesin).
+  const _TP2ST = { DRAFT:'Hazırlanıyor', PREPARED:'Hazırlanıyor', SENT:'Gönderildi', APPROVED:'Onaylandı', REJECTED:'Reddedildi' };
+  const _eff = p => (_legacy(p) && p.status!=='Revize' && !p.quotationDeleted && _TP2ST[p.quotationStatus]) || p.status;
+  const _sentRecent = p => _eff(p)==='Gönderildi' && p.sentDate && Math.floor((today0-_toDate(p.sentDate))/86400000)<=30;
   const _inView = {
-    aktif:      p => !_legacy(p) && (p.status==='Hazırlanıyor' || p.status==='Revize' || _sentRecent(p)),
-    gonderilen: p => !_legacy(p) && p.status!=='Hazırlanıyor',
+    // Eski akış kayıtları da (durumları Teklif Programı'na göre güncel) bu iki görünüme DAHİL; 'Eski' görünümü yalnız kaynak süzgecidir.
+    aktif:      p => (_eff(p)==='Hazırlanıyor' || _eff(p)==='Revize' || _sentRecent(p)),
+    gonderilen: p => _eff(p)!=='Hazırlanıyor',
     eski:       p => _legacy(p),
     tumu:       p => true
   };
@@ -6391,7 +6395,7 @@ function renderProposals() {
   const isMobP = window.innerWidth <= 768;
   return h('div',{style:{animation:'fu .3s ease'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
-      h('h2',{style:{fontSize:isMobP?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'📄 Teklif Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+propFiltered.length+'/'+state.proposals.length+')')),
+      h('h2',{style:{fontSize:isMobP?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'📄 Teklif Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+propFiltered.length+'/'+_fyProps.length+')')),
       btn('+ Yeni Teklif Talebi',()=>setState({modal:{type:'proposal',item:null}}),'linear-gradient(135deg,#0284c7,#2563eb)','#fff',isMobP?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(2,132,199,.3)'})
     ),
     h('div',{style:{display:'flex',alignItems:'flex-start',flexWrap:'wrap'}}, trashLink(), quotelessBar(), dupReportBtn()),
