@@ -466,6 +466,10 @@ function tpRefWithRev(d) {
   if (Number.isFinite(rev) && rev >= 2 && !/-R\d+$/.test(base)) return base + '-R' + (rev - 1);
   return base;
 }
+// KAZANILDI (sözleşmeye dönmüş) fırsatta tutar ve REF. DONAR: Teklif Programı'nda sonradan açılan/aktif edilen revizyon (çalışma kopyası)
+// kazanılan rakamı, dashboard'u ve kazanılan toplamı değiştirmesin. Güncel revizyon yalnız bilgi olarak (tpLatestValue/tpLatestRef) tutulur.
+// Değer 0 ise donmaz (ilk eşitleme doldurabilsin). Tutarı değiştirmek yalnız fırsat düzenleme penceresinden (elle) yapılır.
+function _oppWonFrozen(o){ return !!o && o.stage==='KAZANILDI' && Number(o.value)>0; }
 // Fırsat değeri daima EUR: API grandTotalEur (EUR'ya çevrilmiş) döndürür; yoksa ham toplama düşer.
 function tpValueEur(d) {
   const v = d && (d.grandTotalEur ?? d.grandTotal);
@@ -555,8 +559,10 @@ async function openQuotationWithSSO(quotationId, existingWin) {
           const tpFormat = chkBody.data.format ?? null;
           const upd = { ...o,
             ...(tpStatus   !== null && { quotationStatus: tpStatus }),
-            ...(tpTotal    !== null && tpTotal > 0 && { value: tpTotal }),
-            ...(tpReference !== null && { tenderRef: tpReference }),
+            ...(tpTotal    !== null && tpTotal > 0 && !_oppWonFrozen(o) && { value: tpTotal }),
+            ...(tpReference !== null && !(_oppWonFrozen(o) && o.tenderRef) && { tenderRef: tpReference }),
+            ...(_oppWonFrozen(o) && tpTotal !== null && tpTotal > 0 && { tpLatestValue: tpTotal }),
+            ...(_oppWonFrozen(o) && tpReference !== null && { tpLatestRef: tpReference }),
             ...(tpSalesRep  !== null && tpSalesRep !== '' && { assignedTo: tpSalesRep }),
             ...(tpFormat   !== null && { quotationFormat: tpFormat }),
             ...syncStamp(tpLastEditor, tpLastEditedAt)
@@ -2881,11 +2887,12 @@ function buildOppModal(item) {
   // REF. salt-okunur: değer Teklif Programı'ndan (teklif hazırlandı/gönderildi → numara)
   // otomatik gelir. Manuel giriş kapalı — aksi halde sync üzerine yazardı.
   const fRef=h('input',{placeholder:'Teklif hazırlandığında otomatik gelecek',value:f.tenderRef||'',
-    readOnly:true,title:'REF. teklif programından otomatik gelir; elle düzenlenemez.',
+    readOnly:!(state.currentUser&&state.currentUser.isAdmin&&item&&item.stage==='KAZANILDI'),title:'REF. teklif programından otomatik gelir; yalnız kazanılmış fırsatta yönetici elle düzeltebilir (sözleşme revizyonu).',
     style:{width:'100%',padding:'9px 12px',background:'#eef2f7',border:`1px solid ${G4}`,borderRadius:'8px',color:'#64748b',fontSize:'13px',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",outline:'none',cursor:'not-allowed'}});
   const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
 
+  fRef.addEventListener('input',e=>{ if(!fRef.readOnly) f.tenderRef=e.target.value; });
   const probLabel = lbl(`Olasılık %${f.probability}`);
   const fProb=h('input',{type:'range',min:'0',max:'100',value:f.probability,style:{width:'100%',marginTop:'8px',accentColor:'#6366f1'}});
   fProb.addEventListener('input',e=>{f.probability=Number(e.target.value);probLabel.textContent=`Olasılık %${f.probability}`;});
@@ -2898,6 +2905,10 @@ function buildOppModal(item) {
     row(field('İşin Durumu',fJob,true),field('Satış Temsilcisi',fAssigned,true)),
     field('Ön Gör. Sipariş Tarihi',fDue),
     field('Teklif Referansı (tekliften otomatik)',fRef),
+    (f.stage==='KAZANILDI' && item && ((f.tpLatestValue && Number(f.tpLatestValue)!==Number(f.value)) || (f.tpLatestRef && f.tpLatestRef!==f.tenderRef)))
+      ? h('div',{style:{fontSize:'12px',color:'#1e40af',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'8px',padding:'8px 12px',marginBottom:'10px'}},
+          '🔒 Kazanılan tutar ve REF. sabit (dashboard bu rakamı kullanır). Teklif Programı\'ndaki güncel revizyon: '+(f.tpLatestRef||'-')+' · '+(f.tpLatestValue?Number(f.tpLatestValue).toLocaleString('tr-TR')+' €':'-')+' — yalnız bilgi. Sözleşme tutarı değiştiyse "Değer (€)" alanını elle güncelleyin.')
+      : h('span'),
     f.wonManual ? h('div',{style:{fontSize:'12px',color:'#92400e',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'8px 12px',marginBottom:'10px'}},'📝 Elle kazanıldı (teklifsiz) — '+(f.wonManualBy||'-')+' · '+_toTR(f.wonManualAt||'')+' · Dayanak: '+(f.wonBasis||'-')) : h('span'),
     h('div',{style:{display:'flex',gap:'10px',marginTop:'4px'}},
       btn('Kaydet',()=>{
@@ -12395,8 +12406,11 @@ async function syncQuotationRefs() {
       for (const o of updatedOpps.filter(x => x.quotationId === qid)) {
         const patch = {};
         if (d.status != null && d.status !== o.quotationStatus) patch.quotationStatus = d.status;
-        if (ref != null && ref !== o.tenderRef) patch.tenderRef = ref;
-        if (total != null && total > 0 && total !== o.value) patch.value = total;
+        const _frz = _oppWonFrozen(o);   // kazanılmış fırsat: tutar/REF. donar, güncel revizyon yalnız bilgi alanına yazılır
+        if (ref != null && ref !== o.tenderRef) { if (_frz && o.tenderRef) { if (ref !== o.tpLatestRef) patch.tpLatestRef = ref; } else patch.tenderRef = ref; }
+        else if (_frz && ref != null && ref !== o.tpLatestRef) patch.tpLatestRef = ref;
+        if (total != null && total > 0 && total !== o.value) { if (_frz) { if (total !== o.tpLatestValue) patch.tpLatestValue = total; } else patch.value = total; }
+        else if (_frz && total != null && total > 0 && total !== o.tpLatestValue) patch.tpLatestValue = total;
         if (d.salesRep && d.salesRep !== o.assignedTo) patch.assignedTo = d.salesRep;
         if (d.format && d.format !== o.quotationFormat) patch.quotationFormat = d.format;
         if (Object.keys(patch).length === 0) {
