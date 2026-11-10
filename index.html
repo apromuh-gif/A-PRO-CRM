@@ -2087,8 +2087,8 @@ async function saveOpp(form, isEdit) {
   const list = isEdit ? state.opportunities.map(o=>o.id===id?data:o) : [...state.opportunities, data];
   setState({opportunities:list, modal:null, saving:false});
   showToast('✅ Fırsat kaydedildi!');
-  // Teklifsiz (elle) KAZANILDI → proje icrası otomatik başlar (ayrı "İcraya başlat" adımı gerekmez).
-  if (data.wonManual === true && data.stage === 'KAZANILDI' && data.execActive !== true && !(prevOpp && prevOpp.stage === 'KAZANILDI')) {
+  // KAZANILDI'ya her geçişte (teklifli ya da teklifsiz) proje icrası otomatik başlar (ayrı "İcraya başlat" adımı gerekmez).
+  if (data.stage === 'KAZANILDI' && data.execActive !== true && !(prevOpp && prevOpp.stage === 'KAZANILDI')) {
     try { await projStart(data); showToast('🏗 Proje icrası otomatik başlatıldı.', '#16a34a'); }
     catch (e) { showToast('⚠ Fırsat kaydedildi ama icra başlatılamadı: ' + ((e && e.message) || e) + ' — Projeler sekmesinden "İcraya başlat" ile başlatın.', '#d97706'); }
   }
@@ -2096,14 +2096,20 @@ async function saveOpp(form, isEdit) {
   if (data.stage === 'KAZANILDI' && data.quotationId) approveWonQuotation(data, !!(prevOpp && prevOpp.stage !== 'KAZANILDI'));
   // Stok: KAZANILDI'dan çıkıldıysa (KAÇTI / NO GO / ERTELENDİ vb.) rezerv serbest kalır.
   if (prevOpp && prevOpp.stage === 'KAZANILDI' && data.stage !== 'KAZANILDI' && prevOpp.quotationId) releaseQuotationStock(prevOpp.quotationId);
-  // GAP 2: KAZANILDI → muhasebeye sipariş onay + sipariş formu görevleri
+  // GAP 2: KAZANILDI → muhasebeye sipariş onay + sipariş formu görevleri (dedupeKey'li: icra başlatılırken de çağrılır, çift oluşmaz)
   if (data.stage === 'KAZANILDI' && (!prevOpp || prevOpp.stage !== 'KAZANILDI')) {
-    const cn = _custName(data.customerId);
-    const lbl = (data.title||'Proje') + (cn ? ' — ' + cn : '');
-    // Proje Grubu → Satın Alma sorumlusuna (Satın Alma işaretli kişi yoksa Proje Grubu'nda en az yüklü kişiye).
-    autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:5, priority:'yuksek' });
-    autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:7, priority:'orta' });
+    await ensureOrderTasks(data);
   }
+}
+// Sipariş onay takibi + Sipariş formu hazırlama görevleri. dedupeKey sabit ('siparis_onay_<id>' / 'siparis_form_<id>') → aynı fırsat için ikinci kez oluşmaz.
+// KAZANILDI'da ve "İcraya başlat"ta çağrılır (görevler silinmişse icra başlarken yeniden açılır).
+async function ensureOrderTasks(o){
+  const id = o.id;
+  const cn = _custName(o.customerId);
+  const lbl = (o.title||'Proje') + (cn ? ' — ' + cn : '');
+  // Proje Grubu → Satın Alma sorumlusuna (Satın Alma işaretli kişi yoksa Proje Grubu'nda en az yüklü kişiye).
+  await autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:5, priority:'yuksek' });
+  await autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:7, priority:'orta' });
 }
 // ═══ TEKLİF TALEBİ → FIRSAT ═══
 // Fırsat yalnız GÖNDERİLEN tekliften doğar (talep durumu ilk kez "Gönderildi" olunca). Yönetici elle fırsat açmaya devam eder.
@@ -9468,6 +9474,7 @@ async function projStart(o){
     execStageHistory:[...(o.execStageHistory||[]), {stage:'teknik', at:now, by:me}] });
   await personelSaveDoc('opportunities', upd);
   await suggestStageTasks(upd, 'teknik', {silent:true});
+  await ensureOrderTasks(upd);   // sipariş onay + sipariş formu (varsa yeniden oluşturmaz)
   // İcra ile birlikte: Mobilizasyon ve saha giriş işlemleri → İdari İşler (Muhasebe & İdari İşler departmanı, en az yüklü kişi)
   const cn=_custName(o.customerId); const lbl=(o.title||'Proje')+(cn?' — '+cn:'');
   autoCreateTask({ dedupeKey:'mobilizasyon_'+o.id, title:'\u{1F69A} Mobilizasyon ve saha giriş işlemleri — '+lbl, dept:'muhasebe', context:'idari', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'Proje', execStage:'saha', dueOffset:5, priority:'orta' });
