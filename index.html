@@ -2886,9 +2886,11 @@ function buildOppModal(item) {
   const fDue=inp('',f.dueDate,v=>f.dueDate=v,'date');
   // REF. salt-okunur: değer Teklif Programı'ndan (teklif hazırlandı/gönderildi → numara)
   // otomatik gelir. Manuel giriş kapalı — aksi halde sync üzerine yazardı.
+  const _refEdit = !!(state.currentUser&&state.currentUser.isAdmin&&item&&item.stage==='KAZANILDI');   // kazanılmış fırsatta yönetici REF.'i (sözleşme revizyonu) elle düzeltebilir
   const fRef=h('input',{placeholder:'Teklif hazırlandığında otomatik gelecek',value:f.tenderRef||'',
-    readOnly:!(state.currentUser&&state.currentUser.isAdmin&&item&&item.stage==='KAZANILDI'),title:'REF. teklif programından otomatik gelir; yalnız kazanılmış fırsatta yönetici elle düzeltebilir (sözleşme revizyonu).',
+    readOnly:!_refEdit,title:'REF. teklif programından otomatik gelir; yalnız kazanılmış fırsatta yönetici elle düzeltebilir (sözleşme revizyonu).',
     style:{width:'100%',padding:'9px 12px',background:'#eef2f7',border:`1px solid ${G4}`,borderRadius:'8px',color:'#64748b',fontSize:'13px',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",outline:'none',cursor:'not-allowed'}});
+  if(_refEdit){ fRef.style.background='#fff'; fRef.style.color=T1; fRef.style.cursor='text'; fRef.style.border='2px solid #2563eb'; }
   const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
 
@@ -2904,7 +2906,7 @@ function buildOppModal(item) {
     row(field('İdare',fAdmin,true),field('Sektör',fSector,true)),
     row(field('İşin Durumu',fJob,true),field('Satış Temsilcisi',fAssigned,true)),
     field('Ön Gör. Sipariş Tarihi',fDue),
-    field('Teklif Referansı (tekliften otomatik)',fRef),
+    field(_refEdit?'Teklif Referansı (kazanılmış — yönetici düzeltebilir, örn. ...-R6)':'Teklif Referansı (tekliften otomatik)',fRef),
     (f.stage==='KAZANILDI' && item && ((f.tpLatestValue && Number(f.tpLatestValue)!==Number(f.value)) || (f.tpLatestRef && f.tpLatestRef!==f.tenderRef)))
       ? h('div',{style:{fontSize:'12px',color:'#1e40af',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'8px',padding:'8px 12px',marginBottom:'10px'}},
           '🔒 Kazanılan tutar ve REF. sabit (dashboard bu rakamı kullanır). Teklif Programı\'ndaki güncel revizyon: '+(f.tpLatestRef||'-')+' · '+(f.tpLatestValue?Number(f.tpLatestValue).toLocaleString('tr-TR')+' €':'-')+' — yalnız bilgi. Sözleşme tutarı değiştiyse "Değer (€)" alanını elle güncelleyin.')
