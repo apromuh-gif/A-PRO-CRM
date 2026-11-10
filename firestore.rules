@@ -36,8 +36,38 @@ service cloud.firestore {
     // --- İş verileri: oturum açmış kullanıcı okur/yazar ---
     match /customers/{id}     { allow read, write: if signedIn(); }
     match /suppliers/{id}     { allow read, write: if signedIn(); }
-    match /opportunities/{id} { allow read, write: if signedIn(); }
-    match /proposals/{id}     { allow read, write: if signedIn(); }
+    // Fırsatlar: OLUŞTURMA yalnız yönetici (elle) ya da gönderilen teklif talebinden otomatik (kimlik 'opp_'+talepId ve talep durumu 'Gönderildi').
+    // Okuma/güncelleme/silme: oturum açmış herkes (mevcut kullanım korunur).
+    // Silme: yumuşak silme (deletedAt) yalnız yönetici yazabilir; kalıcı silme yalnız yönetici (30 gün sonra otomatik temizlik de yönetici oturumundadır).
+    match /opportunities/{id} {
+      allow read: if signedIn();
+      allow update: if signedIn() && (isAdmin() || request.resource.data.get('deletedAt', '') == '');
+      allow delete: if isAdmin();
+      allow create: if isAdmin() || (
+        signedIn()
+        && request.resource.data.get('proposalId', '') != ''
+        && id == 'opp_' + request.resource.data.proposalId
+        && exists(/databases/$(database)/documents/proposals/$(request.resource.data.proposalId))
+        && get(/databases/$(database)/documents/proposals/$(request.resource.data.proposalId)).data.status == 'Gönderildi'
+      );
+    }
+    // Teklif talebi: silme (deletedAt) yönetici ya da — yalnız "Hazırlanıyor", fırsatsız taslağı için — talebi giren/hazırlayan/satış temsilcisi.
+    // Kalıcı silme yalnız yönetici.
+    match /proposals/{id} {
+      allow read, create: if signedIn();
+      allow update: if signedIn() && (
+        request.resource.data.get('deletedAt', '') == ''
+        || isAdmin()
+        || (resource.data.get('status', '') == 'Hazırlanıyor' && resource.data.get('opportunityId', '') == ''
+            && (resource.data.get('preparedBy', '') == myName() || resource.data.get('salesRep', '') == myName() || resource.data.get('createdBy', '') == myName()))
+      );
+      allow delete: if isAdmin();
+    }
+    // Potansiyeller (erken aşama takip; fırsat/prim/hedefe girmez): herkes okur/yazar. Silme: yönetici veya kaydı açan.
+    match /leads/{id} {
+      allow read, create, update: if signedIn();
+      allow delete: if isAdmin() || resource.data.get('createdBy', '') == myName();
+    }
     // Servis/fırsat silme: yalnız admin (imzalı belge bağlı olabilir).
     match /services/{id} {
       allow read: if signedIn();

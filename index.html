@@ -770,10 +770,22 @@ async function convertQuotationFormat(quotationId,currentFormat){
   }
 }
 
-function oppTeklifBtns(o, pad){
-  const lp=state.proposals.find(function(p){return p.opportunityId===o.id&&p.quotationId&&!p.quotationDeleted;});
+// Fırsat satırı: yalnız MEVCUT teklifin düğmeleri (Taslağı Aç / Teklif Programı / Format / Stok). Oluştur-Kopyala-Bağla artık Teklif Talebi satırında.
+function oppTeklifBtns(o, pad){ return _teklifBtnsFor(o, pad, false); }
+// Teklif Talebi satırı: teklif yoksa Oluştur/Kopyala/Bağla, varsa Taslağı Aç/Format.
+function propTeklifBtns(p, pad){
+  if(p.source==='opportunity') return [];
+  const real=p.opportunityId?(state.opportunities||[]).find(function(o){return o.id===p.opportunityId;}):null;
+  const po={ id:(real&&real.id)||'', title:p.title, customerId:p.customerId, assignedTo:(p.salesRep||(real&&real.assignedTo)||''),
+    quotationId:p.quotationId||'', quotationDeleted:!!p.quotationDeleted, quotationStatus:p.quotationStatus, quotationFormat:p.quotationFormat,
+    stage:real&&real.stage, _prop:p };
+  return _teklifBtnsFor(po, pad, true);
+}
+function _teklifBtnsFor(o, pad, allowCreate){
+  const lp=o._prop ? (o._prop.quotationDeleted?null:o._prop) : (o.id?state.proposals.find(function(p){return p.opportunityId===o.id&&p.quotationId&&!p.quotationDeleted;}):null);
   const qId=(o.quotationDeleted?'':o.quotationId)||(lp&&lp.quotationId);
-  var _teklifClick=function(){var cust=state.customers.find(function(c){return c.id===o.customerId;});if(cust)teklifOlustur(cust,o.title,o.id);else alert("Müşteri bulunamadı.");};
+  var _teklifClick=function(){var cust=state.customers.find(function(c){return c.id===o.customerId;});if(cust)teklifOlustur(cust,o.title,o.id,o._prop);else alert("Müşteri bulunamadı.");};
+  if(!qId && !allowCreate) return [];
   if(!qId) return [
     btn("📋 Teklif Oluştur",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}),
     btn("⧉ Teklifi Kopyala",function(){teklifKopyala(o);},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',border:'1px solid #c4b5fd',borderRadius:'7px'}),
@@ -801,13 +813,22 @@ function oppTeklifBtns(o, pad){
 // Teklifi fırsata ve (varsa/yoksa oluşturarak) fırsat-teklif talebi kaydına bağlar. Bağla ve Kopyala ortak kullanır.
 async function attachQuotationToOpportunity(o, quotationId, quotationUrl, status, format) {
   const st = status || 'DRAFT';
+  // Teklif Talebi satırından gelen çağrı: henüz fırsat yoksa teklif yalnız talebe bağlanır
+  if (o && o._prop && !o.id) {
+    const p0 = (state.proposals||[]).find(x => x.id === o._prop.id) || o._prop;
+    const pUpd0 = { ...p0, quotationId, quotationUrl, quotationDeleted: false, quotationStatus: st, ...(format ? { quotationFormat: format } : {}), ...stamp() };
+    await saveDoc('proposals', p0.id, pUpd0);
+    setState({ proposals: (state.proposals||[]).map(p => p.id === p0.id ? pUpd0 : p) });
+    return;
+  }
+  if (o && o._prop && o.id) o = (state.opportunities||[]).find(x => x.id === o.id) || o;   // gerçek fırsat kaydı (sahte alanlar yazılmasın)
   const oppUpd = { ...o, quotationId, quotationUrl, quotationDeleted: false, quotationStatus: st, ...(format ? { quotationFormat: format } : {}), ...stamp() };
   await saveDoc('opportunities', o.id, oppUpd);
   // Bu fırsata ait bağsız (veya silinmiş bağlı) talep varsa onu güncelle, yoksa yeni oluştur
   const existingProp = state.proposals.find(p => p.opportunityId === o.id && (!p.quotationId || p.quotationDeleted));
   let proposals;
   if (existingProp) {
-    const pUpd = { ...existingProp, quotationId, quotationUrl, quotationDeleted: false, quotationStatus: st, source: 'opportunity', ...stamp() };
+    const pUpd = { ...existingProp, quotationId, quotationUrl, quotationDeleted: false, quotationStatus: st, source: (existingProp.source==='request' ? 'request' : 'opportunity'), ...stamp() };
     await saveDoc('proposals', existingProp.id, pUpd);
     proposals = state.proposals.map(p => p.id === existingProp.id ? pUpd : p);
   } else {
@@ -931,7 +952,7 @@ async function teklifKopyala(o) {
         crmOpportunityId: o.id || '',
         crmOpportunityTitle: o.title || '',
         salesRep: o.assignedTo || state.currentUser?.displayName || '',
-        preparedBy: state.currentUser?.displayName || '',
+        preparedBy: (o._prop && o._prop.preparedBy) || state.currentUser?.displayName || '',
       }),
     });
     const body = await res.json().catch(() => null);
@@ -973,6 +994,8 @@ async function linkExistingQuotation(o) {
     if (d.exists !== true || !d.id) { alert('Bu numarayla teklif bulunamadı: ' + raw); return; }
     const other = state.opportunities.find(x => x.id !== o.id && x.quotationId === d.id && !x.quotationDeleted);
     if (other) { alert('Bu teklif zaten başka bir fırsata bağlı:\n"' + (other.title || other.id) + '"\n\nBir teklif tek fırsata bağlanabilir.'); return; }
+    const otherProp = state.proposals.find(x => (!o._prop || x.id !== o._prop.id) && x.quotationId === d.id && !x.quotationDeleted && (!o.id || x.opportunityId !== o.id));
+    if (otherProp) { alert('Bu teklif zaten başka bir teklif talebine bağlı:\n"' + (otherProp.title || otherProp.id) + '"'); return; }
     const total = tpValueEur(d);
     let msg = 'Teklif: ' + (d.number || '(taslak — numara henüz yok)') + '\nDurum: ' + (d.status || '-') +
       '\nTutar: ' + (total ? total.toLocaleString('tr-TR', { maximumFractionDigits: 0 }) + ' €' : '-') +
@@ -990,9 +1013,16 @@ async function linkExistingQuotation(o) {
 }
 
 // Aşama 1+2: Teklif oluştur — tür seçimi + mükerrer koruma + CRM'e quotationId kaydet
-async function teklifOlustur(customer, opportunityTitle, opportunityId) {
+async function teklifOlustur(customer, opportunityTitle, opportunityId, proposal) {
+  // Teklif Talebi satırından: talebin teklifi zaten varsa uyar
+  if (proposal && proposal.quotationId && !proposal.quotationDeleted) {
+    if (confirm('Bu teklif talebi için zaten bir teklif oluşturulmuş:\n"' + (proposal.title || '') + '"\n\nMevcut teklifi açmak ister misiniz?\n\nTamam = Mevcut teklifi aç\nİptal = Yine de yeni oluştur')) {
+      await openQuotationWithSSO(proposal.quotationId);
+      return;
+    }
+  }
   // Aşama 2: Fırsata bağlı teklif zaten varsa uyar — sekme/modal açılmadan ÖNCE (CRM sekmesinde sorulur)
-  if (opportunityId) {
+  if (opportunityId && !proposal) {
     const existing = state.proposals.find(p =>
       p.customerId === customer.id && p.quotationId && !p.quotationDeleted && p.opportunityId === opportunityId
     );
@@ -1028,8 +1058,8 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
     // Satış temsilcisi = fırsatın sahibi (assignedTo); yoksa teklifi açan kullanıcı.
     // Hazırlayan = teklifi açan CRM kullanıcısı. Böylece Teklif'te tekrar seçilmez (mükerrer önlenir).
     const _opp = opportunityId ? state.opportunities.find(o => o.id === opportunityId) : null;
-    const salesRepName = (_opp && _opp.assignedTo) || state.currentUser?.displayName || '';
-    const preparedByName = state.currentUser?.displayName || '';
+    const salesRepName = (proposal && proposal.salesRep) || (_opp && _opp.assignedTo) || state.currentUser?.displayName || '';
+    const preparedByName = (proposal && proposal.preparedBy) || state.currentUser?.displayName || '';
     const res = await fetch(TEKLIF_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
@@ -1052,11 +1082,11 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId) {
     if (!res.ok) throw new Error(body?.error?.message ?? 'Sunucu hatası');
     const { quotationId, quotationUrl } = body.data;
     // Fırsata bağlıysa: mevcut proposal'ı güncelle, yoksa yeni oluştur
-    const existingProp = opportunityId
-      ? state.proposals.find(p => p.opportunityId === opportunityId && !p.quotationId)
-      : null;
+    const existingProp = proposal
+      ? state.proposals.find(p => p.id === proposal.id)
+      : (opportunityId ? state.proposals.find(p => p.opportunityId === opportunityId && !p.quotationId) : null);
     if (existingProp) {
-      const updated = {...existingProp, quotationId: quotationId||'', quotationUrl: quotationUrl||'', quotationStatus: 'DRAFT', source: 'opportunity', ...stamp()};
+      const updated = {...existingProp, quotationId: quotationId||'', quotationUrl: quotationUrl||'', quotationDeleted: false, quotationStatus: 'DRAFT', source: (existingProp.source==='request' ? 'request' : 'opportunity'), ...stamp()};
       await saveDoc('proposals', existingProp.id, updated);
       setState({ proposals: state.proposals.map(p => p.id===existingProp.id ? updated : p) });
     } else {
@@ -1863,8 +1893,12 @@ async function loadAllData() {
     loadCollection('tasks'), loadCollection('evaluations'), loadCollection('checklists'), loadCollection('serviceForms'),
     loadCollection('fieldReports')
   ]);
-  setState({customers, opportunities, proposals, services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, checklists, serviceForms, fieldReports});
+  // Yumuşak silinenler (deletedAt dolu) ana listelere alınmaz → ekranlar, prim, hedef, karlılık hesabı onları görmez; yalnız "Silinenler" ekranında durur.
+  const _live = x => !x.deletedAt;
+  setState({customers, opportunities: opportunities.filter(_live), proposals: proposals.filter(_live), services, maintenances, suppliers, serviceOpps, visits, appointments, tasks, evaluations, checklists, serviceForms, fieldReports,
+    trash:{ opportunities: opportunities.filter(x=>!_live(x)), proposals: proposals.filter(x=>!_live(x)) }});
   if(Array.isArray(state.tasks)) setState({ tasks: state.tasks.map(normTask) });
+  state.leadsError = false; setState({ leads: await loadLeads() });
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2016,12 +2050,17 @@ async function openStockWithSSO(quotationId) {
 window.openStockWithSSO = openStockWithSSO;
 
 async function saveOpp(form, isEdit) {
+  // Yeni fırsat yalnız yönetici tarafından elle açılabilir; diğerleri için fırsat, gönderilen tekliften otomatik doğar.
+  if(!isEdit && !(state.currentUser && state.currentUser.isAdmin) && !form.proposalId){
+    showToast('⛔ Yeni fırsatı yalnız yönetici açabilir. Fırsat, Teklif Talebi "Gönderildi" olunca otomatik oluşur.','#dc2626');
+    setState({modal:null}); return;
+  }
   setState({saving:true});
   const id = isEdit ? form.id : genId();
   // K2: kazanma/kayıp tarihini AŞAMANIN DEĞİŞTİĞİ AN damgala. Prim ve yıllık hedef atfı
   // (_pOppDate) artık "Ön Gör. Sipariş Tarihi"ne değil gerçek kapanış tarihine bakıyor.
   const prevOpp = isEdit ? (state.opportunities||[]).find(o=>o.id===id) : null;
-  const data = {...form, id, ...stamp(), ..._oppCloseStamp(form, prevOpp), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
+  const data = {...form, id, ...stamp(), ..._oppCloseStamp(form, prevOpp), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear(), ...((!isEdit && !form.source) ? {source:'manual'} : {})};
   await saveDoc('opportunities', id, data);
   const list = isEdit ? state.opportunities.map(o=>o.id===id?data:o) : [...state.opportunities, data];
   setState({opportunities:list, modal:null, saving:false});
@@ -2039,10 +2078,182 @@ async function saveOpp(form, isEdit) {
     autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:data.title||'', dueOffset:7, priority:'orta' });
   }
 }
+// ═══ TEKLİF TALEBİ → FIRSAT ═══
+// Fırsat yalnız GÖNDERİLEN tekliften doğar (talep durumu ilk kez "Gönderildi" olunca). Yönetici elle fırsat açmaya devam eder.
+// Fırsat kimliği talep kimliğinden türetilir ('opp_'+talepId): çift kayıt/yarış durumunda aynı doküman, "yoksa oluştur" ile korunur.
+async function _createIfAbsent(coll, id, data){
+  const ref = db.collection(coll).doc(String(id)); let created = false;
+  await db.runTransaction(async tx=>{ const sn = await tx.get(ref); if(sn.exists){ created=false; return; } tx.set(ref, data); created=true; });
+  return created;
+}
+async function proposalToOpportunity(prop){
+  const oid = 'opp_'+prop.id;
+  if(((state.trash&&state.trash.opportunities)||[]).some(o=>o.id===oid)) return '';   // silinmiş fırsat yeniden doğmaz (geri yükleme yönetici elindedir)
+  const sent = String(prop.sentDate||today()).slice(0,10);
+  if(!(state.opportunities||[]).some(o=>o.id===oid)){
+    const opp = {
+      id:oid, title:prop.title||'Fırsat', customerId:prop.customerId||'', contractorId:prop.contractorId||'', adminId:'',
+      value:Number(prop.amount)||0, stage:'TEKLİF', jobStatus:JOB_ST[0], sector:SEC_O[0], assignedTo:prop.salesRep||'',
+      dueDate:'', tenderRef:'', probability:50, notes:prop.notes||'',
+      createdAt:today(), fiscalYear:Number(sent.slice(0,4))||activeFiscalYear(),     // mali yıl: teklifin GÖNDERİLDİĞİ yıl
+      source:'proposal', proposalId:prop.id, proposalSentDate:sent,
+      ...(prop.quotationId ? { quotationId:prop.quotationId, quotationUrl:prop.quotationUrl||'', quotationStatus:prop.quotationStatus||'', ...(prop.quotationFormat?{quotationFormat:prop.quotationFormat}:{}) } : {}),
+      ...stamp()
+    };
+    await _createIfAbsent('opportunities', oid, opp);
+    if(!(state.opportunities||[]).some(o=>o.id===oid)) setState({ opportunities:[...(state.opportunities||[]), opp] });
+  }
+  if(prop.opportunityId!==oid){
+    await db.collection('proposals').doc(String(prop.id)).set({ opportunityId:oid, ...stamp() }, { merge:true });
+    setState({ proposals:(state.proposals||[]).map(p=>p.id===prop.id ? {...p, opportunityId:oid} : p) });
+  }
+  // Satış temsilcisine bildirim: takip görevi (canlı dinleyici kendi ekranında bildirir)
+  if(prop.salesRep){
+    autoCreateTask({ dedupeKey:'teklif_takip_'+prop.id, title:'\u{1F4C4} Teklif takibi — '+(prop.title||'Teklif'), dept:'satis', assignedTo:prop.salesRep, context:'genel',
+      linkType:'opportunity', linkId:oid, linkLabel:prop.title||'', dueOffset:7, priority:'orta' });
+  }
+  return oid;
+}
+// Yarım kalan (talep Gönderildi ama fırsat oluşmamış) YENİ AKIŞ talepleri için telafi — eski kayıtlara dokunmaz.
+function proposalOppSweep(){
+  if(!state.currentUser || state.testMode) return;
+  window._oppSweepBusy = window._oppSweepBusy || {};
+  (state.proposals||[]).filter(function(p){ return p.source==='request' && p.status==='Gönderildi' && !p.opportunityId && !p.oppSkip && p.salesRep; }).forEach(function(p){
+    if(window._oppSweepBusy[p.id]) return; window._oppSweepBusy[p.id]=1;
+    proposalToOpportunity(p).catch(function(){}).then(function(){ delete window._oppSweepBusy[p.id]; });
+  });
+}
+// ═══ POTANSİYELLER (erken aşama takip) ═══
+// Henüz teklifi istenmemiş işler. Fırsat/prim/hedef/ciro hesabına GİRMEZ. "Teklif İste" → Teklif Talebi açılır; teklif "Gönderildi" olunca fırsat otomatik doğar.
+const LEAD_ST = ['Takipte','Teklife dönüştü','Vazgeçildi'];
+const LEAD_ST_COLOR = { 'Takipte':'#0284c7', 'Teklife dönüştü':'#16a34a', 'Vazgeçildi':'#94a3b8' };
+const LEAD_STALE_DAYS = 90;
+async function loadLeads(){
+  try{ const snap = await db.collection('leads').get(); return snap.docs.map(d=>({ ...d.data(), id:d.id })); }
+  catch(e){ state.leadsError = true; return []; }   // kural yayınlanmadıysa girişi bozma; ekranda uyarı gösterilir
+}
+async function saveLead(form, isEdit){
+  const cu = state.currentUser;
+  const id = isEdit ? form.id : genId();
+  const data = { ...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear||activeFiscalYear(),
+    createdBy: form.createdBy || (cu&&cu.displayName) || '', lastActivityAt: today() };
+  await saveDoc('leads', id, data);
+  setState({ leads: isEdit ? (state.leads||[]).map(l=>l.id===id?data:l) : [...(state.leads||[]), data], modal:null });
+  showToast('✅ Potansiyel kaydedildi.');
+}
+async function deleteLead(id){
+  const l = (state.leads||[]).find(x=>x.id===id); if(!l) return;
+  const me = state.currentUser && state.currentUser.displayName;
+  if(!(_isAdminUser() || l.createdBy===me)){ showToast('⛔ Potansiyeli yalnızca kaydı açan veya yönetici silebilir.','#d97706'); return; }
+  if(!confirm('"'+(l.title||'Potansiyel')+'" potansiyeli silinsin mi? Bu işlem geri alınamaz.\n\n(Vazgeçilen bir işi silmek yerine durumunu "Vazgeçildi" yapmanız önerilir.)')) return;
+  await deleteDoc('leads', id);
+  setState({ leads:(state.leads||[]).filter(x=>x.id!==id) });
+  showToast('🗑 Potansiyel silindi.');
+}
+// Potansiyelden Teklif Talebi aç (bilgiler taşınır; talep kaydedilince potansiyel "Teklife dönüştü" olur)
+function leadToProposal(l){
+  setState({ tab:'proposals', modal:{ type:'proposal', item:null, prefill:{ title:l.title||'', customerId:l.customerId||'', salesRep:l.salesRep||'', notes:l.notes||'', leadId:l.id } } });
+}
+function buildLeadModal(item){
+  const me = state.currentUser && state.currentUser.displayName;
+  const f = item ? JSON.parse(JSON.stringify(item)) : { title:'', customerId:'', salesRep:(me && usersWithTargets().some(u=>u.displayName===me)) ? me : '', estValue:'', estQuoteDate:'', status:'Takipte', notes:'', createdAt:today() };
+  const custOpts = [{v:'',l:'Seçin…'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))];
+  const repNames = [...new Set([...usersWithTargets().map(u=>u.displayName), ...(f.salesRep?[f.salesRep]:[])])].sort((a,b)=>a.localeCompare(b,'tr'));
+  const fNotes = h('textarea',{placeholder:'Notlar (kaynak, görüşülen kişi, beklenen adım…)',style:{width:'100%',padding:'9px 12px',background:G,border:'1px solid '+G4,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'70px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",outline:'none'}});
+  fNotes.value = f.notes||''; fNotes.addEventListener('input',e=>f.notes=e.target.value);
+  const content = h('div',{},
+    field('Proje / iş adı *', inp('Örn. Sancaktepe Şehir Hastanesi yangın sistemi', f.title, v=>f.title=v)),
+    row(field('Müşteri *', sel(custOpts, f.customerId, v=>f.customerId=v), true), field('Satış Temsilcisi *', sel([{v:'',l:'Seçin…'},...repNames.map(n=>({v:n,l:n}))], f.salesRep||'', v=>f.salesRep=v), true)),
+    row(field('Tahmini değer (€, ops.)', inp('0', f.estValue, v=>f.estValue=v, 'number'), true), field('Tahmini teklif tarihi (ops.)', inp('', f.estQuoteDate||'', v=>f.estQuoteDate=v, 'date'), true)),
+    item ? field('Durum', sel(LEAD_ST, f.status, v=>f.status=v)) : h('span'),
+    field('Notlar', fNotes),
+    h('div',{style:{fontSize:'11px',color:T4,margin:'-4px 0 10px'}},'Potansiyel fırsat/prim/hedef hesabına girmez. Teklif hazırlanacağı zaman listeden "Teklif İste"ye basın.'),
+    h('div',{style:{display:'flex',gap:'10px'}},
+      btn('Kaydet',()=>{
+        if(!(f.title && f.customerId)){ showToast('⚠ Proje adı ve müşteri zorunlu.','#dc2626'); return; }
+        if(!f.salesRep){ showToast('⚠ Satış Temsilcisi seçin.','#dc2626'); return; }
+        saveLead({...f, estValue:Number(f.estValue)||0}, !!item);
+      },'linear-gradient(135deg,#0284c7,#2563eb)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('İptal',()=>setState({modal:null}),'#f1f5f9','#4a6080','11px 20px',{fontSize:'14px',border:'1px solid #b0c8e0',borderRadius:'9px'})));
+  return modal(item?'Potansiyeli Düzenle':'Yeni Potansiyel', content, ()=>setState({modal:null}), '620px');
+}
+function renderLeads(){
+  const custById = id=>state.customers.find(c=>c.id===id);
+  if(!state.leadFilter) state.leadFilter = { st:'Takipte', q:'' };
+  const lf = state.leadFilter;
+  const all = state.leads||[];
+  const today0 = today();
+  const list = all.filter(l=>{
+    if(lf.st && l.status!==lf.st) return false;
+    if(lf.q){ const q=lf.q.toLowerCase(); const cn=(custById(l.customerId)?.firmName||'').toLowerCase(); if(!((l.title||'').toLowerCase().includes(q)||cn.includes(q)||(l.salesRep||'').toLowerCase().includes(q))) return false; }
+    return true;
+  }).sort((a,b)=>String(b.lastActivityAt||b.updatedAt||b.createdAt||'').localeCompare(String(a.lastActivityAt||a.updatedAt||a.createdAt||'')));
+  const active = all.filter(l=>l.status==='Takipte');
+  const vol = active.reduce((a,l)=>a+(Number(l.estValue)||0),0);
+  const stale = l=> l.status==='Takipte' && (()=>{ const last=String(l.lastActivityAt||l.updatedAt||l.createdAt||'').slice(0,10); return last && Math.floor((_toDate(today0)-_toDate(last))/86400000)>=LEAD_STALE_DAYS; })();
+  const isMob = window.innerWidth<=768;
+  const stSel = h('select',{style:{padding:'8px 10px',background:'#fff',border:'1px solid '+G4,borderRadius:'8px',fontSize:'12px',color:T1,outline:'none'}});
+  [{v:'',l:'Tüm durumlar'},...LEAD_ST.map(x=>({v:x,l:x}))].forEach(o=>{ const op=document.createElement('option'); op.value=o.v; op.textContent=o.l; if(lf.st===o.v) op.selected=true; stSel.appendChild(op); });
+  stSel.onchange = e=>{ state.leadFilter.st=e.target.value; render(); };
+  const actions = l => h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}},
+    btn('Düzenle',()=>setState({modal:{type:'lead',item:l}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),
+    l.status==='Takipte' ? btn('📄 Teklif İste',()=>leadToProposal(l),'#ecfdf5','#15803d','6px 12px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px'}) : h('span'),
+    btn('Sil',()=>deleteLead(l.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'}));
+  const th = {color:'#ffffff',padding:'11px 13px',fontSize:'12px',fontWeight:'700',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:'.05em',textAlign:'left'};
+  const body = isMob
+    ? h('div',{style:{display:'flex',flexDirection:'column',gap:'10px'}}, ...(list.length?list.map(l=>{
+        const c=custById(l.customerId);
+        return h('div',{style:{background:'#fff',border:'1px solid #b0c8e0',borderRadius:'13px',padding:'13px'}},
+          h('div',{style:{fontWeight:'800',fontSize:'14px',color:'#0f1f35',marginBottom:'6px'}},l.title||''),
+          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'5px',marginBottom:'7px'}}, badge(l.status||'Takipte',LEAD_ST_COLOR[l.status]||T3),
+            c?h('span',{style:{background:'#eff6ff',color:'#2563eb',padding:'3px 8px',borderRadius:'12px',fontSize:'11px',fontWeight:'600'}},c.firmName):h('span'),
+            l.salesRep?h('span',{style:{background:'#faf5ff',color:'#7c3aed',padding:'3px 8px',borderRadius:'12px',fontSize:'11px'}},'👤 '+l.salesRep):h('span'),
+            stale(l)?h('span',{style:{background:'#fef3c7',color:'#b45309',padding:'3px 8px',borderRadius:'12px',fontSize:'11px',fontWeight:'700'}},'⏰ '+LEAD_STALE_DAYS+'+ gün hareketsiz'):h('span')),
+          l.estValue?h('div',{style:{fontSize:'12px',color:T3,marginBottom:'6px'}},'Tahmini: '+eur(l.estValue)+(l.estQuoteDate?(' · Teklif: '+_toTR(l.estQuoteDate)):'')):h('span'),
+          actions(l));
+      }):[h('div',{style:{padding:'32px',textAlign:'center',color:T4,background:G2,borderRadius:'12px'}},'Potansiyel yok.')]))
+    : h('div',{style:{overflowX:'auto',borderRadius:'12px',border:'1px solid '+G4,background:'#edf5fc'}},
+        h('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'900px'}},
+          h('thead',{},h('tr',{style:{background:'#1e2d4a'}}, ...['Proje / İş','Müşteri','Satış Temsilcisi','Tahmini Değer','Tahmini Teklif','Son Hareket','Durum','İşlem'].map(t=>h('th',{style:th},t)))),
+          h('tbody',{}, ...(list.length?list.map((l,i)=>{
+            const c=custById(l.customerId);
+            return h('tr',{className:'rh',style:{background:i%2===0?'#edf5fc':'#dde8f6'}},
+              h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',maxWidth:'260px'}},l.title||'', l.notes?h('div',{style:{fontSize:'11px',fontWeight:'400',color:T3,marginTop:'2px'}},String(l.notes).slice(0,90)):h('span')),
+              h('td',{style:{padding:'10px 11px',fontSize:'13px',color:T3}},c?.firmName||'-'),
+              h('td',{style:{padding:'10px 11px',fontSize:'13px'}},l.salesRep||'-'),
+              h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',color:'#3b82f6'}},l.estValue?eur(l.estValue):'—'),
+              h('td',{style:{padding:'10px 11px',fontSize:'12px',color:T3}},l.estQuoteDate?_toTR(l.estQuoteDate):'—'),
+              h('td',{style:{padding:'10px 11px',fontSize:'12px',color:stale(l)?'#b45309':T3,fontWeight:stale(l)?'700':'400'}},(l.lastActivityAt?_toTR(l.lastActivityAt):'')+(stale(l)?' ⏰':'')),
+              h('td',{style:{padding:'10px 11px'}},badge(l.status||'Takipte',LEAD_ST_COLOR[l.status]||T3)),
+              h('td',{style:{padding:'10px 11px'}},actions(l)));
+          }):[h('tr',{},h('td',{colSpan:'8',style:{padding:'32px',textAlign:'center',color:T4}},'Potansiyel yok.'))]))));
+  return h('div',{style:{animation:'fu .3s ease'}},
+    h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px',flexWrap:'wrap',gap:'8px'}},
+      h('h2',{style:{fontSize:isMob?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🌱 Potansiyeller ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'(Takipte: '+active.length+(vol?(' · tahmini '+eur(vol)):'')+')')),
+      btn('+ Yeni Potansiyel',()=>setState({modal:{type:'lead',item:null}}),'linear-gradient(135deg,#0284c7,#2563eb)','#fff',isMob?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px'})),
+    h('div',{style:{fontSize:'12px',color:'#92400e',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'10px',padding:'9px 12px',marginBottom:'10px',lineHeight:'1.5'}},
+      'ℹ️ Henüz teklifi istenmemiş, erken aşamadaki işleri burada takip edin. Potansiyel fırsat/prim/hedef hesabına girmez. Teklif hazırlanacağı zaman "📄 Teklif İste" ile Teklif Talebi açın; teklif "Gönderildi" olunca fırsat otomatik oluşur.'),
+    state.leadsError ? h('div',{style:{fontSize:'12px',color:'#b91c1c',background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'10px',padding:'9px 12px',marginBottom:'10px'}},'⚠️ Potansiyeller yüklenemedi (Firestore kuralı henüz yayınlanmamış olabilir). Yöneticiye bildirin.') : h('span'),
+    h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap',marginBottom:'12px'}}, stSel, makeSearchInput(lf.q||'',function(v){state.leadFilter.q=v;render();})),
+    body);
+}
+// 90+ gün hareketsiz potansiyel için satış temsilcisine tek seferlik takip görevi (potansiyel güncellenince döngü yenilenir)
+function leadStaleSweep(){
+  if(!state.currentUser) return;
+  const t0 = today();
+  (state.leads||[]).filter(l=>l.status==='Takipte' && l.salesRep).forEach(l=>{
+    const last = String(l.lastActivityAt||l.updatedAt||l.createdAt||'').slice(0,10); if(!last) return;
+    if(Math.floor((_toDate(t0)-_toDate(last))/86400000) < LEAD_STALE_DAYS) return;
+    const key = 'lead_stale_'+l.id+'_'+last;
+    if((state.tasks||[]).some(t=>t.dedupeKey===key)) return;
+    autoCreateTask({ id:key, dedupeKey:key, title:'\u{1F331} Potansiyel takibi — '+(l.title||'')+' ('+LEAD_STALE_DAYS+'+ gündür hareket yok)',
+      desc:'Teklif istendi mi, vazgeçildi mi? Potansiyeli güncelleyin (Teklif İste / Vazgeçildi).', dept:'satis', assignedTo:l.salesRep, context:'genel', dueOffset:3, priority:'orta' });
+  });
+}
 async function saveProp(form, isEdit) {
   setState({saving:true});
   const id = isEdit ? form.id : genId();
-  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear()};
+  const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear(), ...((!isEdit && state.currentUser) ? {createdBy: state.currentUser.displayName} : {})};
 
   // Hazırlayan değişti mi veya yeni kayıt mı? → Anlık sesli bildirim
   const cu = state.currentUser;
@@ -2056,6 +2267,18 @@ async function saveProp(form, isEdit) {
   const list = isEdit ? state.proposals.map(p=>p.id===id?data:p) : [...state.proposals, data];
   setState({proposals:list, modal:null, saving:false});
   showToast('✅ Teklif kaydedildi!');
+  // Potansiyelden açılan talep: potansiyel "Teklife dönüştü" olur
+  try{ if(!isEdit && data.leadId){ const lp={ status:'Teklife dönüştü', proposalId:id, lastActivityAt:today(), ...stamp() }; await db.collection('leads').doc(String(data.leadId)).set(lp,{merge:true}); setState({ leads:(state.leads||[]).map(l=>l.id===data.leadId?{...l,...lp}:l) }); } }catch(e){}
+  // Gönderildi → fırsat oluştur (yeni akış talepleri her kayıtta telafi eder; eski kayıtlar yalnız Gönderildi'ye geçişte)
+  try{
+    if(data.source!=='opportunity' && data.status==='Gönderildi' && !data.opportunityId && !data.oppSkip){
+      const becameSent = !prevProp || prevProp.status!=='Gönderildi';
+      if(becameSent || data.source==='request'){
+        await proposalToOpportunity(data);
+        showToast('🎯 Teklif gönderildi — fırsat otomatik oluşturuldu.','#16a34a');
+      }
+    }
+  }catch(e){ showToast('⚠ Teklif kaydedildi ama fırsat oluşturulamadı: '+((e&&e.message)||e),'#d97706'); }
 
   // Hazırlayan başka bir kullanıcıysa ve atama yeni/değiştiyse bildirim göster
   if(isAssignedToOther && assigneeChanged) {
@@ -2091,7 +2314,150 @@ async function saveMaint(form, isEdit) {
   showToast('✅ Periyodik Bakım kaydedildi!');
 }
 
+// ═══ YUMUŞAK SİLME: Fırsat ve Teklif Talebi ═══
+// Kayıt hemen yok edilmez: silindi işareti (deletedAt/deletedBy/deleteReason) alır, listelerden ve tüm hesaplardan çıkar,
+// yönetici 30 gün içinde "Silinenler"den geri yükleyebilir; 30 gün sonra otomatik kalıcı silinir.
+// Yetki: Fırsat → yalnız yönetici (KAZANILDI/icralı fırsat hiç silinmez). Talep → yönetici; talebi giren/hazırlayan/satış temsilcisi yalnız
+// "Hazırlanıyor" + fırsatsız taslağını silebilir. Teklif Programı'ndaki teklif ASLA otomatik silinmez (mali belge).
+const TRASH_DAYS = 30;
+function _trashInit(){ if(!state.trash) state.trash = { opportunities:[], proposals:[] }; }
+function _isAdminUser(){ return !!(state.currentUser && state.currentUser.isAdmin); }
+async function _softMark(col, rec, reason, extra){
+  _trashInit();
+  const patch = Object.assign({ deletedAt:today(), deletedBy:(state.currentUser&&state.currentUser.displayName)||'', deleteReason:reason||'' }, extra||{});
+  await db.collection(col).doc(String(rec.id)).set(patch, { merge:true });
+  const trash = Object.assign({}, state.trash); trash[col] = (trash[col]||[]).concat([Object.assign({}, rec, patch)]);
+  const upd = { trash }; upd[col] = (state[col]||[]).filter(x=>x.id!==rec.id);
+  setState(upd);
+}
+function canDeleteProposal(p){
+  if(_isAdminUser()) return { ok:true };
+  const me = state.currentUser && state.currentUser.displayName;
+  if(p.status!=='Hazırlanıyor') return { ok:false, msg:'Gönderilmiş/sonuçlanmış teklifi yalnızca yönetici silebilir. Silmek yerine durumu "Reddedildi" yapın.' };
+  if(p.opportunityId) return { ok:false, msg:'Bu talebe bağlı fırsat var; yalnızca yönetici silebilir.' };
+  if([p.preparedBy,p.salesRep,p.createdBy].indexOf(me)<0) return { ok:false, msg:'Bu talebi yalnızca talebi giren, hazırlayan, satış temsilcisi veya yönetici silebilir.' };
+  return { ok:true };
+}
+async function deleteProposalFlow(id){
+  const p = (state.proposals||[]).find(x=>x.id===id); if(!p) return;
+  const c = canDeleteProposal(p);
+  if(!c.ok){ showToast('⛔ '+c.msg,'#d97706'); return; }
+  const lines = [];
+  if(p.quotationId && !p.quotationDeleted) lines.push('• Teklif Programı\'ndaki teklif SİLİNMEZ; yalnızca CRM bağlantısı kopar (gerekirse orada elle silin).');
+  if(p.opportunityId){ const o=(state.opportunities||[]).find(x=>x.id===p.opportunityId); lines.push('• Bağlı fırsat'+(o?(' ("'+(o.title||'')+'")'):'')+' KALIR; yalnızca bu talep ile bağı kopar.'); }
+  const autoT = (state.tasks||[]).map(normTask).filter(t=>t.dedupeKey==='teklif_takip_'+id);
+  if(autoT.length) lines.push('• '+autoT.length+' otomatik "Teklif takibi" görevi silinir.');
+  if(!confirm('"'+(p.title||'Teklif talebi')+'" teklif talebi silinsin mi?\n\n'+(lines.join('\n')||'• Bağlı kayıt yok.')+'\n\nSilinen kayıt '+TRASH_DAYS+' gün boyunca yönetici tarafından geri yüklenebilir.')) return;
+  let reason = '';
+  if(p.status!=='Hazırlanıyor'){
+    reason = (prompt('Silme sebebi (zorunlu):','')||'').trim();
+    if(!reason){ showToast('⚠ Silme sebebi zorunlu.','#dc2626'); return; }
+  }
+  try{
+    await _softMark('proposals', p, reason);
+    if(p.leadId){ try{ const back={ status:'Takipte', proposalId:'', lastActivityAt:today() }; await db.collection('leads').doc(String(p.leadId)).set(back,{merge:true}); setState({ leads:(state.leads||[]).map(l=>l.id===p.leadId?{...l,...back}:l) }); }catch(e){} }
+    for(const t of autoT){ await deleteDoc('tasks', t.id); }
+    if(autoT.length) setState({ tasks:(state.tasks||[]).filter(x=>!autoT.some(a=>a.id===x.id)) });
+    showToast('🗑 Teklif talebi silindi (yönetici '+TRASH_DAYS+' gün içinde geri yükleyebilir).');
+  }catch(e){ showToast('❌ Silinemedi: '+((e&&e.message)||e),'#dc2626'); }
+}
+async function deleteOpportunityFlow(id){
+  const o = (state.opportunities||[]).find(x=>x.id===id); if(!o) return;
+  if(!_isAdminUser()){ showToast('⛔ Fırsatı yalnızca yönetici silebilir. Kaybedilen fırsatı KAÇTI / NO GO yapın.','#d97706'); return; }
+  if(o.stage==='KAZANILDI' || o.execActive===true || o.execClosedAt){
+    alert('Kazanılan veya proje icrası olan fırsat silinemez.\n\n• Önce aşamayı KAZANILDI dışına alın (stok rezervi serbest kalır; aktif icra iptal edilir).\n• Projeyi tüm görev/fotoğraflarıyla kaldırmak için Projeler ekranındaki "Sil" yolunu kullanın.');
+    return;
+  }
+  const props = (state.proposals||[]).filter(p=>p.opportunityId===id);
+  const tasks = (state.tasks||[]).map(normTask).filter(t=>t.linkType==='opportunity' && t.linkId===id);
+  const autos = tasks.filter(t=>t.autoGenerated), manuals = tasks.filter(t=>!t.autoGenerated);
+  const lines = [];
+  if(props.length) lines.push('• '+props.length+' teklif talebinin fırsat bağı kopar (talepler KALIR).');
+  if(autos.length) lines.push('• '+autos.length+' otomatik görev silinir.');
+  if(manuals.length) lines.push('• '+manuals.length+' elle açılmış görevin bu fırsatla bağı kopar (görevler KALIR).');
+  if(o.quotationId && !o.quotationDeleted) lines.push('• Teklif Programı\'ndaki teklif SİLİNMEZ; yalnızca CRM bağlantısı kopar.');
+  if(!confirm('"'+(o.title||'Fırsat')+'" fırsatı silinsin mi?\n\n'+(lines.join('\n')||'• Bağlı kayıt yok.')+'\n\nSilinen kayıt '+TRASH_DAYS+' gün boyunca "Silinenler"den geri yüklenebilir.')) return;
+  const reason = (prompt('Silme sebebi (zorunlu — örn. hatalı/deneme kaydı):','')||'').trim();
+  if(!reason){ showToast('⚠ Silme sebebi zorunlu.','#dc2626'); return; }
+  try{
+    // Önce silindi olarak işaretle (yarıda kalırsa kayıt tutarlı kalır); geri yükleme için bağlı talepleri hatırla
+    await _softMark('opportunities', o, reason, { deletedLinks: props.map(p=>p.id) });
+    for(const p of props){ await db.collection('proposals').doc(String(p.id)).set({ opportunityId:'', oppSkip:true }, { merge:true }); }
+    if(props.length) setState({ proposals:(state.proposals||[]).map(p=>p.opportunityId===id ? Object.assign({},p,{opportunityId:'',oppSkip:true}) : p) });
+    for(const t of autos){ await deleteDoc('tasks', t.id); }
+    let tl = (state.tasks||[]).filter(x=>!autos.some(a=>a.id===x.id));
+    for(const t of manuals){ const u=Object.assign({}, t, { linkType:'none', linkId:'', linkLabel:'' }); await saveDoc('tasks', u.id, u); tl = tl.map(x=>x.id===u.id?u:x); }
+    setState({ tasks: tl });
+    showToast('🗑 Fırsat silindi ('+TRASH_DAYS+' gün içinde "Silinenler"den geri yüklenebilir).');
+  }catch(e){ showToast('❌ Silinemedi: '+((e&&e.message)||e),'#dc2626'); }
+}
+async function restoreTrashItem(col, id){
+  if(!_isAdminUser()) return; _trashInit();
+  const rec = (state.trash[col]||[]).find(x=>x.id===id); if(!rec) return;
+  const clear = { deletedAt:'', deletedBy:'', deleteReason:'' };
+  try{
+    await db.collection(col).doc(String(id)).set(Object.assign({}, clear, col==='opportunities'?{deletedLinks:[]}:{}), { merge:true });
+    const back = Object.assign({}, rec, clear); if(col==='opportunities') back.deletedLinks=[];
+    const upd = {}; upd[col] = (state[col]||[]).concat([back]);
+    const trash = Object.assign({}, state.trash); trash[col] = trash[col].filter(x=>x.id!==id); upd.trash = trash;
+    if(col==='opportunities' && (rec.deletedLinks||[]).length){
+      for(const pid of rec.deletedLinks){ if((state.proposals||[]).some(p=>p.id===pid)) await db.collection('proposals').doc(String(pid)).set({ opportunityId:id, oppSkip:false }, { merge:true }); }
+      upd.proposals = (state.proposals||[]).map(p=>rec.deletedLinks.indexOf(p.id)>=0 ? Object.assign({},p,{opportunityId:id,oppSkip:false}) : p);
+    }
+    setState(upd);
+    showToast('♻️ Geri yüklendi.','#16a34a');
+  }catch(e){ showToast('❌ Geri yüklenemedi: '+((e&&e.message)||e),'#dc2626'); }
+}
+async function purgeTrashItem(col, id, silent){
+  if(!_isAdminUser()) return; _trashInit();
+  const rec = (state.trash[col]||[]).find(x=>x.id===id); if(!rec) return;
+  if(!silent && !confirm('"'+(rec.title||'Kayıt')+'" KALICI olarak silinsin mi? Bu işlem geri alınamaz.')) return;
+  await deleteDoc(col, id);
+  const trash = Object.assign({}, state.trash); trash[col] = trash[col].filter(x=>x.id!==id);
+  setState({ trash });
+}
+// 30 günü dolan silinenleri yönetici oturumunda günde bir kez kalıcı temizler.
+async function trashAutoPurge(){
+  try{
+    if(!_isAdminUser() || state.testMode || !state.trash) return;
+    const key='trashPurge_'+today(); if(localStorage.getItem(key)) return; localStorage.setItem(key,'1');
+    Object.keys(localStorage).forEach(function(k){ if(k.indexOf('trashPurge_')===0 && k!==key) localStorage.removeItem(k); });
+    const lim = today();
+    for(const col of ['opportunities','proposals']){
+      const old = (state.trash[col]||[]).filter(x=>x.deletedAt && _addDays(String(x.deletedAt).slice(0,10), TRASH_DAYS) <= lim);
+      for(const r of old){ await purgeTrashItem(col, r.id, true); }
+    }
+  }catch(e){ console.warn('Silinenler temizliği:', e && e.message); }
+}
+function _addDays(iso, n){ const d=_toDate(iso); if(!d) return ''; d.setDate(d.getDate()+Number(n)); return _ymd(d); }
+function trashCount(){ _trashInit(); return (state.trash.opportunities||[]).length + (state.trash.proposals||[]).length; }
+function trashLink(){
+  if(!_isAdminUser()) return h('span');
+  return h('div',{style:{marginBottom:'10px'}}, btn('🗑 Silinenler ('+trashCount()+')',()=>setState({modal:{type:'trash'}}),'#fff7ed','#c2410c','6px 12px',{fontSize:'12px',border:'1px solid #fed7aa'}));
+}
+function buildTrashModal(){
+  _trashInit();
+  const rows = [];
+  [['opportunities','🎯 Fırsat'],['proposals','📄 Teklif Talebi']].forEach(function(pair){
+    (state.trash[pair[0]]||[]).slice().sort(function(a,b){return String(b.deletedAt||'').localeCompare(String(a.deletedAt||''));}).forEach(function(r){
+      const left = Math.max(0, TRASH_DAYS - Math.round((_toDate(today()) - _toDate(String(r.deletedAt).slice(0,10)))/86400000));
+      rows.push(h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap',padding:'9px 10px',border:'1px solid #e2e8f0',borderRadius:'10px',marginBottom:'6px',background:'#fff'}},
+        h('div',{style:{flex:'1',minWidth:'200px'}},
+          h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35'}},pair[1]+' · '+(r.title||'(başlıksız)')),
+          h('div',{style:{fontSize:'11px',color:T3}},'Silen: '+(r.deletedBy||'-')+' · '+_toTR(r.deletedAt)+' · '+left+' gün kaldı'+(r.deleteReason?(' · Sebep: '+r.deleteReason):''))),
+        btn('♻️ Geri yükle',function(){restoreTrashItem(pair[0],r.id);},'#ecfdf5','#15803d','6px 12px',{fontSize:'12px',border:'1px solid #86efac'}),
+        btn('Kalıcı sil',function(){purgeTrashItem(pair[0],r.id,false);},'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca'})));
+    });
+  });
+  const body = h('div',{style:{maxHeight:'65vh',overflowY:'auto'}},
+    h('div',{style:{fontSize:'12px',color:T3,marginBottom:'10px'}},'Silinen kayıtlar '+TRASH_DAYS+' gün saklanır, sonra otomatik kalıcı silinir. Geri yüklenen fırsatın bağlı talepleri yeniden bağlanır. Teklif Programı\'ndaki teklifler etkilenmez.'),
+    ...(rows.length?rows:[h('div',{style:{padding:'24px',textAlign:'center',color:T4}},'Silinen kayıt yok.')]));
+  return modal('🗑 Silinenler', body, ()=>setState({modal:null}), '720px');
+}
+
 async function delItem(col, id) {
+  if(col==='opportunities') return deleteOpportunityFlow(id);   // yumuşak silme + yetki + etki özeti
+  if(col==='proposals') return deleteProposalFlow(id);
   if(col==='maintenances' || col==='services'){
     const linkType = col==='maintenances' ? 'maintenance' : 'service';
     const linkedCl = (state.checklists||[]).filter(x=>x.linkType===linkType && x.linkId===id);
@@ -2406,7 +2772,7 @@ function buildServiceOppModal(item) {
 }
 
 function buildPropModal(item) {
-  const f = item ? JSON.parse(JSON.stringify(item)) : {title:'',customerId:'',contractorId:'',opportunityId:'',preparedBy:'',amount:'',status:'Hazırlanıyor',createdAt:today(),validUntil:'',sentDate:'',notes:''};
+  const f = item ? JSON.parse(JSON.stringify(item)) : Object.assign({title:'',customerId:'',contractorId:'',opportunityId:'',preparedBy:'',salesRep:((state.currentUser&&usersWithTargets().some(u=>u.displayName===state.currentUser.displayName))?state.currentUser.displayName:''),source:'request',amount:'',status:'Hazırlanıyor',createdAt:today(),validUntil:'',sentDate:'',notes:''}, (state.modal&&state.modal.prefill)||{});
 
   // Hazırlayan listesi: hedef girilmiş kullanıcılar; mevcut kayıttaki isim listede yoksa yine de ekle
   const _targetedNames = usersWithTargets().map(u=>u.displayName);
@@ -2435,7 +2801,9 @@ function buildPropModal(item) {
   renderPrepField();
 
   const custOpts = [{v:'',l:'Seçin…'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))];
-  const oppOpts = [{v:'',l:'Seçin…'},...state.opportunities.map(o=>({v:o.id,l:o.title}))];
+  const oppOpts = [{v:'',l:'Otomatik — Gönderildi olunca yeni fırsat açılır'},...state.opportunities.map(o=>({v:o.id,l:o.title}))];
+  const _repNames = [...new Set([...usersWithTargets().map(u=>u.displayName), ...(f.salesRep?[f.salesRep]:[])])].sort((a,b)=>a.localeCompare(b,'tr'));
+  const fRep = sel([{v:'',l:'Seçin…'},..._repNames.map(n=>({v:n,l:n}))], f.salesRep||'', v=>f.salesRep=v);
   const fTitle=inp('Teklif/Fırsat adı',f.title,v=>f.title=v);
   const fCust=sel(custOpts,f.customerId,v=>f.customerId=v);
   const fOpp=sel(oppOpts,f.opportunityId,v=>f.opportunityId=v);
@@ -2455,20 +2823,21 @@ function buildPropModal(item) {
     if(v==='Gönderildi'&&!f.sentDate){f.sentDate=today();fSentDate.value=fmtSent(f.sentDate);}
     if(v!=='Gönderildi'&&!origSentDate&&f.sentDate){f.sentDate='';fSentDate.value='';}
   });
-  const fAmt=inp('0',f.amount,v=>f.amount=v,'number');
   const fCreated=inp('',f.createdAt,v=>f.createdAt=v,'date');
   const fValid=inp('',f.validUntil,v=>f.validUntil=v,'date');
   const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
   const content = h('div',{},
     field('Fırsat Başlığı *',fTitle),
-    row(field('Müşteri',fCust,true),field('Fırsat',fOpp,true)),
+    row(field('Müşteri',fCust,true),field('Satış Temsilcisi *',fRep,true)),
     row(field('Hazırlayan *',prepContainer,true),field('Durum',fSt,true)),
-    row(field('Tutar (€)',fAmt,true),field('Talep Tarihi',fCreated,true)),
-    row(field('Dead Line',fValid,true),field('Gönderilme Tarihi (otomatik)',fSentDate,true)),
+    field('Fırsat bağlantısı (ops.)',fOpp),
+    h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'Boş bırakırsan teklif “Gönderildi” olduğunda fırsat otomatik açılır (satış temsilcisi ve tutar buradan alınır). Mevcut bir fırsata bağlamak için seç.'),
+    row(field('Talep Tarihi',fCreated,true),field('Dead Line',fValid,true)),
+    field('Gönderilme Tarihi (otomatik)',fSentDate),
     field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -5717,8 +6086,9 @@ function renderOpportunities() {
   return h('div',{style:{animation:'fu .3s ease'}},
     h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'10px'}},
       h('h2',{style:{fontSize:isMobO?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🎯 Satış Fırsatları ',h('span',{style:{fontSize:'13px',color:T3,fontWeight:'400'}},'('+fo.length+'/'+state.opportunities.length+')')),
-      btn('+ Yeni Fırsat',()=>setState({modal:{type:'opportunity',item:null}}),'linear-gradient(135deg,#ea580c,#d97706)','#fff',isMobO?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(234,88,12,.3)'})
+      !(state.currentUser&&state.currentUser.isAdmin) ? h('div',{style:{fontSize:'12px',color:T3,background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'8px 12px',maxWidth:'360px'}},'ℹ️ Yeni fırsat, Teklif Talebi “Gönderildi” olunca otomatik açılır.') : btn('+ Yeni Fırsat',()=>setState({modal:{type:'opportunity',item:null}}),'linear-gradient(135deg,#ea580c,#d97706)','#fff',isMobO?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(234,88,12,.3)'})
     ),
+    trashLink(),
     fyEmptyBanner('opportunities','fırsat'),
     filterBox,
     isMobO ?
@@ -5766,7 +6136,9 @@ function renderProposals() {
   const pf=state.propFilters;
   const EMPTY=FILTER_EMPTY;
   const today0=new Date();today0.setHours(0,0,0,0);
-  const _fyProps = filterFY(state.proposals, activeFiscalYear());   // yıl merceği
+  // Yıl merceği: talep tarihinin yılı + önceki yıllardan kalan AÇIK (Hazırlanıyor/Revize) talepler. Fırsat ise teklifin GÖNDERİLDİĞİ yılın bölümünde açılır.
+  const _fy0 = activeFiscalYear();
+  const _fyProps = (state.proposals||[]).filter(p=>{ const r=recFY(p); return r===_fy0 || (r<_fy0 && (p.status==='Hazırlanıyor'||p.status==='Revize')); });
   const hiddenPropsArr=_fyProps.filter(p=>{
     if(p.status!=='Gönderildi'||!p.sentDate)return false;
     const diff=Math.floor((today0-_toDate(p.sentDate))/(1000*60*60*24));
@@ -5821,7 +6193,7 @@ function renderProposals() {
   const _propThSticky={..._propThSt,position:'sticky',left:'0',zIndex:'2',background:'#1e2d4a',boxShadow:'3px 0 8px rgba(0,0,0,.35)'};
   const thead=h('thead',{},h('tr',{style:{background:'#1e2d4a'}},
     h('th',{style:_propThSticky},'Fırsat'),
-    ...["Müşteri","Hazırlayan","Tutar (€)","Durum","Talep Tarihi","Dead Line","Gönderilme Tarihi","Son Düzenleyen","İşlem"].map(t=>h('th',{style:_propThSt},t))
+    ...["Müşteri","Hazırlayan","Durum","Talep Tarihi","Dead Line","Gönderilme Tarihi","Son Düzenleyen","İşlem"].map(t=>h('th',{style:_propThSt},t))
   ));
   const tbody=h('tbody',{});
   propFiltered.forEach((p,i)=>{
@@ -5830,13 +6202,12 @@ function renderProposals() {
       h('td',{style:{padding:'10px 11px',position:'sticky',left:'0',zIndex:'1',background:i%2===0?'#edf5fc':'#dde8f6',boxShadow:'3px 0 6px rgba(0,0,0,.1)'}},h('div',{style:{fontSize:'13px',fontWeight:'700',maxWidth:'158px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},p.title||'')),
       h('td',{style:{padding:'10px 11px',fontSize:'13px',color:T3}},c?.firmName||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',alignItems:'center',gap:'7px'}},h('div',{style:{width:'25px',height:'25px',borderRadius:'50%',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},(p.preparedBy||'?').split(' ').map(n=>n[0]).join('').slice(0,2)),h('span',{style:{fontSize:'12px',color:T2}},p.preparedBy||''))),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',color:'#3b82f6'}},eur(p.amount)),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},badge(p.status,PS[p.status]||T3)),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.createdAt||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.validUntil||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},p.sentDate||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},p._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},p._editedBy),h('br'),h('span',{style:{color:T4}},p._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),btn('Sil',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap',minWidth:'250px'}},btn('Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),...propTeklifBtns(p,'6px 12px'),btn('Sil',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
   });
   const isMobP = window.innerWidth <= 768;
@@ -5845,6 +6216,7 @@ function renderProposals() {
       h('h2',{style:{fontSize:isMobP?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'📄 Teklif Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+propFiltered.length+'/'+state.proposals.length+')'),autoHidden>0?h('span',{style:{fontSize:'11px',color:'#0284c7',fontWeight:'500',marginLeft:'8px',background:'#e0f2fe',padding:'2px 8px',borderRadius:'10px',cursor:'pointer',textDecoration:'underline'},title:'Tıkla: Gizlenen teklifleri gör ve düzenle',onClick:()=>setState({modal:{type:'proplist',title:'🙈 Otomatik Gizlenen Teklifler (+5 gün)',items:hiddenPropsArr}})},autoHidden+' teklif otomatik gizlendi — Görmek için tıkla'):h('span')),
       btn('+ Yeni Teklif Talebi',()=>setState({modal:{type:'proposal',item:null}}),'linear-gradient(135deg,#0284c7,#2563eb)','#fff',isMobP?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(2,132,199,.3)'})
     ),
+    trashLink(),
     fyEmptyBanner('proposals','teklif'),
     propFilterBox,
     isMobP ?
@@ -5853,8 +6225,7 @@ function renderProposals() {
         const c2=custById(p.customerId);
         return h('div',{style:{background:'#fff',border:'1px solid #b0c8e0',borderRadius:'13px',padding:'13px',boxShadow:'0 2px 6px rgba(20,40,80,.07)'}},
           h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'7px'}},
-            h('div',{style:{fontWeight:'800',fontSize:'14px',color:'#0f1f35',flex:'1',paddingRight:'8px',lineHeight:'1.3'}},p.title||''),
-            h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#2563eb',whiteSpace:'nowrap'}},eur(p.amount))
+            h('div',{style:{fontWeight:'800',fontSize:'14px',color:'#0f1f35',flex:'1',paddingRight:'8px',lineHeight:'1.3'}},p.title||'')
           ),
           h('div',{style:{display:'flex',flexWrap:'wrap',gap:'5px',marginBottom:'7px'}},
             badge(p.status,PS[p.status]||T3),
@@ -5864,6 +6235,7 @@ function renderProposals() {
           p.validUntil?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'⏰ Dead Line: '+_toTR(p.validUntil)):h('span'),
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             btn('✏️ Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#1d4ed8','7px 14px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',flex:'1'}),
+            ...propTeklifBtns(p,'7px 12px'),
             btn('🗑️',()=>delItem('proposals',p.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
         );
@@ -7764,10 +8136,17 @@ function personelAutoMetric(kod, name, period, dept){
     case 'teklif_takip': {
       // Teklif kayıtlarında sahibi 'preparedBy', vadesi 'validUntil'dır (assignedTo/dueDate yok).
       const isFinal = s => s==='Onaylandı' || s==='Reddedildi';
-      const ps = P.filter(p=>p.preparedBy===name && (ytd(p.createdAt||p.sentDate||p.updatedAt) || !isFinal(p.status)));
+      // Dönem = teklifin GÖNDERİLDİĞİ tarih (gönderilmemişse talep tarihi). Geç = vadesi (Dead Line) geçmiş ve hâlâ gönderilmemiş,
+      // ya da vadeden SONRA gönderilmiş. Vadesinde gönderilip müşteri yanıtı beklenen teklif geç sayılmaz.
+      const ps = P.filter(p=>p.preparedBy===name && (ytd(p.sentDate||p.createdAt||p.updatedAt) || (!p.sentDate && !isFinal(p.status))));
       if(!ps.length) return null;
-      const overdue = ps.filter(p=>!isFinal(p.status) && p.validUntil && String(p.validUntil).slice(0,10) < today()).length;
-      return Math.max(0, 1 - overdue/ps.length);
+      const late = ps.filter(p=>{
+        const dl = p.validUntil ? String(p.validUntil).slice(0,10) : '';
+        if(!dl) return false;
+        if(p.sentDate) return String(p.sentDate).slice(0,10) > dl;
+        return !isFinal(p.status) && dl < today();
+      }).length;
+      return Math.max(0, 1 - late/ps.length);
     }
     case 'aktivite': {
       // YTD toplam aktivite ÷ (aylık 20 hedef × geçen ay) = aylık ortalama aktivite oranı.
@@ -7838,10 +8217,17 @@ function personelAutoMetric(kod, name, period, dept){
     // Keşif/teklif hazırlama süresi — bu kişiye ait tekliflerin zamanında (gecikmesiz) hazırlanma oranı
     case 'kesif_sure': {
       const isFinal = s => s==='Onaylandı' || s==='Reddedildi';
-      const ps = P.filter(p=>p.preparedBy===name && (ytd(p.createdAt||p.sentDate||p.updatedAt) || !isFinal(p.status)));
+      // Dönem = teklifin GÖNDERİLDİĞİ tarih (gönderilmemişse talep tarihi). Geç = vadesi (Dead Line) geçmiş ve hâlâ gönderilmemiş,
+      // ya da vadeden SONRA gönderilmiş. Vadesinde gönderilip müşteri yanıtı beklenen teklif geç sayılmaz.
+      const ps = P.filter(p=>p.preparedBy===name && (ytd(p.sentDate||p.createdAt||p.updatedAt) || (!p.sentDate && !isFinal(p.status))));
       if(!ps.length) return null;
-      const overdue = ps.filter(p=>!isFinal(p.status) && p.validUntil && String(p.validUntil).slice(0,10) < today()).length;
-      return Math.max(0, 1 - overdue/ps.length);
+      const late = ps.filter(p=>{
+        const dl = p.validUntil ? String(p.validUntil).slice(0,10) : '';
+        if(!dl) return false;
+        if(p.sentDate) return String(p.sentDate).slice(0,10) > dl;
+        return !isFinal(p.status) && dl < today();
+      }).length;
+      return Math.max(0, 1 - late/ps.length);
     }
     case 'tahsilat': {
       const ts = (state.tasks||[]).map(normTask).filter(t=>t.assignedTo===name && t.title && t.title.indexOf('Tahsilat')>=0 && recFY(t)===_periodYear(period));
@@ -10623,7 +11009,7 @@ function render() {
     return;
   }
 
-  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'projeler',l:'🏗 Projeler'},{id:'gorevler',l:'✅ Görevler'},{id:'personel',l:'🧑‍💼 Personel'}];
+  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'leads',l:'🌱 Potansiyeller'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'projeler',l:'🏗 Projeler'},{id:'gorevler',l:'✅ Görevler'},{id:'personel',l:'🧑‍💼 Personel'}];
   const cu = state.currentUser;
 
   // NAVBAR
@@ -10832,6 +11218,7 @@ function render() {
   else if(state.tab==='customers') content=renderCustomers();
   else if(state.tab==='suppliers') content=renderSuppliers();
   else if(state.tab==='opportunities') content=renderOpportunities();
+  else if(state.tab==='leads') content=renderLeads();
   else if(state.tab==='proposals') content=renderProposals();
   else if(state.tab==='services') content=renderServices();
   else if(state.tab==='serviceopps') content=renderServiceOpps();
@@ -10874,6 +11261,8 @@ function render() {
     else if(type==='opportunity') m=buildOppModal(item);
     else if(type==='serviceopp') m=buildServiceOppModal(item);
     else if(type==='proposal') m=buildPropModal(item);
+    else if(type==='trash') m=buildTrashModal();
+    else if(type==='lead') m=buildLeadModal(item);
     else if(type==='service') m=buildServModal(item);
     else if(type==='appointment') m=buildAppointmentModal(item);
     else if(type==='visit') m=buildVisitModal(item);
@@ -11399,6 +11788,9 @@ function checkAllNotifications() {
   // Eskiden görev yalnız o gün 09:00–09:04 arasında CRM açıksa oluşuyordu; kaçırılırsa o ay hiç oluşmuyordu.
   // Artık "telafili": oluşturma günü ile son gün arasında CRM ilk açıldığında oluşur (id sabit → çift görev olmaz).
   taxCalendarSync();
+  proposalOppSweep();
+  leadStaleSweep();
+  trashAutoPurge();
   monthlyAccountingSync();
   projectMonthlySync();
   frAutoCleanup();
@@ -11753,6 +12145,14 @@ async function syncQuotationRefs() {
       }
       // Teklif talepleri: durum senkronu (buton/rapor durumları taze kalsın)
       for (const p of updatedProps.filter(x => x.quotationId === qid)) {
+        // Teklif talebinde tutar elle girilmez; yalnız BOŞSA teklif toplamı yazılır (panolardaki teklif tutarları dolu kalsın). Mevcut tutarlar korunur.
+        if (total != null && total > 0 && !Number(p.amount)) {
+          const pa = { ...p, amount: total };
+          await saveDoc('proposals', p.id, pa);
+          updatedProps = updatedProps.map(x => x.id === p.id ? pa : x);
+          changed = true;
+          p.amount = total;
+        }
         if (d.status == null || d.status === p.quotationStatus) {
           const es = editorStampIfNewer(p, lastEditor, lastEditedAt);
           if (!es) continue;
