@@ -2890,7 +2890,7 @@ function buildOppModal(item) {
   const fRef=h('input',{placeholder:'Teklif hazırlandığında otomatik gelecek',value:f.tenderRef||'',
     readOnly:!_refEdit,title:'REF. teklif programından otomatik gelir; yalnız kazanılmış fırsatta yönetici elle düzeltebilir (sözleşme revizyonu).',
     style:{width:'100%',padding:'9px 12px',background:'#eef2f7',border:`1px solid ${G4}`,borderRadius:'8px',color:'#64748b',fontSize:'13px',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif",outline:'none',cursor:'not-allowed'}});
-  if(_refEdit){ fRef.style.background='#fff'; fRef.style.color=T1; fRef.style.cursor='text'; fRef.style.border='2px solid #2563eb'; }
+  if(_refEdit){ fRef.removeAttribute('readonly'); fRef.readOnly=false; fRef.style.background='#fff'; fRef.style.color=T1; fRef.style.cursor='text'; fRef.style.border='2px solid #2563eb'; }
   const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
 
