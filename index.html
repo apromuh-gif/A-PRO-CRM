@@ -10702,10 +10702,35 @@ async function taskSaveEdit(t, d){
   showToast('✅ Görev güncellendi.');
 }
 
+// Ad karşılaştırma: boşluk/büyük-küçük harf/İ-ı farkı görev eşleşmesini bozmasın.
+function _normName(x){ return String(x||'').normalize('NFC').replace(/\s+/g,' ').trim().toLocaleLowerCase('tr').replace(/ı/g,'i'); }
+function _sameName(a,b){ const x=_normName(a); return !!x && x===_normName(b); }
+// Yönetici aracı: her kullanıcının görev eşleşmesi (tam ad / normalize ad) + hiçbir kullanıcıya bağlanmayan atananlar.
+function buildTaskCheckModal(){
+  const tasks=(state.tasks||[]).map(normTask);
+  const users=(state.users||[]).filter(u=>u.active!==false);
+  const th=(t)=>h('th',{style:{textAlign:'left',padding:'7px 9px',fontSize:'11px',color:'#fff',background:'#1e2d4a',whiteSpace:'nowrap'}},t);
+  const td=(t,st)=>h('td',{style:Object.assign({padding:'7px 9px',fontSize:'12px',borderBottom:'1px solid #e2e8f0'},st||{})},t);
+  const rows=users.map(u=>{
+    const ex=tasks.filter(t=>t.assignedTo===u.displayName).length;
+    const nm=tasks.filter(t=>_sameName(t.assignedTo,u.displayName)).length;
+    const open=tasks.filter(t=>_sameName(t.assignedTo,u.displayName)&&!taskIsClosed(t)).length;
+    const st = nm===0 ? ['— görev yok','#64748b'] : (ex!==nm ? ['⚠ ad yazımı farklı','#b45309'] : ['✓ eşleşiyor','#15803d']);
+    return h('tr',{}, td(u.displayName||'-',{fontWeight:'700'}), td(String(ex)), td(String(nm)), td(String(open)), td(st[0],{color:st[1],fontWeight:'700'}));
+  });
+  const names=new Map(); tasks.forEach(t=>{ if(t.assignedTo) names.set(t.assignedTo,(names.get(t.assignedTo)||0)+1); });
+  const orphans=[...names].filter(([n])=>!users.some(u=>_sameName(u.displayName,n)));
+  const body=h('div',{style:{maxHeight:'70vh',overflowY:'auto'}},
+    h('div',{style:{fontSize:'12px',color:T3,marginBottom:'10px'}},'Yüklü toplam görev: '+tasks.length+'. "Tam eşleşen" görev sahibinin adıyla birebir aynı yazılmış görevlerdir; "ad yazımı farklı" uyarısı varsa o kişi görevlerini eksik görebilir (artık ekran bu farkları tolere eder).'),
+    h('table',{style:{width:'100%',borderCollapse:'collapse',marginBottom:'12px'}}, h('thead',{},h('tr',{},th('Kullanıcı'),th('Tam eşleşen'),th('Normalize eşleşen'),th('Açık'),th('Durum'))), h('tbody',{},...rows)),
+    orphans.length ? h('div',{style:{background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:'10px',padding:'10px 12px',fontSize:'12px',color:'#9a3412'}},
+      '⚠ Hiçbir aktif kullanıcıyla eşleşmeyen görev sahipleri: '+orphans.map(([n,c])=>'"'+n+'" ('+c+')').join(', ')) : h('div',{style:{fontSize:'12px',color:'#15803d'}},'✓ Tüm görev sahipleri bir kullanıcıyla eşleşiyor.'));
+  return modal('🔎 Görev Atama Kontrolü', body, ()=>setState({modal:null}), '720px');
+}
 function renderPersonelGorevler(period, isAdmin, cu){
   const myName = cu && cu.displayName;
   let list = tasksForFY(activeFiscalYear());
-  if(!isAdmin) list = list.filter(t=>t.assignedTo===myName || t.assignedBy===myName);
+  if(!isAdmin) list = list.filter(t=>_sameName(t.assignedTo,myName) || _sameName(t.assignedBy,myName));
 
   const ctxTabs = [{v:'hepsi',l:'👁 Tümü'},{v:'bana',l:'⭐ Bana Atananlar'}, ...TASK_CONTEXTS.map(c=>({v:c.v,l:c.l}))];
   const ctx = PMOD.taskCtx||'hepsi';
@@ -10713,7 +10738,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
     ...ctxTabs.map(tb=>btn(tb.l,()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v?'#1e3a6e':'#e8eef7',ctx===tb.v?'#fff':'#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}))
   );
 
-  if(ctx==='bana') list = list.filter(t=>t.assignedTo===myName);
+  if(ctx==='bana') list = list.filter(t=>_sameName(t.assignedTo,myName));
   else if(ctx!=='hepsi') list = list.filter(t=>t.context===ctx);
 
   const f = PMOD.taskFilter;
@@ -10765,7 +10790,8 @@ function renderPersonelGorevler(period, isAdmin, cu){
   const kanbanList = list.filter(t=>statusFilter(t) || (f==='acik' && taskIsClosed(t) && String(t.approvedAt||t.completedAt||t.updatedAt||'')>=_recent))
     .sort((a,b)=>_dueKey(a).localeCompare(_dueKey(b)));
 
-  const emptyMsg = h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.');
+  const emptyMsg = h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.',
+    isAdmin ? h('span') : h('div',{style:{fontSize:'11px',color:'#94a3b8',marginTop:'8px'}},'Tanı: oturum adı "'+(myName||'-')+'" · sistemde yüklü görev: '+((state.tasks||[]).length)+' · sizin görev: '+list.length+' (Yöneticiye bu satırı iletin).'));
   const body = PMOD.taskView==='kanban'
     ? renderTaskKanban(kanbanList)
     : PMOD.taskView==='gruplu'
@@ -11439,6 +11465,7 @@ function render() {
               {icon:'🔊', label:'Ses Testi',       color:'#059669', action:()=>{ menu.remove(); try{const ctx=window._audioCtx||(window._audioCtx=new(window.AudioContext||window.webkitAudioContext)());if(ctx.state==='suspended'){ctx.resume().then(()=>playBeep('win'));}else{playBeep('win');}}catch(e){} }},
               {sep:true},
               {icon:'🔄', label:'Teklifleri şimdi eşitle', color:'#0369a1', action:()=>{ menu.remove(); syncQuotationRefsNow(); }},
+              {icon:'🔎', label:'Görev atama kontrolü', color:'#0e7490', action:()=>{ menu.remove(); setState({modal:{type:'taskcheck'}}); }},
               {icon:'🔁', label:'Teklif Temsilcisi Eşle', color:'#15803d', action:()=>{ menu.remove(); backfillTeklifSalesReps(); }},
               {icon:'🏆', label:'Kazanılanları Onayla', color:'#4f46e5', action:()=>{ menu.remove(); approveWonQuotationsBulk(); }},
               {icon:'🔄', label:'Stok rezervlerini yeniden kur', color:'#4f46e5', action:()=>{ menu.remove(); resyncWonStockReservations(); }},
@@ -11626,6 +11653,7 @@ function render() {
     if(type==='customer') m=buildCustomerModal(item);
     else if(type==='supplier') m=buildSupplierModal(item);
     else if(type==='proje') m=buildProjeModal(state.modal.oppId);
+    else if(type==='taskcheck') m=buildTaskCheckModal();
     else if(type==='ariza') m=buildArizaModal(state.modal.serviceId);
     else if(type==='bakim') m=buildBakimModal(state.modal.maintId);
     else if(type==='bakimformlar') m=buildMaintFormsModal(state.modal.maintId);
