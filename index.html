@@ -2058,6 +2058,25 @@ async function saveOpp(form, isEdit) {
     showToast('⛔ Yeni fırsatı yalnız yönetici açabilir. Fırsat, Teklif Talebi "Gönderildi" olunca otomatik oluşur.','#dc2626');
     setState({modal:null}); return;
   }
+  // Teklif Programı'nda bağlı teklifi OLMAYAN (ör. Excel'de hazırlanmış) fırsatı yalnız YÖNETİCİ KAZANILDI yapabilir ve değer zorunludur: 0 € ile kazanılmış görünmesin (ciro/hedef/prim).
+  {
+    const _pv = isEdit ? (state.opportunities||[]).find(o=>o.id===form.id) : null;
+    const _hasQ = !!(form.quotationId && !form.quotationDeleted);
+    if(form.stage==='KAZANILDI' && (!_pv || _pv.stage!=='KAZANILDI') && !_hasQ){
+      if(!(state.currentUser && state.currentUser.isAdmin)){
+        showToast('⛔ Teklif Programı\'nda bağlı teklifi olmayan fırsatı yalnız yönetici KAZANILDI yapabilir.','#dc2626');
+        return;
+      }
+      if(!(Number(form.value)>0)){
+        showToast('⛔ Teklif Programı\'nda bağlı teklifi olmayan fırsatı KAZANILDI yapmak için "Değer (€)" 0\'dan büyük girilmelidir.','#dc2626');
+        return;
+      }
+      if(!String(form.wonBasis||'').trim()){
+        showToast('⛔ Teklifsiz KAZANILDI için kazanma dayanağı (Excel teklifi, sözleşme, sipariş vb.) yazılmalıdır.','#dc2626');
+        return;
+      }
+    }
+  }
   setState({saving:true});
   const id = isEdit ? form.id : genId();
   // K2: kazanma/kayıp tarihini AŞAMANIN DEĞİŞTİĞİ AN damgala. Prim ve yıllık hedef atfı
@@ -2068,6 +2087,11 @@ async function saveOpp(form, isEdit) {
   const list = isEdit ? state.opportunities.map(o=>o.id===id?data:o) : [...state.opportunities, data];
   setState({opportunities:list, modal:null, saving:false});
   showToast('✅ Fırsat kaydedildi!');
+  // Teklifsiz (elle) KAZANILDI → proje icrası otomatik başlar (ayrı "İcraya başlat" adımı gerekmez).
+  if (data.wonManual === true && data.stage === 'KAZANILDI' && data.execActive !== true && !(prevOpp && prevOpp.stage === 'KAZANILDI')) {
+    try { await projStart(data); showToast('🏗 Proje icrası otomatik başlatıldı.', '#16a34a'); }
+    catch (e) { showToast('⚠ Fırsat kaydedildi ama icra başlatılamadı: ' + ((e && e.message) || e) + ' — Projeler sekmesinden "İcraya başlat" ile başlatın.', '#d97706'); }
+  }
   // Kazanıldı + bağlı teklif varsa → teklifi APPROVED'a çek (karlılık dahli).
   if (data.stage === 'KAZANILDI' && data.quotationId) approveWonQuotation(data, !!(prevOpp && prevOpp.stage !== 'KAZANILDI'));
   // Stok: KAZANILDI'dan çıkıldıysa (KAÇTI / NO GO / ERTELENDİ vb.) rezerv serbest kalır.
@@ -2868,6 +2892,7 @@ function buildOppModal(item) {
     row(field('İşin Durumu',fJob,true),field('Satış Temsilcisi',fAssigned,true)),
     field('Ön Gör. Sipariş Tarihi',fDue),
     field('Teklif Referansı (tekliften otomatik)',fRef),
+    f.wonManual ? h('div',{style:{fontSize:'12px',color:'#92400e',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'8px 12px',marginBottom:'10px'}},'📝 Elle kazanıldı (teklifsiz) — '+(f.wonManualBy||'-')+' · '+_toTR(f.wonManualAt||'')+' · Dayanak: '+(f.wonBasis||'-')) : h('span'),
     h('div',{style:{display:'flex',gap:'10px',marginTop:'4px'}},
       btn('Kaydet',()=>{
         if(!(f.title&&f.customerId)) return;
@@ -2877,6 +2902,13 @@ function buildOppModal(item) {
           f.execActive=false;
         }
         if(!item){ const _sim=(state.opportunities||[]).filter(function(o){ return o.id!==f.id && ['KAÇTI','NO GO','FIRSAT ÖLDÜ'].indexOf(o.stage)<0 && _dupLevel(f,o)>0; }); if(_sim.length && !confirm('Aynı müşteriye benzer adlı fırsat(lar) var:\n\n'+_sim.slice(0,5).map(function(o){return '• '+(o.title||'')+' ['+(o.stage||'-')+']';}).join('\n')+'\n\nYine de yeni fırsat açılsın mı?')) return; }
+        // Teklifsiz KAZANILDI (yalnız yönetici): kazanma dayanağı sorulur, kayıt "elle kazanıldı" damgası alır.
+        if(f.stage==='KAZANILDI' && !(item&&item.stage==='KAZANILDI') && !(f.quotationId && !f.quotationDeleted) && state.currentUser && state.currentUser.isAdmin && Number(f.value)>0){
+          const _wb = prompt('Teklif Programı\'nda bağlı teklif yok.\n\nKazanma dayanağını yazın (ör. "Excel teklifi 12.10.2026 + sipariş mektubu"):', f.wonBasis||'');
+          if(_wb===null) return;
+          if(!_wb.trim()){ showToast('⛔ Kazanma dayanağı boş olamaz.','#dc2626'); return; }
+          f.wonBasis=_wb.trim(); f.wonManual=true; f.wonManualBy=(state.currentUser.displayName||''); f.wonManualAt=today();
+        }
         saveOpp({...f,value:Number(f.value)||0},!!item);
       },'linear-gradient(135deg,#ea580c,#d97706)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#f1f5f9','#4a6080','11px 20px',{fontSize:'14px',border:'1px solid #b0c8e0',borderRadius:'9px'})

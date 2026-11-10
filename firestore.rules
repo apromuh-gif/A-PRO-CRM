@@ -41,7 +41,13 @@ service cloud.firestore {
     // Silme: yumuşak silme (deletedAt) yalnız yönetici yazabilir; kalıcı silme yalnız yönetici (30 gün sonra otomatik temizlik de yönetici oturumundadır).
     match /opportunities/{id} {
       allow read: if signedIn();
-      allow update: if signedIn() && (isAdmin() || request.resource.data.get('deletedAt', '') == '');
+      // Silme işareti (deletedAt) ve teklifsiz KAZANILDI geçişi yalnız yönetici: bağlı teklifi (quotationId) olmayan fırsat KAZANILDI'ya ancak yönetici ile alınır.
+      allow update: if signedIn() && (isAdmin() || (
+        request.resource.data.get('deletedAt', '') == ''
+        && (request.resource.data.get('stage', '') != 'KAZANILDI'
+            || resource.data.get('stage', '') == 'KAZANILDI'
+            || request.resource.data.get('quotationId', '') != '')
+      ));
       allow delete: if isAdmin();
       allow create: if isAdmin() || (
         signedIn()
