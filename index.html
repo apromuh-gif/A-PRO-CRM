@@ -91,12 +91,20 @@ const FILTER_EMPTY = '__BOS__';
 //   urun    → sipariş onay, sipariş formu, sevkiyat/teslim takibi, fatura ve tahsilat
 //   sistem  → ürün süreci + Check list + devreye alma (teknik servis)
 //   anahtar → proje icrası (teknik/satın alma/saha/montaj/hakediş aşamaları)
+//   servis  → T.Servis'te 'Onaylandı' servis kaydı + servis icrası (Teknik Servis ekibi); satış cirosuna girmez
+//   bakim   → Periyodik Bakım'da taslak kayıt + 'bakım kaydını tamamla' görevi (Teknik Servis); satış cirosuna girmez
 const SALES_TYPES = [
   { v:'urun',    l:'Ürün-Malzeme Satışı', c:'#0284c7' },
   { v:'sistem',  l:'Sistem Satışı',       c:'#7c3aed' },
-  { v:'anahtar', l:'Anahtar Teslim',      c:'#16a34a' }
+  { v:'anahtar', l:'Anahtar Teslim',      c:'#16a34a' },
+  { v:'servis',  l:'Teknik Servis (hizmet)',      c:'#0891b2' },
+  { v:'bakim',   l:'Periyodik Bakım (sözleşme)',  c:'#b45309' }
 ];
 function salesTypeLabel(v){ const t=SALES_TYPES.find(x=>x.v===v); return t?t.l:''; }
+// Servis/Bakım fırsatları SATIŞ cirosuna, satış hedefine ve prime girmez: servis modülündeki kayıtla (servis kaydı / bakım sözleşmesi) ve servis hedefiyle ölçülür.
+function _isSalesOpp(o){ return !(o && (o.salesType==='servis' || o.salesType==='bakim')); }
+// Fırsattan açılan bakım sözleşmelerinin tutarı (servis hedefi gerçekleşmesine eklenir; repName verilirse satış temsilcisine göre).
+function _svcExtraWon(repName){ return (state.maintenances||[]).filter(function(m){ return m.opportunityId && (!repName || m.assignedTo===repName); }).reduce(function(a,m){ return a+(Number(m.amount)||0); },0); }
 const JOB_ST = ["SON KULLANICI","ALMIŞ MÜTEAHHİT","ALMIŞ TAŞERON","MÜTEAHHİT İHALESİ","TAŞERON İHALESİ","KEŞİF","BAYİ","OEM"];
 const PROP_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Reddedildi"];
 const SERV_ST = ["Gönderildi","Revize","Onaylandı","Randevu"];
@@ -1060,6 +1068,10 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId, proposal
   if (!selection) return;
   const { format, currency, language } = selection;
   const _win = selection.win;
+  // Teklif Türü "Servis" seçildiyse talebin Satış Türü (boşsa) otomatik "Teknik Servis" olur.
+  if (format === 'SERVICE' && proposal && proposal.id && !proposal.salesType) {
+    try { const p0=(state.proposals||[]).find(function(x){ return x.id===proposal.id; })||proposal; const np={...p0, salesType:'servis', ...stamp()}; await saveDoc('proposals', p0.id, np); setState({ proposals:(state.proposals||[]).map(function(x){ return x.id===p0.id?np:x; }) }); } catch(e) {}
+  }
   // Teknik Servis: UNIT_PRICE düzeni + isService bayrağı (numara A-Pro-BT serisi).
   const isService = format === 'SERVICE';
   const apiFormat = isService ? 'UNIT_PRICE' : format;
@@ -2140,9 +2152,11 @@ async function ensureOrderTasks(o){
   const id = o.id;
   const cn = _custName(o.customerId);
   const lbl = (o.title||'Proje') + (cn ? ' — ' + cn : '');
-  // Proje Grubu → Satın Alma sorumlusuna (Satın Alma işaretli kişi yoksa Proje Grubu'nda en az yüklü kişiye).
-  await autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:5, priority:'yuksek' });
-  await autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:'satinalma', context:'proje', linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:7, priority:'orta' });
+  // Satış türü servis/bakım ise görevler Satın Alma'ya DEĞİL Teknik Servis (işaretli kişilere) gider; diğer türlerde Proje Grubu → Satın Alma.
+  const svc = (o.salesType==='servis' || o.salesType==='bakim');
+  const dept = svc ? 'teknik' : 'satinalma', ctx = svc ? 'servis' : 'proje';
+  await autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:dept, context:ctx, linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:5, priority:'yuksek' });
+  await autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:dept, context:ctx, linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:7, priority:'orta' });
 }
 // Kazanılan fırsatın Satış Türü'ne göre süreci başlatır (idempotent).
 async function applyWonFlow(o){
@@ -2155,6 +2169,41 @@ async function applyWonFlow(o){
     await ensureProductTasks(o);
     if(t==='sistem') await ensureSystemTasks(o);
     showToast('📦 '+salesTypeLabel(t)+': süreç görevleri oluşturuldu.','#0284c7');
+  } else if(t==='servis'){
+    await ensureOrderTasks(o);
+    await createServiceFromOpp(o);
+  } else if(t==='bakim'){
+    await ensureOrderTasks(o);
+    await createMaintFromOpp(o);
+  }
+}
+// Teknik Servis: kazanılan fırsattan T.Servis'te 'Onaylandı' servis kaydı açılır ve servis icrası başlar (Teknik Servis işaretli kişiye).
+async function createServiceFromOpp(o){
+  const id='svc_'+o.id;
+  if((state.services||[]).some(function(x){ return x.id===id; })) return;
+  const owner=leastBusyInDept('teknik');
+  const rec={ id:id, jobName:o.title||'Servis', customerId:o.customerId||'', preparedBy:o.assignedTo||'', serviceContact:owner, assignedTo:o.assignedTo||'',
+    amount:Number(o.value)||0, status:'Onaylandı', createdAt:today(), validUntil:'', appointmentDate:'', notes:'Kazanılan fırsattan otomatik açıldı.',
+    tenderRef:o.tenderRef||'', opportunityId:o.id, source:'opportunity', fiscalYear:activeFiscalYear(), ...stamp() };
+  const created=await _createIfAbsent('services', id, rec);
+  if(!(state.services||[]).some(function(x){ return x.id===id; })) setState({ services:[...(state.services||[]), rec] });
+  if(created){ await servStart(rec); showToast('\u{1F527} Servis kaydı açıldı ve servis icrası başlatıldı.','#0891b2'); }
+}
+// Periyodik Bakım: sistem/periyot bilgisi fırsatta olmadığı için taslak bakım kaydı + "bakım kaydını tamamla" görevi açılır.
+async function createMaintFromOpp(o){
+  const id='mt_'+o.id;
+  if((state.maintenances||[]).some(function(x){ return x.id===id; })) return;
+  const owner=leastBusyInDept('teknik');
+  const rec={ id:id, jobName:o.title||'Bakım', customerId:o.customerId||'', serviceContact:owner, assignedTo:o.assignedTo||'', amount:Number(o.value)||0,
+    status:'Hizmet Henüz Verilmedi', notes:'Kazanılan bakım teklifinden otomatik taslak açıldı. Sistemleri, periyodu ve sözleşme tarihlerini girin.',
+    mtPeriod:'', mtPeriodDays:'', mtNextDue:'', createdAt:today(), opportunityId:o.id, source:'opportunity', ...stamp() };
+  const created=await _createIfAbsent('maintenances', id, rec);
+  if(!(state.maintenances||[]).some(function(x){ return x.id===id; })) setState({ maintenances:[...(state.maintenances||[]), rec] });
+  if(created){
+    await autoCreateTask({ dedupeKey:'bakim_taslak_'+o.id, title:'\u{1F501} Bakım kaydını tamamla (sistem, periyot, sözleşme tarihleri) — '+_wonLbl(o),
+      desc:'Bakım teklifi kazanıldı; taslak bakım kaydı açıldı. Teknik Servis → Periyodik Bakım\'dan kaydı açıp sistem, periyot ve sözleşme başlangıç/bitiş tarihlerini girin.',
+      dept:'teknik', assignedTo:owner||undefined, context:'bakim', linkType:'maintenance', linkId:id, linkLabel:o.title||'', dueOffset:7, priority:'yuksek' });
+    showToast('\u{1F501} Taslak bakım kaydı açıldı; tamamlama görevi Teknik Servis\'e atandı.','#b45309');
   }
 }
 function _wonLbl(o){ const cn=_custName(o.customerId); return (o.title||'Proje')+(cn?' — '+cn:''); }
@@ -3182,7 +3231,7 @@ function buildPropModal(item) {
     row(field('Müşteri',fCust,true),field('Satış Temsilcisi *',fRep,true)),
     dupBox,
     field('Satış Türü *',fSalesType),
-    h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'Ürün-Malzeme Satışı: sipariş, sevkiyat, fatura-tahsilat · Sistem Satışı: ürün süreci + check list + devreye alma · Anahtar Teslim: proje icrası. Kapsam değişirse sonradan değiştirebilirsiniz.'),
+    h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'Ürün-Malzeme: sipariş, sevkiyat, fatura-tahsilat · Sistem: ürün süreci + check list + devreye alma · Anahtar Teslim: proje icrası · Teknik Servis: servis kaydı + icra · Periyodik Bakım: bakım kaydı (Servis ve Bakım satış cirosuna girmez, servis hedefine yazılır). Kapsam değişirse sonradan değiştirebilirsiniz.'),
     row(field('Hazırlayan *',prepContainer,true),field('Durum',fSt,true)),
     h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'“Gönderildi” durumu elle seçilemez: teklif Teklif Programı’nda gönderilince otomatik atanır ve fırsat otomatik açılır.'),
     field('Fırsat bağlantısı (ops.)',fOpp),
@@ -3221,6 +3270,7 @@ function buildServModal(item) {
     field('İşin Adı *',fJob),
     field('Müşteri',fCust),
     row(field('Hazırlayan *',fPrep,true),field('T.Servis İlgilisi',fContact,true)),
+    field('Satış Temsilcisi (servis hedefi için)', sel([{v:'',l:'-- Seçin --'},...usersWithTargets().map(function(u){return {v:u.displayName,l:u.displayName};})], f.assignedTo||'', v=>f.assignedTo=v)),
     row(field('Tutar (€)',fAmt,true),field('Durum',fSt,true)),
     row(field('Talep Tarihi',fCreated,true),field('Dead Line',fValid,true)),
     field('Randevu Tarihi',fApp),field('Notlar',fNotes),
@@ -3272,6 +3322,7 @@ function buildMaintModal(item) {
     field('İşin Adı *',fJob),
     field('Müşteri',fCust),
     row(field('Teknik Servis İlgilisi',fContact,true),field('Tutar (€)',fAmt,true)),
+    field('Satış Temsilcisi (servis hedefi için)', sel([{v:'',l:'-- Seçin --'},...usersWithTargets().map(function(u){return {v:u.displayName,l:u.displayName};})], f.assignedTo||'', v=>f.assignedTo=v)),
     statusField,
     mtSection,
     field('Notlar',fNotes),
@@ -3993,7 +4044,7 @@ function getQuarterName(year, q) {
 
 // Rapor için veri hazırla
 function prepareReportData() {
-  var O=state.opportunities, P=state.proposals, S=state.services, C=state.customers;
+  var O=state.opportunities.filter(_isSalesOpp), P=state.proposals, S=state.services, C=state.customers;
   var LOST=["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
   var now=new Date();
   var totalWon=O.filter(function(o){return o.stage==="KAZANILDI";}).reduce(function(a,o){return a+(Number(o.value)||0);},0);
@@ -4386,7 +4437,7 @@ function checkMonthlyReport(){
 // YAZDIRMA FONKSİYONU
 // ═══════════════════════════════════════════════════════
 function printDashboard() {
-  const O = state.opportunities;
+  const O = state.opportunities.filter(_isSalesOpp);
   const P = state.proposals;
   const S = state.services;
   const LOST = ["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
@@ -4655,9 +4706,9 @@ function buildTargetsModal() {
       const repTarget = Number(targets.reps[u.displayName]) || 0;
       const svcTarget = Number(targets.serviceReps[u.displayName]) || 0;
       const LOST = ["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
-      const repO = state.opportunities.filter(o=>o.assignedTo===u.displayName);
+      const repO = state.opportunities.filter(o=>o.assignedTo===u.displayName && _isSalesOpp(o));
       const wonVal = repO.filter(o=>o.stage==='KAZANILDI').reduce((a,o)=>a+(Number(o.value)||0),0);
-      const svcVal = state.services.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0);
+      const svcVal = state.services.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
       const pct = repTarget > 0 ? Math.min(100, Math.round(wonVal/repTarget*100)) : 0;
       const svcPct = svcTarget > 0 ? Math.min(100, Math.round(svcVal/svcTarget*100)) : 0;
 
@@ -5099,7 +5150,7 @@ function miniTable(headers, rows) {
 // ═══════════════════════════════════════════════════════
 function renderDashboardAdmin() {
   const _fy = activeFiscalYear();                       // yıl merceği: aktif mali yıl
-  const O = filterFY(state.opportunities, _fy);
+  const O = filterFY(state.opportunities, _fy).filter(_isSalesOpp);
   const P = filterFY(state.proposals, _fy);
   const S = filterFY(state.services, _fy);
   const M = state.maintenances;                          // ORTAK — mercek uygulanmaz
@@ -5267,7 +5318,7 @@ function renderDashboardAdmin() {
     h('div',{style:{marginTop:'16px'}},
       card('🔧 Toplam Teknik Servis Cirosu & Yıllık Hedef', (()=>{
         const svcTarget = (state.targets&&state.targets.serviceCompany)||0;
-        const svcWon = S.filter(s=>s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0);
+        const svcWon = S.filter(s=>s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();
         const svcPipe = S.filter(s=>s.status!=='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0);
         const svcPct = svcTarget>0?Math.min(100,Math.round(svcWon/svcTarget*100)):0;
         const svcPctPipe = svcTarget>0?Math.min(100-svcPct,Math.round(svcPipe/svcTarget*100)):0;
@@ -5315,7 +5366,7 @@ function renderDashboardAdmin() {
           activeReps2.forEach(u=>{
             const t2 = Number(svcReps[u.displayName])||0;
             if(!t2) return;
-            const w2 = S.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0);
+            const w2 = S.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
             const p3 = Math.min(100,Math.round(w2/t2*100));
             div.appendChild(h('div',{style:{marginBottom:'10px'}},
               h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'4px'}},
@@ -5332,7 +5383,7 @@ function renderDashboardAdmin() {
       })()),
       card('🔧 Teknik Servis Ciro & Yıllık Hedef', (()=>{
         const svcTarget = (state.targets&&state.targets.serviceCompany)||0;
-        const svcWon = S.filter(s=>s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0);
+        const svcWon = S.filter(s=>s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();
         const svcAll = S.reduce((a,s)=>a+(Number(s.amount)||0),0);
         const svcPct = svcTarget>0?Math.min(100,Math.round(svcWon/svcTarget*100)):0;
         const div = h('div',{});
@@ -5374,7 +5425,7 @@ function renderDashboardAdmin() {
 // ═══════════════════════════════════════════════════════
 function renderDashboardSales() {
   const _fy = activeFiscalYear();                       // yıl merceği: aktif mali yıl
-  const O = filterFY(state.opportunities, _fy);
+  const O = filterFY(state.opportunities, _fy).filter(_isSalesOpp);
   const P = filterFY(state.proposals, _fy);
   const cu = state.currentUser;
   const LOST = ["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
@@ -5725,7 +5776,7 @@ function renderDashboardSales() {
             if(!v) continue;
             if(k===u.displayName||k.toLowerCase()===u.displayName.toLowerCase()||k.replace(/\s+/g,'')===u.displayName.replace(/\s+/g,'')) { t=v; break; }
           }
-          const w2 = state.services.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0);
+          const w2 = state.services.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
           const p3 = t>0?Math.min(100,Math.round(w2/t*100)):0;
           svcDiv.appendChild(h('div',{style:{marginBottom:'14px'}},
             h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'5px'}},
@@ -5784,7 +5835,7 @@ function renderDashboardSales() {
 // C — PAZARLAMA / İŞ GELİŞTİRME DASHBOARD
 // ═══════════════════════════════════════════════════════
 function renderDashboardMarketing() {
-  const O_ALL = filterFY(state.opportunities, activeFiscalYear());  // yıl merceği
+  const O_ALL = filterFY(state.opportunities, activeFiscalYear()).filter(_isSalesOpp);  // yıl merceği
   const C = state.customers;                                        // ORTAK — mercek yok
   const LOST = ["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
 
@@ -8486,7 +8537,7 @@ function personelAutoMetric(kod, name, period, dept){
   const ytd = s=>_pYtdInPeriod(s,period);              // yıl başından döneme kümülatif pencere
   const mNum = _monthNum(period)||1;
   const T = targetsForYear(_periodYear(period));        // dönemin mali yılının hedefleri (FY-aware)
-  const O=(state.opportunities||[]), P=(state.proposals||[]), M=(state.maintenances||[]);
+  const O=(state.opportunities||[]).filter(_isSalesOpp), P=(state.proposals||[]), M=(state.maintenances||[]);
   const V=(state.visits||[]), A=(state.appointments||[]);
   const S=(state.services||[]);   // K4: arıza kayıtları (cozum_suresi / acik_servis buradan ölçülür)
   switch(kod){
@@ -8837,7 +8888,7 @@ function personelPrim(person, period){
 // Rapor için rakamsal Hedef/Gerçekleşen değerleri (YTD) — yalnızca satış/karlılık kriterleri.
 // Diğer kriterlerde null döner → tablo '—' gösterir.
 function personelCritNumbers(kod, name, period){
-  const O=(state.opportunities||[]);
+  const O=(state.opportunities||[]).filter(_isSalesOpp);
   const T=targetsForYear(_periodYear(period));  // dönemin YILINA ait hedefler
   if(kod==='birey_hedef' || kod==='sirket_hedef'){
     const annual = kod==='birey_hedef'
@@ -9884,7 +9935,7 @@ async function servClose(s){
   const upd=Object.assign({}, s, { execClosedAt:today(), execCloseNote:note });
   await personelSaveDoc('services', upd);
   // GAP 3+8: Servis kapanışında fatura görevi — proje kapsamı dışındaysa
-  const isProjectScope = s.opportunityId && (state.opportunities||[]).some(o=>o.id===s.opportunityId && o.stage==='KAZANILDI');
+  const isProjectScope = s.opportunityId && (state.opportunities||[]).some(o=>o.id===s.opportunityId && o.stage==='KAZANILDI' && _isSalesOpp(o));   // servis/bakım fırsatından açılan servis kaydı için fatura görevi AÇILIR
   if(!isProjectScope){
     const cn = _custName(s.customerId);
     autoCreateTask({ dedupeKey:'fatura_servis_'+s.id, title:'\u{1F9FE} Fatura kesilmesi — '+(cn||'')+(s.jobName?' '+s.jobName:''), dept:'fatura', context:'servis', linkType:'service', linkId:s.id, linkLabel:s.jobName||'', dueOffset:3, priority:'yuksek' });
