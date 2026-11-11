@@ -3228,7 +3228,7 @@ function buildPropModal(item) {
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
   const content = h('div',{},
     field('Fırsat Başlığı *',fTitle),
-    row(field('Müşteri',fCust,true),field('Satış Temsilcisi *',fRep,true)),
+    row(field('Müşteri *',fCust,true),field('Satış Temsilcisi *',fRep,true)),
     dupBox,
     field('Satış Türü *',fSalesType),
     h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'Ürün-Malzeme: sipariş, sevkiyat, fatura-tahsilat · Sistem: ürün süreci + check list + devreye alma · Anahtar Teslim: proje icrası · Teknik Servis: servis kaydı + icra · Periyodik Bakım: bakım kaydı (Servis ve Bakım satış cirosuna girmez, servis hedefine yazılır). Kapsam değişirse sonradan değiştirebilirsiniz.'),
@@ -3240,7 +3240,7 @@ function buildPropModal(item) {
     field('Gönderilme Tarihi (otomatik)',fSentDate),
     field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!_dupGate(f,item)) return;if(!f.salesType && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Satış Türü zorunlu — Ürün-Malzeme / Sistem / Anahtar Teslim seçin.','#dc2626');return;}if(!f.validUntil && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Dead Line zorunlu — teklifin hazırlanıp gönderilmesi gereken tarihi girin.','#dc2626');return;}if(['Gönderildi','Revize','Onaylandı'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !(f.quotationId && !f.quotationDeleted)){showToast('⚠ Teklif hazırlanmadan "'+f.status+'" yapılamaz. Önce listeden "Teklif Oluştur" veya "Teklifi Kopyala" ile teklifi hazırlayın.','#dc2626');return;}if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!f.customerId && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Müşteri zorunlu — müşteri seçin.','#dc2626');return;}if(!_dupGate(f,item)) return;if(!f.salesType && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Satış Türü zorunlu — Ürün-Malzeme / Sistem / Anahtar Teslim seçin.','#dc2626');return;}if(!f.validUntil && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Dead Line zorunlu — teklifin hazırlanıp gönderilmesi gereken tarihi girin.','#dc2626');return;}if(['Gönderildi','Revize','Onaylandı'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !(f.quotationId && !f.quotationDeleted)){showToast('⚠ Teklif hazırlanmadan "'+f.status+'" yapılamaz. Önce listeden "Teklif Oluştur" veya "Teklifi Kopyala" ile teklifi hazırlayın.','#dc2626');return;}if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -10879,13 +10879,19 @@ function buildTaskCheckModal(){
     const nm=tasks.filter(t=>_sameName(t.assignedTo,u.displayName)).length;
     const open=tasks.filter(t=>_sameName(t.assignedTo,u.displayName)&&!taskIsClosed(t)).length;
     const st = nm===0 ? ['— görev yok','#64748b'] : (ex!==nm ? ['⚠ ad yazımı farklı','#b45309'] : ['✓ eşleşiyor','#15803d']);
-    return h('tr',{}, td(u.displayName||'-',{fontWeight:'700'}), td(String(ex)), td(String(nm)), td(String(open)), td(st[0],{color:st[1],fontWeight:'700'}));
+    const dl = userDepts(u).map(function(d){ return (DEPT_LABEL[d]||d)+(d===u.department?' (ana)':''); }).join(', ') || '— tanımsız';
+    return h('tr',{}, td(u.displayName||'-',{fontWeight:'700'}), td(dl,{fontSize:'11px',color:'#334155'}), td(String(ex)), td(String(nm)), td(String(open)), td(st[0],{color:st[1],fontWeight:'700'}));
   });
   const names=new Map(); tasks.forEach(t=>{ if(t.assignedTo) names.set(t.assignedTo,(names.get(t.assignedTo)||0)+1); });
   const orphans=[...names].filter(([n])=>!users.some(u=>_sameName(u.displayName,n)));
   const body=h('div',{style:{maxHeight:'70vh',overflowY:'auto'}},
     h('div',{style:{fontSize:'12px',color:T3,marginBottom:'10px'}},'Yüklü toplam görev: '+tasks.length+'. "Tam eşleşen" görev sahibinin adıyla birebir aynı yazılmış görevlerdir; "ad yazımı farklı" uyarısı varsa o kişi görevlerini eksik görebilir (artık ekran bu farkları tolere eder).'),
-    h('table',{style:{width:'100%',borderCollapse:'collapse',marginBottom:'12px'}}, h('thead',{},h('tr',{},th('Kullanıcı'),th('Tam eşleşen'),th('Normalize eşleşen'),th('Açık'),th('Durum'))), h('tbody',{},...rows)),
+    h('div',{style:{background:'#f0f9ff',border:'1px solid #bae6fd',borderRadius:'10px',padding:'9px 12px',fontSize:'12px',color:'#075985',marginBottom:'10px',lineHeight:'1.7'}},
+      ...[['teknik','Teknik Servis'],['satinalma','Satın Alma'],['fatura','Fatura & Tahsilat'],['stok','Stok-Sevkiyat'],['saha','Şantiye / Saha']].map(function(pair){
+        const names=users.filter(function(u){ return userInDept(u,pair[0]); }).map(function(u){ return u.displayName; });
+        return h('div',{}, '\u{1F465} '+pair[1]+' havuzu: ', h('b',{}, names.length?names.join(', '):(DEPT_PARENT[pair[0]]?'kimse işaretli değil → ana departmandaki ("'+(DEPT_LABEL[DEPT_PARENT[pair[0]]]||'')+'") kişilere gider':'kimse işaretli değil → görevler yöneticiye gider')));
+      })),
+    h('table',{style:{width:'100%',borderCollapse:'collapse',marginBottom:'12px'}}, h('thead',{},h('tr',{},th('Kullanıcı'),th('Departmanlar (görev havuzu)'),th('Tam eşleşen'),th('Normalize eşleşen'),th('Açık'),th('Durum'))), h('tbody',{},...rows)),
     orphans.length ? h('div',{style:{background:'#fff7ed',border:'1px solid #fed7aa',borderRadius:'10px',padding:'10px 12px',fontSize:'12px',color:'#9a3412'}},
       '⚠ Hiçbir aktif kullanıcıyla eşleşmeyen görev sahipleri: '+orphans.map(([n,c])=>'"'+n+'" ('+c+')').join(', ')) : h('div',{style:{fontSize:'12px',color:'#15803d'}},'✓ Tüm görev sahipleri bir kullanıcıyla eşleşiyor.'));
   return modal('🔎 Görev Atama Kontrolü', body, ()=>setState({modal:null}), '720px');
