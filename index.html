@@ -2202,6 +2202,9 @@ async function _onShipmentDone(rec){
     const d=Number(String(prompt('Kalan sevkiyat için tahmini teslim süresi (gün):', String(o.leadTimeDays||''))||'').replace(',','.'));
     if(d>0){ await ensureShipmentTask(o, n+1, _addDays(today(), d)); showToast('\u{1F69B} Sevkiyat '+(n+1)+' planlandı.','#0284c7'); }
     else showToast('⚠ Süre girilmedi — yeni sevkiyat görevi açılmadı.','#d97706');
+  } else if(o.salesType==='urun'){
+    // Ürün satışı: son teslimle garanti başlar (12 ay)
+    await _oppPatch(o, { warrantyStartAt:done, warrantyEndDate:o.warrantyEndDate||_addMonth(done,12), warrantyScope:o.warrantyScope||(o.contractorId?'yalniz_malzeme':'malzeme_iscilik'), ...stamp() });
   } else if(o.salesType==='sistem'){
     // SON sevkiyat tamamlandı → sistem satışında devreye alma görevi açılır (check list KAZANILDI'da açılmıştı)
     const dv=await ensureCommissioningTask(o, done);
@@ -2221,6 +2224,16 @@ async function ensureCommissioningTask(o, deliveredOn){
   return autoCreateTask({ dedupeKey:'devreye_alma_'+o.id, title:'\u{1F527} Devreye alma (teknik servis) — '+_wonLbl(o),
     desc:'Son sevkiyat teslim edildi; sistemin devreye alınması (check list ile birlikte) planlanmalı.',
     dept:'teknik', context:'servis', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', dueDate:_addDays(String(deliveredOn).slice(0,10),7), priority:'yuksek' });
+}
+// Devreye alma tamamlandı (imzalı form şartıyla): garanti başlar (12 ay) + bakım kaydı/teklifi görevi açılır.
+async function _onCommissioningDone(rec){
+  const o=(state.opportunities||[]).find(x=>x.id===rec.linkId); if(!o) return;
+  const done=String(rec.completedAt||today()).slice(0,10);
+  await _oppPatch(o, { warrantyStartAt:done, warrantyEndDate:o.warrantyEndDate||_addMonth(done,12), warrantyScope:o.warrantyScope||(o.contractorId?'yalniz_malzeme':'malzeme_iscilik'), ...stamp() });
+  const t=await autoCreateTask({ dedupeKey:'bakim_kaydi_'+o.id, title:'\u{1F501} Periyodik bakım kaydı aç / bakım teklifi — '+_wonLbl(o),
+    desc:'Devreye alma tamamlandı; garanti '+_toTR(_addMonth(done,12))+' tarihine kadar. Teknik Servis → Periyodik Bakım\'dan sistem ve periyot girilerek bakım kaydı açılmalı (garanti sonrası bakım teklifi için).',
+    dept:'teknik', context:'bakim', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'', dueOffset:14, priority:'orta' });
+  if(t) showToast('\u{1F6E1}\u{FE0F} Devreye alma tamamlandı — garanti başladı; bakım kaydı görevi açıldı.','#7c3aed');
 }
 // Satış Türü'nü fırsata yazar; fırsat zaten KAZANILDI ise ilgili süreç hemen başlar/tamamlanır.
 async function setOppSalesType(oppId, type){
@@ -3426,10 +3439,12 @@ async function maintSyncTask(m){
     const occ = maintOccurrenceLabel(m);
     const title = '🔁 Periyodik Bakım'+(occ?(' ('+occ+')'):'')+': '+((cust&&cust.firmName)||'Müşteri')+' — '+(m.jobName||'Bakım');
     if(!existing){
-      if(!m.serviceContact) return;
+      // Servis ilgilisi boşsa görev kaybolmasın: Teknik Servis'te en az yüklü kişiye (ilgili kişi sonradan girilince görev ona devredilir).
+      const _who = m.serviceContact || leastBusyInDept('teknik');
+      if(!_who) return;
       const t = normTask({
-        id: maintTaskId(m), title, desc:'Planlı periyodik bakımı gerçekleştir ve tamamla.',
-        assignedTo:m.serviceContact, department:dept,
+        id: maintTaskId(m), title, desc:'Planlı periyodik bakımı gerçekleştir ve tamamla.'+(m.serviceContact?'':' (Servis ilgilisi bakım kaydında girilmemişti; Teknik Servis\'e atandı.)'),
+        assignedTo:_who, department:(dept||'teknik'),
         assignedBy:'sistem', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'',
         dueDate:m.mtNextDue, dueTime:'', startDate:'', status:'yapilacak', completedAt:null, priority:'orta',
         needsApproval:false, revisionCount:0, assignmentHistory:[], comments:[],
@@ -10456,8 +10471,17 @@ function _taskParentClosed(t){
   if(t.linkType==='opportunity'){ const o=(state.opportunities||[]).find(x=>x.id===t.linkId); return !!(o && o.execClosedAt); }
   return false;
 }
+// Sistem satışı görevleri imzalı formlara bağlıdır: Check list görevi → imzalı Checklist, Devreye alma görevi → imzalı Devreye Alma Servis Formu (personel + müşteri imzası).
+function _taskFormGate(t){
+  const k=(t&&t.dedupeKey)||'';
+  if(!t || t.linkType!=='opportunity' || !t.linkId) return '';
+  if(k.indexOf('checklist_')===0 && !clHasFreshCompleted('project', t.linkId, '')) return 'Check list görevi kapatılmadan önce Checklist doldurulup personel + müşteri imzasıyla tamamlanmalı (görev penceresinin altından açılır).';
+  if(k.indexOf('devreye_alma_')===0 && !sfHasFreshCompleted('project', t.linkId, '')) return 'Devreye alma görevi kapatılmadan önce Devreye Alma Servis Formu doldurulup personel + müşteri imzasıyla tamamlanmalı (görev penceresinin altından açılır).';
+  return '';
+}
 async function taskSetStatus(t, status){
   const closing = (status==='tamamlandi' || status==='onaylandi');
+  if(closing){ const _g=_taskFormGate(t); if(_g){ showToast('⚠️ '+_g,'#d97706'); return; } }
   if(closing && _taskParentClosed(t) && !(state.currentUser && state.currentUser.isAdmin)){
     showToast('⚠️ Bu görevin bağlı olduğu iş kapatılmış — kapanmış işteki görevleri yalnız admin kapatabilir.','#d97706'); return;
   }
@@ -10471,6 +10495,7 @@ async function taskSetStatus(t, status){
 }
 
 async function taskApprove(t){
+  { const _g=_taskFormGate(t); if(_g){ showToast('⚠️ '+_g,'#d97706'); return; } }
   if(_taskParentClosed(t) && !(state.currentUser && state.currentUser.isAdmin)){
     showToast('⚠️ Bu görevin bağlı olduğu iş kapatılmış — kapanmış işteki görevleri yalnız admin onaylayabilir.','#d97706'); return;
   }
@@ -10486,6 +10511,7 @@ async function taskApprove(t){
 function _triggerTaskChain(rec){
   if(!rec || !rec.title) return;
   if(rec.linkType==='opportunity' && /^sevkiyat_/.test(rec.dedupeKey||'')) _onShipmentDone(rec).catch(function(){});
+  if(rec.linkType==='opportunity' && /^devreye_alma_/.test(rec.dedupeKey||'')) _onCommissioningDone(rec).catch(function(){});
   TASK_CHAIN_RULES.forEach(rule=>{
     if(rec.title.indexOf('Fatura')>=0 && rule.trigger==='fatura'){
       const n = rule.next;
@@ -10643,6 +10669,16 @@ function buildTaskModal(taskId){
     histList,
     commentBox
   );
+  // Sistem satışı: Check list / Devreye alma görevinin imzalı formları görevin içinden açılır (proje icrası olmadığı için başka yeri yok).
+  if(t.linkType==='opportunity' && t.linkId && /^(checklist_|devreye_alma_)/.test(t.dedupeKey||'')){
+    const _o=(state.opportunities||[]).find(x=>x.id===t.linkId);
+    if(_o){
+      const _c=(state.customers||[]).find(c=>c.id===_o.customerId);
+      const _nw={ customerId:_o.customerId||'', siteName:_o.title||((_c&&_c.firmName)||''), projectId:_o.id, linkType:'project', linkId:_o.id };
+      if(/^checklist_/.test(t.dedupeKey)) content.appendChild(clListBlock({ linkType:'project', linkId:_o.id, newOpts:Object.assign({formType:'devreye'},_nw) }));
+      else content.appendChild(sfListBlock({ linkType:'project', linkId:_o.id, newOpts:Object.assign({docType:'devreye'},_nw) }));
+    }
+  }
   return modal(t.title||'Görev', content, ()=>{ state._devretDraft=null; state._commentDraft=null; state._taskEdit=null; setState({modal:null}); }, '560px');
 }
 
@@ -12174,7 +12210,7 @@ function checkAllNotifications() {
 
   // ── GAP 4: GARANTİ BİTİMİ → BAKIM TEKLİFİ ──────────
   (state.opportunities||[]).forEach(o=>{
-    if(!o.warrantyEndDate || !o.execClosedAt) return;
+    if(!o.warrantyEndDate || !(o.execClosedAt || o.warrantyStartAt)) return;
     const wDiff = _diffDays(_toISO(o.warrantyEndDate));
     const cn = _custName(o.customerId);
     if(wDiff===60 && now>=540 && now<=544){
