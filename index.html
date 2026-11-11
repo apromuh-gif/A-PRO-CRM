@@ -487,6 +487,12 @@ function tpRefWithRev(d) {
 // KAZANILDI (sözleşmeye dönmüş) fırsatta tutar ve REF. DONAR: Teklif Programı'nda sonradan açılan/aktif edilen revizyon (çalışma kopyası)
 // kazanılan rakamı, dashboard'u ve kazanılan toplamı değiştirmesin. Güncel revizyon yalnız bilgi olarak (tpLatestValue/tpLatestRef) tutulur.
 // Değer 0 ise donmaz (ilk eşitleme doldurabilsin). Tutarı değiştirmek yalnız fırsat düzenleme penceresinden (elle) yapılır.
+// Teklif Programı yanıtından SÖZLEŞME revizyonu (durumu Onaylı olan en yüksek revizyon) tutarı ve REF.'i; yoksa null (eski sürüm / onaylı revizyon yok).
+function tpWonOf(d){
+  const t = (d && d.wonGrandTotalEur!=null && parseFloat(d.wonGrandTotalEur)>0) ? parseFloat(d.wonGrandTotalEur) : null;
+  const r = (d && d.wonRevisionNumber && (d.number||d.reference)) ? tpRefWithRev({ number:d.number, reference:d.reference, revisionNumber:d.wonRevisionNumber }) : null;
+  return { total:t, ref:r };
+}
 function _oppWonFrozen(o){ return !!o && o.stage==='KAZANILDI' && Number(o.value)>0; }
 // Fırsat değeri daima EUR: API grandTotalEur (EUR'ya çevrilmiş) döndürür; yoksa ham toplama düşer.
 function tpValueEur(d) {
@@ -581,6 +587,8 @@ async function openQuotationWithSSO(quotationId, existingWin) {
             ...(tpReference !== null && !(_oppWonFrozen(o) && o.tenderRef) && { tenderRef: tpReference }),
             ...(_oppWonFrozen(o) && tpTotal !== null && tpTotal > 0 && { tpLatestValue: tpTotal }),
             ...(_oppWonFrozen(o) && tpReference !== null && { tpLatestRef: tpReference }),
+            ...(_oppWonFrozen(o) && tpWonOf(chkBody.data).total !== null && { tpWonValue: tpWonOf(chkBody.data).total }),
+            ...(_oppWonFrozen(o) && tpWonOf(chkBody.data).ref && { tpWonRef: tpWonOf(chkBody.data).ref }),
             ...(tpSalesRep  !== null && tpSalesRep !== '' && { assignedTo: tpSalesRep }),
             ...(tpFormat   !== null && { quotationFormat: tpFormat }),
             ...syncStamp(tpLastEditor, tpLastEditedAt)
@@ -1567,8 +1575,34 @@ async function loadProfitActuals() {
     if(!data) return {};
     state.profitByRep  = (data.profitByRep  && typeof data.profitByRep==='object')  ? data.profitByRep  : {};
     state.revenueByRep = (data.revenueByRep && typeof data.revenueByRep==='object') ? data.revenueByRep : {};
+    state.svcProfit    = (data.service && typeof data.service==='object') ? data.service : {};   // servis (A-Pro-BT) teklifleri: ayrı karlılık
     return (data.marginByRep && typeof data.marginByRep==='object') ? data.marginByRep : {};
   } catch(e) { return {}; }
+}
+// Servis (A-Pro-BT) tekliflerinin AYRI karlılığı: aktif mali yıl içindeki onaylı servis tekliflerinin temsilci bazında ciro/kâr/marjı (Teklif Programı).
+function svcProfitBlock(){
+  const d = state.svcProfit || {};
+  const fy = String(activeFiscalYear());
+  const pr = d.profitByRep || {}, rv = d.revenueByRep || {};
+  const rows = Object.keys(rv).map(function(rep){
+    let rev=0, prof=0;
+    Object.keys(rv[rep]||{}).forEach(function(k){ if(String(k).slice(0,4)===fy){ rev += Number(rv[rep][k])||0; prof += Number((pr[rep]||{})[k])||0; } });
+    return { rep:rep, rev:rev, prof:prof };
+  }).filter(function(r){ return r.rev>0 || r.prof!==0; }).sort(function(a,b){ return b.rev-a.rev; });
+  const box = h('div',{style:{marginTop:'16px',borderTop:'1px solid #c0d8f0',paddingTop:'14px'}},
+    h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',marginBottom:'4px'}},'🧾 Servis Karlılığı — onaylı servis teklifleri ('+fy+')'),
+    h('div',{style:{fontSize:'11px',color:'#64748b',marginBottom:'8px'}},'Teklif Programı (A-Pro-BT). Satış karlılığına ve satış primine dahil edilmez.'));
+  if(!rows.length){ box.appendChild(h('div',{style:{fontSize:'12px',color:'#94a3b8',padding:'6px 0'}},'Henüz onaylı servis teklifi yok.')); return box; }
+  const tot = rows.reduce(function(a,r){ return { rev:a.rev+r.rev, prof:a.prof+r.prof }; },{rev:0,prof:0});
+  const cell=function(t,st){ return h('td',{style:Object.assign({padding:'6px 9px',fontSize:'12px',borderBottom:'1px solid #e2e8f0'},st||{})},t); };
+  const head=function(t){ return h('th',{style:{textAlign:'left',padding:'6px 9px',fontSize:'11px',color:'#fff',background:'#1e2d4a'}},t); };
+  const marj=function(p,r){ return r>0 ? (Math.round(p/r*1000)/10).toLocaleString('tr-TR')+'%' : '-'; };
+  box.appendChild(h('table',{style:{width:'100%',borderCollapse:'collapse'}},
+    h('thead',{},h('tr',{},head('Temsilci'),head('Ciro (KDV hariç)'),head('Kâr'),head('Marj'))),
+    h('tbody',{},
+      ...rows.map(function(r){ return h('tr',{},cell(r.rep,{fontWeight:'700'}),cell(eur(r.rev)),cell(eur(r.prof)),cell(marj(r.prof,r.rev),{fontWeight:'700',color:'#0891b2'})); }),
+      h('tr',{style:{background:'#f1f5f9'}},cell('Toplam',{fontWeight:'800'}),cell(eur(tot.rev),{fontWeight:'800'}),cell(eur(tot.prof),{fontWeight:'800'}),cell(marj(tot.prof,tot.rev),{fontWeight:'800',color:'#0891b2'})))));
+  return box;
 }
 // YTD kümülatif blended kâr marjı (%) = ΣYTD kâr ÷ ΣYTD ciro × 100. Ham veri yoksa null.
 // Dönemler quotation.updatedAt ayına göre keylenir (takvim yılı); teklif fiscalYear devri Faz 2.
@@ -3093,9 +3127,13 @@ function buildOppModal(item) {
     ) : h('span'),
     field('Ön Gör. Sipariş Tarihi',fDue),
     field(_refEdit?'Teklif Referansı (kazanılmış — yönetici düzeltebilir, örn. ...-R6)':'Teklif Referansı (tekliften otomatik)',fRef),
-    (f.stage==='KAZANILDI' && item && ((f.tpLatestValue && Number(f.tpLatestValue)!==Number(f.value)) || (f.tpLatestRef && f.tpLatestRef!==f.tenderRef)))
-      ? h('div',{style:{fontSize:'12px',color:'#1e40af',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'8px',padding:'8px 12px',marginBottom:'10px'}},
-          '🔒 Kazanılan tutar ve REF. sabit (dashboard bu rakamı kullanır). Teklif Programı\'ndaki güncel revizyon: '+(f.tpLatestRef||'-')+' · '+(f.tpLatestValue?Number(f.tpLatestValue).toLocaleString('tr-TR')+' €':'-')+' — yalnız bilgi. Sözleşme tutarı değiştiyse "Değer (€)" alanını elle güncelleyin.')
+    (f.stage==='KAZANILDI' && item && ((f.tpLatestValue && Number(f.tpLatestValue)!==Number(f.value)) || (f.tpLatestRef && f.tpLatestRef!==f.tenderRef) || (f.tpWonValue && Number(f.tpWonValue)!==Number(f.value)) || (f.tpWonRef && f.tpWonRef!==f.tenderRef)))
+      ? h('div',{style:{fontSize:'12px',color:'#1e40af',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'8px',padding:'8px 12px',marginBottom:'10px',lineHeight:'1.6'}},
+          '🔒 Kazanılan tutar ve REF. sabit (dashboard bu rakamı kullanır).',
+          (f.tpWonValue||f.tpWonRef) ? h('div',{}, '📌 Teklif Programı sözleşme revizyonu: '+(f.tpWonRef||'-')+' · '+(f.tpWonValue?Number(f.tpWonValue).toLocaleString('tr-TR')+' €':'-')) : h('span'),
+          (f.tpLatestValue||f.tpLatestRef) ? h('div',{}, '📝 Aktif (çalışma) revizyon: '+(f.tpLatestRef||'-')+' · '+(f.tpLatestValue?Number(f.tpLatestValue).toLocaleString('tr-TR')+' €':'-')+' — yalnız bilgi.') : h('span'),
+          (f.tpWonValue && Number(f.tpWonValue)!==Number(f.value)) ? h('div',{style:{marginTop:'4px'}}, 'Fırsat değeri sözleşme revizyonundan farklı. ',
+            btn('Sözleşme tutarını uygula',()=>{ f.value=f.tpWonValue; fValue.value=String(f.tpWonValue); showToast('Değer alanı güncellendi — Kaydet ile onaylayın.','#0369a1'); },'#dbeafe','#1e40af','4px 10px',{fontSize:'11px',border:'1px solid #93c5fd',borderRadius:'6px'})) : h('span'))
       : h('span'),
     f.wonManual ? h('div',{style:{fontSize:'12px',color:'#92400e',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'8px 12px',marginBottom:'10px'}},'📝 Elle kazanıldı (teklifsiz) — '+(f.wonManualBy||'-')+' · '+_toTR(f.wonManualAt||'')+' · Dayanak: '+(f.wonBasis||'-')) : h('span'),
     h('div',{style:{display:'flex',gap:'10px',marginTop:'4px'}},
@@ -5379,6 +5417,7 @@ function renderDashboardAdmin() {
             ));
           });
         }
+        div.appendChild(svcProfitBlock());
         return div;
       })()),
       card('🔧 Teknik Servis Ciro & Yıllık Hedef', (()=>{
@@ -12734,19 +12773,43 @@ async function syncQuotationRefs() {
         changed = true;
       }
 
-      const ref   = tpRefWithRev(d);     // revizyon ≥2 → "...-R2"
-      const total = tpValueEur(d);       // daima EUR
+      // Servis (A-Pro-BT) teklifi: bağlı talebin / (henüz kazanılmamış) fırsatın Satış Türü boşsa otomatik "Teknik Servis" olur.
+      if (d.isService === true) {
+        for (const p of updatedProps.filter(x => x.quotationId === qid && !x.salesType)) {
+          const np = { ...p, salesType: 'servis' };
+          await saveDoc('proposals', p.id, np);
+          updatedProps = updatedProps.map(x => x.id === p.id ? np : x);
+          changed = true;
+        }
+        for (const o of updatedOpps.filter(x => x.quotationId === qid && !x.salesType && x.stage !== 'KAZANILDI')) {
+          const no = { ...o, salesType: 'servis' };
+          await saveDoc('opportunities', o.id, no);
+          updatedOpps = updatedOpps.map(x => x.id === o.id ? no : x);
+          changed = true;
+        }
+      }
+      const ref   = tpRefWithRev(d);     // revizyon ≥2 → "...-R2"  (aktif revizyon)
+      const total = tpValueEur(d);       // daima EUR (aktif revizyon)
+      const won   = tpWonOf(d);          // SÖZLEŞME revizyonu: onaylı en yüksek revizyon (çalışma kopyasından bağımsız)
       const lastEditor = resolveEditorName(d); // gerçek teklif düzenleyicisi (Son Düzenleyen)
       const lastEditedAt = d.lastEditedAt ?? null;
       // Fırsatlar: durum (hazırlandı/gönderildi) + REF + değer + temsilci
       for (const o of updatedOpps.filter(x => x.quotationId === qid)) {
         const patch = {};
         if (d.status != null && d.status !== o.quotationStatus) patch.quotationStatus = d.status;
-        const _frz = _oppWonFrozen(o);   // kazanılmış fırsat: tutar/REF. donar, güncel revizyon yalnız bilgi alanına yazılır
-        if (ref != null && ref !== o.tenderRef) { if (_frz && o.tenderRef) { if (ref !== o.tpLatestRef) patch.tpLatestRef = ref; } else patch.tenderRef = ref; }
-        else if (_frz && ref != null && ref !== o.tpLatestRef) patch.tpLatestRef = ref;
-        if (total != null && total > 0 && total !== o.value) { if (_frz) { if (total !== o.tpLatestValue) patch.tpLatestValue = total; } else patch.value = total; }
-        else if (_frz && total != null && total > 0 && total !== o.tpLatestValue) patch.tpLatestValue = total;
+        const _frz = _oppWonFrozen(o);   // kazanılmış fırsat: tutar/REF. donar
+        // Asıl değer/REF.: kazanılmış fırsatta sözleşme revizyonu (varsa), aksi halde aktif revizyon. Donmuş fırsatta değişmez (elle güncellenir).
+        const vRef = (o.stage === 'KAZANILDI' && won.ref) ? won.ref : ref;
+        const vTotal = (o.stage === 'KAZANILDI' && won.total != null) ? won.total : total;
+        if (vRef != null && vRef !== o.tenderRef && !(_frz && o.tenderRef)) patch.tenderRef = vRef;
+        if (vTotal != null && vTotal > 0 && vTotal !== o.value && !_frz) patch.value = vTotal;
+        // Bilgi alanları (donmuş kazanılmış fırsat): aktif revizyon + sözleşme revizyonu
+        if (_frz) {
+          if (ref != null && ref !== o.tpLatestRef) patch.tpLatestRef = ref;
+          if (total != null && total > 0 && total !== o.tpLatestValue) patch.tpLatestValue = total;
+          if (won.ref && won.ref !== o.tpWonRef) patch.tpWonRef = won.ref;
+          if (won.total != null && won.total !== o.tpWonValue) patch.tpWonValue = won.total;
+        }
         if (d.salesRep && d.salesRep !== o.assignedTo) patch.assignedTo = d.salesRep;
         if (d.format && d.format !== o.quotationFormat) patch.quotationFormat = d.format;
         if (Object.keys(patch).length === 0) {
