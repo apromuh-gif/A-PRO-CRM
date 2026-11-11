@@ -4778,9 +4778,11 @@ function buildAdminModal() {
     return h('div',{style:{display:'flex',gap:'14px',flexWrap:'wrap',marginBottom:'10px'}},
       ...DEPARTMENTS.concat(TASK_SUBDEPTS.filter(d=>d.pick)).map(d=>{
         const cb=document.createElement('input');
-        cb.type='checkbox'; cb.checked=(obj.extraDepts||[]).indexOf(d.v)>=0; cb.style.accentColor='#6366f1';
+        const isMain = !!obj.department && obj.department===d.v;   // ana departman zaten görev atama/yetkiye dahildir; ek olarak işaretlenmez (kayıtta ayıklanır)
+        cb.type='checkbox'; cb.checked=isMain || (obj.extraDepts||[]).indexOf(d.v)>=0; cb.style.accentColor='#6366f1';
+        if(isMain){ cb.disabled=true; cb.title='Ana departman: görev atama ve yetkiye zaten dahildir.'; }
         cb.addEventListener('change',e=>{ const st=new Set(obj.extraDepts||[]); if(e.target.checked) st.add(d.v); else st.delete(d.v); obj.extraDepts=[...st]; });
-        return h('label',{style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'12px',color:T3,cursor:'pointer'}},cb,h('span',{},d.l));
+        return h('label',{style:{display:'flex',alignItems:'center',gap:'5px',fontSize:'12px',color:isMain?'#a5b4fc':T3,cursor:isMain?'default':'pointer'}},cb,h('span',{},d.l+(isMain?' (ana)':'')));
       })
     );
   }
