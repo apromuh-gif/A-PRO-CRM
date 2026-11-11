@@ -9217,8 +9217,82 @@ function printPersonelReport(person, period, isAdmin){
   var pc=document.createElement('div'); pc.style.cssText='flex:1;overflow-y:auto;'; pc.innerHTML=printHTML; po.appendChild(pc);
   document.body.appendChild(po);
 }
+// ═══ DENEME MODU (SANDBOX) — tüm CRM akışlarını denemek için; hiçbir şey kaydedilmez, hiçbir dış sisteme/mail'e gitmez ═══
+// Nasıl korur: (1) Firestore'a tüm yazmalar (set/update/delete, transaction, batch) boşa çıkarılır — okuma serbesttir;
+// (2) Teklif Programı'na giden tüm yazma isteklerini (POST...) engeller (okuma/GET serbest); (3) e-posta gönderimi (EmailJS) kapalıdır.
+// Ekrandaki işlemler yalnız bellekte yapılır; Çıkış'ta (veya F5'te) gerçek veriler yeniden yüklenir. Kullanıcı olarak deneme: alt çubuktan.
+(function(){
+  function on(){ try{ return typeof state!=='undefined' && state.sandbox===true; }catch(e){ return false; } }
+  try{
+    const FS = firebase.firestore;
+    ['set','update','delete'].forEach(function(n){
+      const d = FS.DocumentReference && FS.DocumentReference.prototype, o = d && d[n];
+      if(o && !o.__sbx){ d[n] = function(){ if(on()){ console.warn('[DENEME] yazma engellendi: '+n); return Promise.resolve(); } return o.apply(this, arguments); }; d[n].__sbx = true; }
+      const t = FS.Transaction && FS.Transaction.prototype, ot = t && t[n];
+      if(ot && !ot.__sbx){ t[n] = function(){ if(on()){ return this; } return ot.apply(this, arguments); }; t[n].__sbx = true; }
+    });
+    const bp = FS.WriteBatch && FS.WriteBatch.prototype;
+    if(bp && bp.commit && !bp.commit.__sbx){ const oc = bp.commit; bp.commit = function(){ if(on()){ console.warn('[DENEME] toplu yazma engellendi'); return Promise.resolve(); } return oc.apply(this, arguments); }; bp.commit.__sbx = true; }
+  }catch(e){ console.warn('Deneme modu: Firestore koruması kurulamadı', e); }
+  try{
+    const of = window.fetch;
+    if(of && !of.__sbx){
+      window.fetch = function(u, o){
+        const m = String((o && o.method) || 'GET').toUpperCase();
+        if(on() && m!=='GET' && m!=='HEAD' && !(typeof TEKLIF_AUTH_URL!=='undefined' && String(u)===TEKLIF_AUTH_URL)){
+          console.warn('[DENEME] dış yazma isteği engellendi: '+m+' '+u);
+          return Promise.resolve(new Response(JSON.stringify({ error:{ message:'Deneme modu açık: Teklif Programı\'na yazma kapalı.' } }), { status:503, headers:{'Content-Type':'application/json'} }));
+        }
+        return of.apply(this, arguments);
+      };
+      window.fetch.__sbx = true;
+    }
+  }catch(e){}
+  try{
+    if(typeof emailjs!=='undefined' && emailjs.send && !emailjs.send.__sbx){
+      const oe = emailjs.send; emailjs.send = function(){ if(on()){ console.warn('[DENEME] e-posta engellendi'); return Promise.resolve({status:200,text:'sandbox'}); } return oe.apply(this, arguments); }; emailjs.send.__sbx = true;
+    }
+  }catch(e){}
+})();
+function sandboxBar(){
+  let b = document.getElementById('sandbox-bar');
+  if(!state.sandbox){ if(b) b.remove(); return; }
+  if(!b){ b = document.createElement('div'); b.id='sandbox-bar'; b.style.cssText='position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:99999;background:#7f1d1d;color:#fff;padding:9px 14px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.45);display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:94vw;font-size:13px;font-weight:700;'; document.body.appendChild(b); }
+  b.innerHTML = '';
+  const t = document.createElement('span'); t.textContent = '🧪 DENEME MODU — hiçbir şey kaydedilmez'; b.appendChild(t);
+  const lab = document.createElement('span'); lab.textContent='Kullanıcı olarak dene:'; lab.style.cssText='font-weight:600;opacity:.9;'; b.appendChild(lab);
+  const sel = document.createElement('select'); sel.style.cssText='padding:5px 8px;border-radius:7px;border:none;font-size:12px;';
+  const orig = state._sbxUser;
+  const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='Ben ('+((orig&&orig.displayName)||'-')+')'; sel.appendChild(opt0);
+  (state.users||[]).filter(function(u){ return u.active!==false && u.displayName; }).forEach(function(u){
+    const o = document.createElement('option'); o.value=u.email||u.displayName; o.textContent=u.displayName+(u.isAdmin?' (yönetici)':''); if(state.currentUser && state.currentUser.displayName===u.displayName && u.displayName!==(orig&&orig.displayName)) o.selected=true; sel.appendChild(o);
+  });
+  sel.addEventListener('change', function(){
+    const v = sel.value;
+    if(!v){ state.currentUser = state._sbxUser; }
+    else { const u=(state.users||[]).find(function(x){ return (x.email||x.displayName)===v; }); if(u) state.currentUser = Object.assign({}, u); }
+    render(); sandboxBar();
+  });
+  b.appendChild(sel);
+  const ex = document.createElement('button'); ex.textContent='Çıkış (gerçek veriye dön)'; ex.style.cssText='background:#fff;color:#7f1d1d;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;'; ex.addEventListener('click', sandboxExit); b.appendChild(ex);
+}
+function sandboxToggle(){ if(state.sandbox) sandboxExit(); else sandboxEnter(); }
+function sandboxEnter(){
+  if(!confirm('DENEME MODU açılsın mı?\n\n• Yaptığınız hiçbir işlem veritabanına kaydedilmez.\n• Teklif Programı\'na yazılmaz (teklif oluşturma/kopyalama çalışmaz), e-posta gönderilmez.\n• Çıkışta veya sayfa yenilenince tüm deneme kayıtları kaybolur.\n\nDevam edilsin mi?')) return;
+  state._sbxUser = state.currentUser; state.sandbox = true; state.testMode = true;
+  sandboxBar(); showToast('🧪 Deneme modu açık — hiçbir şey kaydedilmez','#7f1d1d'); render();
+}
+async function sandboxExit(){
+  state.sandbox = false; state.testMode = false;
+  if(state._sbxUser) state.currentUser = state._sbxUser; state._sbxUser = null;
+  sandboxBar();
+  showToast('⏳ Gerçek veriler yeniden yükleniyor…','#0369a1');
+  try{ await loadAllData(); }catch(e){ showToast('⚠ Veriler yüklenemedi: sayfayı yenileyin (F5).','#dc2626'); }
+  render(); showToast('✅ Deneme modu kapandı — gerçek veriler geri yüklendi.','#16a34a');
+}
 // ═══ TEST MODU — örnek verilerle performans/prim hesabını dener, DB'ye HİÇ yazmaz ═══
 function personelTestModeToggle(period){
+  if(state.sandbox){ showToast('🧪 Deneme modu açık — Personel test modu kullanılamaz. Önce alt çubuktan Deneme modundan çıkın.','#d97706'); return; }
   if(state.testMode){ personelTestModeExit(); return; }
   // Mevcut veriyi yedekle (çıkışta geri yüklenir) — yıl bazlı hedefler + kümülatif kâr/ciro dahil
   state._testBackup = {
@@ -11509,6 +11583,7 @@ function render() {
               {sep:true},
               {icon:'🔄', label:'Teklifleri şimdi eşitle', color:'#0369a1', action:()=>{ menu.remove(); syncQuotationRefsNow(); }},
               {icon:'🔎', label:'Görev atama kontrolü', color:'#0e7490', action:()=>{ menu.remove(); setState({modal:{type:'taskcheck'}}); }},
+              {icon:'🧪', label:'Deneme modu (hiçbir şey kaydedilmez)', color:'#b91c1c', action:()=>{ menu.remove(); sandboxToggle(); }},
               {icon:'🔁', label:'Teklif Temsilcisi Eşle', color:'#15803d', action:()=>{ menu.remove(); backfillTeklifSalesReps(); }},
               {icon:'🏆', label:'Kazanılanları Onayla', color:'#4f46e5', action:()=>{ menu.remove(); approveWonQuotationsBulk(); }},
               {icon:'🔄', label:'Stok rezervlerini yeniden kur', color:'#4f46e5', action:()=>{ menu.remove(); resyncWonStockReservations(); }},
