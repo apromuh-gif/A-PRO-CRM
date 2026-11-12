@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 31 Ağustos 2026 (Saha Raporu sistemi + 4 auto prim kriteri, 12-GAP muhasebe otomasyonu)
+> Son güncelleme: 12 Kasım 2026 (Satış Türü sistemi, sözleşme revizyonu, Deneme modu, Teknik Servis/Bakım ayrımı, görev görünürlüğü)
 
 ---
 
@@ -881,3 +881,34 @@ Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departm
 
 **Durum:** Canlı, commit `92d5304`. Firestore rules Firebase Console'dan deploy edildi. UI testi devam ediyor.
 
+---
+
+## 🧭 Teklif Talepleri, Satış Türü Sistemi ve Servis Ayrımı (10–12 Kasım 2026)
+
+> Hepsi canlı (GitHub Pages). Firestore kuralı bu turda **bir kez** değişti (10 Kasım, aşağıda); diğer değişiklikler istemci tarafı.
+
+### 10 Kasım
+- **Teklif Talepleri görünümleri:** Aktif = yalnız devam eden çalışmalar (Hazırlanıyor/Revize); Gönderilenler = Gönderildi/Onaylandı/Reddedildi. Eski akış (`source:'opportunity'`) kayıtları da dahil; durumları Teklif Programı'na göre (`_eff`) hesaplanır, "Eski" yalnız kaynak süzgeci.
+- **Teklifsiz KAZANILDI (Excel'de hazırlanmış işler, örn. Rivulis):** yalnız **yönetici** yapabilir; Değer (€) > 0 ve **kazanma dayanağı** zorunlu; "elle kazanıldı" damgası (`wonManual/By/At/Basis`). **Firestore kuralı:** `opportunities` update'inde teklifsiz KAZANILDI geçişi yalnız admin (yayınlandı 13:59).
+- **Henkel R6/R7:** KAZANILDI fırsatta tutar ve REF. **donar** (`_oppWonFrozen`); Teklif Programı'ndaki güncel revizyon yalnız bilgi (`tpLatestValue/Ref`). REF. alanı kazanılmış fırsatta yönetici için düzenlenebilir.
+- **Satış Türü (teklif talebinde ZORUNLU, fırsata taşınır, sonradan değiştirilebilir):** Ürün-Malzeme, Sistem, Anahtar Teslim.
+  - Ürün: sipariş onay + form, **Satın Alma "tedarik süresi (gün)"** görevi → süre girilince sevkiyat görevi → sevkiyat bitince **fatura (+7 gün)** → tahsilat zinciri; kısmi sevkiyat desteği (her sevkiyat ayrı fatura).
+  - Sistem: ürün süreci + Check list; **devreye alma son sevkiyatta** açılır.
+  - Anahtar Teslim: proje icrası (KAZANILDI'da otomatik, mevcut akış aynen).
+- **Görevler:** proje bazlı görünürlük (kişi kendi görevleri + görevi olduğu projedeki diğer görevleri, salt okunur), ad yazımı toleransı (`_sameName`), **Araçlar → Görev atama kontrolü** (kullanıcı/departman/görev havuzları).
+
+### 11 Kasım
+- **Deneme modu (sandbox):** Araçlar → 🧪; Firestore yazmaları, Teklif Programı yazma istekleri ve e-posta engellenir; "kullanıcı olarak dene". Çıkışta gerçek veri yeniden yüklenir.
+- **Teknik servis eksikleri:** bakım görevi servis ilgilisi boşsa Teknik Servis'e; Check list / devreye alma görevleri **imzalı form şartlı** (görev penceresinde form blokları); devreye alma tamamlanınca **garanti (12 ay)** + "bakım kaydı aç" görevi; garanti takibi sistem/ürün satışına yayıldı.
+- **Yeni Satış Türleri:** **Teknik Servis (hizmet)** → T.Servis'te "Onaylandı" servis kaydı + servis icrası; **Periyodik Bakım (sözleşme)** → taslak bakım kaydı + "bakım kaydını tamamla" görevi. İkisi **satış cirosu/hedefi/primine girmez** (`_isSalesOpp`), servis hedefine yazılır (`_svcExtraWon`); servis/bakım formlarına **Satış Temsilcisi** alanı eklendi (eski kayıtlarda boş). Sipariş görevleri bu türlerde Satın Alma'ya değil **Teknik Servis**'e (departmanında işaretli kişilere) gider. Servis teklifi (A-Pro-BT) gelince Satış Türü boşsa otomatik "Teknik Servis".
+- **Teklif Programı entegrasyonu:** sözleşme revizyonu bilgisi (`tpWonValue/Ref`), değeri 0 olan kazanılmış fırsat sözleşme revizyonuyla dolar, "Sözleşme tutarını uygula" düğmesi; dashboard'a **Servis Karlılığı** kartı (Teklif Programı `service` bloğu).
+- **Kullanıcı yönetimi:** ek departman listesinde ana departman işaretli+kilitli; Teklif Talebi'nde **Müşteri zorunlu**; **Satış Temsilcisi/Hazırlayan listeleri tüm aktif kullanıcılar** (`usersAllActive`; Teklif Programı'na personel senkronu da buna göre).
+
+### 12 Kasım
+- Kod değişikliği yok. Sosyal medya duyuru aracı (yerel, `http://127.0.0.1:7755`) için herkese açık bulut sürümü kararlaştırıldı (Vercel + CRM girişi; tasarım birebir kalacak, Mac yazı tipleri kopyalanacak) — **kurulum henüz başlamadı**.
+
+### Açık kalanlar
+- Eski servis kayıtlarında Satış Temsilcisi boş → temsilci bazlı servis hedefi için elle doldurulmalı.
+- Henkel/Rivulis icra görevleri ve Ahsen/Ilgın görevleri silindi; yeniden başlatma/elle ekleme gerekirse "+ Bu aşamaya görev öner".
+- Teklif Programı veritabanı şifresi sohbette paylaşıldı → Neon'dan sıfırlanmalı (Vercel `DATABASE_URL` de yenilenmeli).
+- CRM GitHub deposu **public**: lisanslı yazı tipi dosyaları bu depoya konmamalı (duyuru aracı için ayrı, private depo).
