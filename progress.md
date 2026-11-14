@@ -950,3 +950,13 @@ Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departm
 - **Fırsatlar** satırında artık, fırsata bağlı canlı teklif varsa **✏️ Taslağı Aç** (taslak) veya **🔗 Teklif Programı** (gönderilmiş/onaylı) düğmesi var (+ kazanılmışsa stok rozeti). Oluştur / Kopyala / Bağla / Format düğmeleri **Teklif Talepleri**'nde kalır (tek giriş yolu: önce talep; Satış Türü, müşteri ve mükerrer kontrolü orada).
 - Fırsatlardan "Teklif Talebi Aç" düğmesi **eklenmedi**: yeni akışta fırsat yalnız talep "Gönderildi" olunca doğuyor; teklifsiz 35 fırsatın hepsi Mayıs/Haziran'daki ilk veri aktarımından kalma (33'ü hiç düzenlenmemiş), Ekim'den bu yana açılan 8 fırsatın hepsinin teklifi var.
 
+### 14 Kasım — Fırsatlar / Teklif Talepleri düğme denetimi
+Yeni yapıya göre iki ekranın tüm düğmeleri gözden geçirildi:
+- **🐞 Düzeltme (acil):** Fırsatlar'ın **mobil kartındaki 🗑️** fırsatı doğrudan **kalıcı** siliyordu (çöp kutusuna gitmiyor, yönetici kontrolü yok, KAZANILDI korumasını aşıyor). Artık masaüstü `Sil` ile aynı akışa (`delItem` → yumuşak silme, yalnız yönetici) bağlı.
+- **Yönetici dışında gizlendi:** Fırsat `Sil` / 🗑️ (zaten yalnız yönetici silebiliyordu).
+- **Boşken gizlenir:** `🗑 Silinenler (N)` ve `🔎 Olası mükerrer kayıtlar (N)` (içinde kayıt varsa görünür).
+- **🔄 Format** yalnız teklif **Taslak/Hazırlandı** iken görünür (gönderilmiş/onaylı/reddedilmiş belgenin formatı değişmez).
+- **Kaldırıldı (ölü/biten kod):** `linkExistingQuotation` ("Bağla", hiçbir yerde çağrılmıyordu; Teklif Programı'nda CRM'e bağlı olmayan canlı teklifler yalnız numarasız taslak/test), tek seferlik "🧹 10.11.2026 öncesi teklifsiz kayıtları sil" aracı. `QUOTELESS_CUTOFF` sabiti `proposalStaleSweep` için kaldı.
+- **Doğrulandı (değişiklik gerekmedi):** Teklif Programı'nda teklif gönderilince talep **otomatik "Gönderildi"** olur ve **fırsat kendiliğinden açılır** (`syncQuotationRefs`, en geç 15 dk; "Araçlar → Teklifleri şimdi eşitle" ile hemen). Durum elle "Gönderildi" yapılamaz.
+- Karar bekleyen: `+ Yeni Fırsat` → "Teklifsiz İş Ekle" (yalnız yönetici, Satış Türü zorunlu).
+

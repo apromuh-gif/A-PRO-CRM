@@ -853,7 +853,8 @@ function _teklifBtnsFor(o, pad, allowCreate){
   var isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);
   var existing=isDraft?btn("✏️ Taslağı Aç",function(){openQuotationWithSSO(qId);},'#fffbeb','#b45309',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #fcd34d',borderRadius:'7px'}):btn("🔗 Teklif Programı",function(){openQuotationWithSSO(qId);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});
   var convertBtn=btn("🔄 Format",function(){convertQuotationFormat(qId,o.quotationFormat||(lp&&lp.quotationFormat)||"SYSTEM_SALES");},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #c4b5fd',borderRadius:'7px'});
-  var out=[existing,convertBtn];
+  var _canFormat = !qStatus || qStatus==='DRAFT' || qStatus==='PREPARED';   // gönderilmiş/onaylı/reddedilmiş teklifte format değiştirilmez
+  var out=_canFormat?[existing,convertBtn]:[existing];
   if(o.stage==='KAZANILDI'){
     _ensureStockStatus();
     var ss=_stockStatusCache.map[qId];
@@ -1029,43 +1030,6 @@ async function teklifKopyala(o) {
   } catch (e) {
     try { _win?.close(); } catch {}
     alert('Teklif kopyalanamadı: ' + (e.message || e));
-  }
-}
-
-// Mevcut (ör. kopyalanmış) bir teklifi fırsata bağlar.
-// Giriş: teklif numarası (A-Pro-T-26-0075); taslak teklifin numarası yoksa teklif sayfasının adresi (…/quotations/<id>).
-// Bağ kurulunca durum/REF./değer/temsilci bilgisi normal eşitleme (syncQuotationRefs) ile gelir.
-async function linkExistingQuotation(o) {
-  const raw = (prompt('Bu fırsata bağlanacak teklifin numarasını yazın (örn. A-Pro-T-26-0075).\nTaslak teklifin numarası yoksa teklif sayfasının adresini yapıştırın.\n\nFırsat: ' + (o.title || '')) || '').trim();
-  if (!raw) return;
-  let query = '';
-  const mUrl = raw.match(/\/quotations\/([A-Za-z0-9_-]{8,})/);
-  if (mUrl) query = 'id=' + encodeURIComponent(mUrl[1]);
-  else if (/^[\w.-]{3,60}$/.test(raw) && /-T-\d|-BT-\d/i.test(raw)) query = 'number=' + encodeURIComponent(raw.replace(/-R\d+$/i, ''));
-  else if (/^[A-Za-z0-9_-]{20,}$/.test(raw)) query = 'id=' + encodeURIComponent(raw);
-  else { alert('Geçerli bir teklif numarası (örn. A-Pro-T-26-0075) veya teklif sayfası adresi girin.'); return; }
-  try {
-    const res = await fetch(TEKLIF_APP_URL + '/api/v1/crm/quotation-status?' + query + '&_=' + Date.now(), { headers: { 'x-crm-key': TEKLIF_API_KEY } });
-    const d = (await res.json().catch(() => null))?.data;
-    if (!res.ok || !d) { alert('Teklif sorgulanamadı. (HTTP ' + res.status + ')'); return; }
-    if (d.exists !== true || !d.id) { alert('Bu numarayla teklif bulunamadı: ' + raw); return; }
-    const other = state.opportunities.find(x => x.id !== o.id && x.quotationId === d.id && !x.quotationDeleted);
-    if (other) { alert('Bu teklif zaten başka bir fırsata bağlı:\n"' + (other.title || other.id) + '"\n\nBir teklif tek fırsata bağlanabilir.'); return; }
-    const otherProp = state.proposals.find(x => (!o._prop || x.id !== o._prop.id) && x.quotationId === d.id && !x.quotationDeleted && (!o.id || x.opportunityId !== o.id));
-    if (otherProp) { alert('Bu teklif zaten başka bir teklif talebine bağlı:\n"' + (otherProp.title || otherProp.id) + '"'); return; }
-    const total = tpValueEur(d);
-    let msg = 'Teklif: ' + (d.number || '(taslak — numara henüz yok)') + '\nDurum: ' + (d.status || '-') +
-      '\nTutar: ' + (total ? total.toLocaleString('tr-TR', { maximumFractionDigits: 0 }) + ' €' : '-') +
-      '\nSatış temsilcisi: ' + (d.salesRep || '-') + '\n\nFırsat: ' + (o.title || '') + '\n\nBu teklif fırsata bağlansın mı?';
-    if (d.salesRep && o.assignedTo && d.salesRep !== o.assignedTo) {
-      msg += '\n\n⚠️ Teklifteki satış temsilcisi (' + d.salesRep + ') fırsat sahibinden (' + o.assignedTo + ') farklı; eşitlemede fırsat sahibi ' + d.salesRep + ' olarak güncellenir. Önce teklif programında temsilciyi düzeltmeniz önerilir.';
-    }
-    if (!confirm(msg)) return;
-    await attachQuotationToOpportunity(o, d.id, TEKLIF_APP_URL + '/quotations/' + d.id, d.status, d.format);
-    showToast('🔗 Teklif fırsata bağlandı.');
-    await syncQuotationRefsNow();
-  } catch (e) {
-    alert('Teklif bağlanamadı: ' + (e.message || e));
   }
 }
 
@@ -2607,6 +2571,7 @@ function _dupReport(){
 function dupReportBtn(){
   if(!_isAdminUser()) return h('span');
   const r=_dupReport(), n=r.props.length+r.opps.length;
+  if(!n) return h('span');   // mükerrer yoksa gizli
   return h('div',{style:{marginBottom:'10px',display:'inline-block',marginLeft:'8px'}}, btn('🔎 Olası mükerrer kayıtlar ('+n+')',()=>setState({modal:{type:'dups'}}),n?'#fff7ed':'#f1f5f9',n?'#c2410c':'#64748b','6px 12px',{fontSize:'12px',border:'1px solid '+(n?'#fed7aa':'#cbd5e1')}));
 }
 function buildDupModal(){
@@ -2839,39 +2804,12 @@ async function trashAutoPurge(){
   }catch(e){ console.warn('Silinenler temizliği:', e && e.message); }
 }
 function _addDays(iso, n){ const d=_toDate(iso); if(!d) return ''; d.setDate(d.getDate()+Number(n)); return _ymd(d); }
-// Tek seferlik temizlik: 10.11.2026'DAN ÖNCE oluşturulmuş ve Teklif Programı'nda canlı teklifi OLMAYAN tüm talepler (durumu ne olursa olsun).
+// (Tek seferlik temizlik aracı 14.11.2026'da kaldırıldı; QUOTELESS_CUTOFF yalnız proposalStaleSweep için kalır.) 10.11.2026'DAN ÖNCE oluşturulmuş ve Teklif Programı'nda canlı teklifi OLMAYAN tüm talepler (durumu ne olursa olsun).
 // Bu tarihten itibaren açılan talepler (teklifi henüz hazırlanmamış taslaklar dahil) bu temizliğe ASLA girmez.
 const QUOTELESS_CUTOFF = '2026-11-10';
-function _quotelessProposals(){
-  return (state.proposals||[]).filter(function(p){
-    if(p.quotationId && !p.quotationDeleted) return false;                        // canlı teklifi var
-    const created = String(p.createdAt||'').slice(0,10);
-    return !created || created < QUOTELESS_CUTOFF;                                  // yalnız kesim tarihinden ÖNCE
-  });
-}
-async function deleteQuotelessProposals(){
-  if(!_isAdminUser()) return;
-  const list = _quotelessProposals();
-  if(!list.length){ showToast('Silinecek teklifsiz kayıt yok.','#0891b2'); return; }
-  const byPrep = {}; list.forEach(function(p){ const k=p.preparedBy||'(hazırlayan yok)'; byPrep[k]=(byPrep[k]||0)+1; });
-  const sample = list.slice(0,8).map(function(p){ return '• '+(p.title||'(başlıksız)')+' ['+(p.status||'-')+', '+String(p.createdAt||'').slice(0,10)+']'; }).join('\n');
-  const msg = '10.11.2026 öncesi oluşturulmuş, Teklif Programı\'nda teklifi hazırlanmamış '+list.length+' kayıt silinecek:\n\n'+sample+(list.length>8?('\n… ve '+(list.length-8)+' kayıt daha'):'')+
-    '\n\nHazırlayan dağılımı: '+Object.keys(byPrep).map(function(k){return k+' ('+byPrep[k]+')';}).join(', ')+
-    '\n\nEtkisi: Dashboard\'daki teklif sayıları/tutarları ve bu kişilerin teklif hazırlama/takip performansı bu kayıtlar olmadan hesaplanır. Fırsatlar etkilenmez.\n\n'+TRASH_DAYS+' gün boyunca "Silinenler"den geri yüklenebilir. Devam edilsin mi?';
-  if(!confirm(msg)) return;
-  let n=0;
-  for(const p of list){ try{ await _softMark('proposals', p, 'Teklifsiz eski kayıt temizliği (10.11.2026 öncesi)'); n++; }catch(e){} }
-  showToast('🧹 '+n+' teklifsiz kayıt silindi ('+TRASH_DAYS+' gün içinde geri yüklenebilir).','#16a34a');
-}
-function quotelessBar(){
-  if(!_isAdminUser()) return h('span');
-  const n = _quotelessProposals().length;
-  if(!n) return h('span');
-  return h('div',{style:{marginBottom:'10px',display:'inline-block',marginLeft:'8px'}}, btn('🧹 10.11.2026 öncesi teklifsiz kayıtları sil ('+n+')',()=>deleteQuotelessProposals(),'#fef2f2','#b91c1c','6px 12px',{fontSize:'12px',border:'1px solid #fecaca'}));
-}
 function trashCount(){ _trashInit(); return (state.trash.opportunities||[]).length + (state.trash.proposals||[]).length; }
 function trashLink(){
-  if(!_isAdminUser()) return h('span');
+  if(!_isAdminUser() || trashCount()===0) return h('span');   // boşken gizli; bir kayıt silinince görünür
   return h('div',{style:{marginBottom:'10px'}}, btn('🗑 Silinenler ('+trashCount()+')',()=>setState({modal:{type:'trash'}}),'#fff7ed','#c2410c','6px 12px',{fontSize:'12px',border:'1px solid #fed7aa'}));
 }
 function buildTrashModal(){
@@ -6580,7 +6518,7 @@ function renderOpportunities() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},
         btn('Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),
         ...oppTeklifBtns(o,'6px 12px'),
-        btn('Sil',()=>delItem('opportunities',o.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})
+        _isAdminUser() ? btn('Sil',()=>delItem('opportunities',o.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'}) : h('span')   // fırsatı yalnız yönetici siler (yumuşak silme)
       ))
     );
     tbody.appendChild(tr);
@@ -6615,13 +6553,7 @@ function renderOpportunities() {
             ...oppTeklifBtns(o,'7px 12px'),
             btn('✏️ Düzenle',()=>setState({modal:{type:'opportunity',item:o}}),'#fff3cd','#d97706','7px 14px',{fontSize:'12px',border:'1px solid #fcd34d',borderRadius:'7px',flex:'1'}),
             h('span'),
-            btn('🗑️',async()=>{ if(!confirm('Bu fırsatı silmek istediğinizden emin misiniz?')) return;
-  const r=await cascadeDeleteTasksFor('opportunity',o.id);
-  if(r.manuals.length && !confirm(r.manuals.length+' bağlı manuel görev var. Fırsatla birlikte silinsin mi? (İptal: görevler kalır)')){ /* manuelleri bırak */ }
-  else { for(const m of r.manuals){ await deleteDoc('tasks',m.id); } setState({tasks:(state.tasks||[]).filter(x=>!r.manuals.some(mm=>mm.id===x.id))}); }
-  if(o.stage==='KAZANILDI' && o.quotationId) releaseQuotationStock(o.quotationId);
-  await deleteDoc('opportunities',o.id); setState({opportunities:state.opportunities.filter(x=>x.id!==o.id)});
-  showToast('✅ Fırsat silindi'+(r.deletedAuto?(' · '+r.deletedAuto+' otomatik görev temizlendi'):'')); },'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
+            _isAdminUser() ? btn('🗑️',()=>delItem('opportunities',o.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'}) : h('span')
           )
         );
       }) : [h('div',{style:{padding:'38px',textAlign:'center',color:T4,background:G2,borderRadius:'12px',border:`1px solid ${G3}`}},'Filtreye uygun fırsat bulunamadı.')]
@@ -6740,7 +6672,7 @@ function renderProposals() {
       h('h2',{style:{fontSize:isMobP?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'📄 Teklif Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+propFiltered.length+'/'+_fyProps.length+')')),
       btn('+ Yeni Teklif Talebi',()=>setState({modal:{type:'proposal',item:null}}),'linear-gradient(135deg,#0284c7,#2563eb)','#fff',isMobP?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(2,132,199,.3)'})
     ),
-    h('div',{style:{display:'flex',alignItems:'flex-start',flexWrap:'wrap'}}, quotelessBar(), dupReportBtn()),   // 'Silinenler' dugmesi bu ekrandan kaldirildi (14.11.2026); pencere Firsatlar ekranindan acilir
+    h('div',{style:{display:'flex',alignItems:'flex-start',flexWrap:'wrap'}}, dupReportBtn()),   // 'Silinenler' dugmesi bu ekrandan kaldirildi (14.11.2026); pencere Firsatlar ekranindan acilir
     fyEmptyBanner('proposals','teklif'),
     viewBar,
     propFilterBox,
