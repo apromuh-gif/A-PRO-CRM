@@ -853,8 +853,7 @@ function _teklifBtnsFor(o, pad, allowCreate){
   var isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);
   var existing=isDraft?btn("✏️ Taslağı Aç",function(){openQuotationWithSSO(qId);},'#fffbeb','#b45309',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #fcd34d',borderRadius:'7px'}):btn("🔗 Teklif Programı",function(){openQuotationWithSSO(qId);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});
   var convertBtn=btn("🔄 Format",function(){convertQuotationFormat(qId,o.quotationFormat||(lp&&lp.quotationFormat)||"SYSTEM_SALES");},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #c4b5fd',borderRadius:'7px'});
-  var _canFormat = !qStatus || qStatus==='DRAFT' || qStatus==='PREPARED';   // gönderilmiş/onaylı/reddedilmiş teklifte format değiştirilmez
-  var out=_canFormat?[existing,convertBtn]:[existing];
+  var out=[existing,convertBtn];   // Format her durumda görünür: müşteri sonradan revizyon isteyince format değişebilir (Teklif Programı her statüde, ARCHIVED hariç, yeni revizyon olarak dönüştürür)
   if(o.stage==='KAZANILDI'){
     _ensureStockStatus();
     var ss=_stockStatusCache.map[qId];

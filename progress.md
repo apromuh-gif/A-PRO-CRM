@@ -955,7 +955,7 @@ Yeni yapıya göre iki ekranın tüm düğmeleri gözden geçirildi:
 - **🐞 Düzeltme (acil):** Fırsatlar'ın **mobil kartındaki 🗑️** fırsatı doğrudan **kalıcı** siliyordu (çöp kutusuna gitmiyor, yönetici kontrolü yok, KAZANILDI korumasını aşıyor). Artık masaüstü `Sil` ile aynı akışa (`delItem` → yumuşak silme, yalnız yönetici) bağlı.
 - **Yönetici dışında gizlendi:** Fırsat `Sil` / 🗑️ (zaten yalnız yönetici silebiliyordu).
 - **Boşken gizlenir:** `🗑 Silinenler (N)` ve `🔎 Olası mükerrer kayıtlar (N)` (içinde kayıt varsa görünür).
-- **🔄 Format** yalnız teklif **Taslak/Hazırlandı** iken görünür (gönderilmiş/onaylı/reddedilmiş belgenin formatı değişmez).
+- **🔄 Format** her durumda görünür (müşteri gönderilmiş teklif için revizyon istediğinde format değişebilir; Teklif Programı her statüde — arşiv hariç — mevcut revizyonu klonlayıp yeni revizyonda dönüştürür). Kısa süre yalnız taslakta göstermiştik, kullanıcı talebiyle geri alındı.
 - **Kaldırıldı (ölü/biten kod):** `linkExistingQuotation` ("Bağla", hiçbir yerde çağrılmıyordu; Teklif Programı'nda CRM'e bağlı olmayan canlı teklifler yalnız numarasız taslak/test), tek seferlik "🧹 10.11.2026 öncesi teklifsiz kayıtları sil" aracı. `QUOTELESS_CUTOFF` sabiti `proposalStaleSweep` için kaldı.
 - **Doğrulandı (değişiklik gerekmedi):** Teklif Programı'nda teklif gönderilince talep **otomatik "Gönderildi"** olur ve **fırsat kendiliğinden açılır** (`syncQuotationRefs`, en geç 15 dk; "Araçlar → Teklifleri şimdi eşitle" ile hemen). Durum elle "Gönderildi" yapılamaz.
 - Karar bekleyen: `+ Yeni Fırsat` → "Teklifsiz İş Ekle" (yalnız yönetici, Satış Türü zorunlu).
