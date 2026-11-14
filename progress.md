@@ -912,3 +912,10 @@ Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departm
 - Henkel/Rivulis icra görevleri ve Ahsen/Ilgın görevleri silindi; yeniden başlatma/elle ekleme gerekirse "+ Bu aşamaya görev öner".
 - Teklif Programı veritabanı şifresi sohbette paylaşıldı → Neon'dan sıfırlanmalı (Vercel `DATABASE_URL` de yenilenmeli).
 - CRM GitHub deposu **public**: lisanslı yazı tipi dosyaları bu depoya konmamalı (duyuru aracı için ayrı, private depo).
+
+### 14 Kasım — Mobil açılış hızı + Teklif oturumu dayanıklılığı
+- **Açılış yavaşlığının kök nedeni:** `init()` 8 Firestore okumasını ardışık bekliyordu ve sonuncusu Teklif Programı'na (`crm/profit`, zaman aşımsız) yapılan istekti — sunucu soğuk başlangıcı ya da telefonun ağı Teklif Programı'na ulaşamayınca **giriş ekranı bile çizilmiyordu**.
+- Düzeltmeler (`index.html`): bağımsız okumalar `Promise.all` ile paralel; kâr verisi (`loadProfitActuals`) arka planda ve 12 sn zaman aşımlı; SheetJS (Excel içe aktarma) ve EmailJS (mail testi) açılışta değil ilk kullanımda yükleniyor (`_loadScript`); `evaluations` yalnız yönetici için çekiliyor; preconnect ipuçları.
+- **Teklif oturumu** (`getCrmSessionToken`): istek başına 15 sn zaman aşımı, 4 deneme; zaman aşımı mesajı net.
+- **Dosya karışıklığı giderildi:** canlı ve tek gerçek kaynak `index.html`; `APRO_CRM_Firebase.html` eski (21 Eki). `CLAUDE.md` kopyalama talimatı kaldırıldı (eski dosya Kasım işlerini silerdi).
+

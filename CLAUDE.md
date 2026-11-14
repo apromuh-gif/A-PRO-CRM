@@ -1,9 +1,9 @@
 # A-PRO Mühendislik CRM — Claude Code Talimatları
 
 ## Proje Özeti
-- **Ana dosya:** `APRO_CRM_Firebase.html` (tek dosya uygulama, ~326KB)
+- **Ana dosya:** `index.html` (tek dosya uygulama, ~900KB) — CANLI ve tek gerçek kaynak. `APRO_CRM_Firebase.html` ESKİ kopyadır (21 Eki 2026, Kasım değişiklikleri yok): düzenleme, `index.html`'in üzerine KOPYALAMA.
 - **Canlı site:** https://apromuh-gif.github.io/A-PRO-CRM
-- **GitHub:** apromuh-gif/A-PRO-CRM → `index.html` olarak yüklenir
+- **GitHub:** apromuh-gif/A-PRO-CRM → `index.html` doğrudan yayınlanır
 - **Firebase:** a-pro-crm projesi
 - **NextAura:** Ticari marka adı
 
@@ -26,7 +26,7 @@ Tam entegrasyon planı ve teknik detaylar:
 ```bash
 node -e "
 const fs=require('fs');
-const html=fs.readFileSync('APRO_CRM_Firebase.html','utf8');
+const html=fs.readFileSync('index.html','utf8');
 const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
 const main=scripts.filter(s=>s[1].length>1000).pop();
 const vm=require('vm');
@@ -50,10 +50,7 @@ catch(e){console.log('❌',e.message);}
 
 ### GitHub'a yükleme
 ```bash
-# APRO_CRM_Firebase.html → index.html olarak kopyala
-cp APRO_CRM_Firebase.html index.html
-
-# Git ile yükle
+# index.html doğrudan düzenlenir (kopyalama adımı YOK — eski Firebase.html üzerine yazar)
 git add index.html
 git commit -m "v2.5+ güncelleme"
 git push
@@ -96,7 +93,8 @@ git push
 ## Dosya Yapısı
 ```
 A-PRO CRM/
-├── APRO_CRM_Firebase.html   ← Ana CRM dosyası (bunu düzenle)
+├── index.html               ← Ana CRM dosyası (canlı; bunu düzenle)
+├── APRO_CRM_Firebase.html   ← ESKİ kopya (21 Eki) — kullanma
 ├── CLAUDE.md                ← Bu dosya
 ├── progress.md              ← Proje dokümantasyonu
 ├── KULLANIM_KILAVUZU.html   ← Kullanım kılavuzu (HTML)

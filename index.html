@@ -11,8 +11,15 @@
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230f1f35'/><text y='68' x='50' text-anchor='middle' font-size='55' font-family='system-ui'>⚡</text></svg>"/>
 <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22A-PRO%20%C4%B0%C5%9F%20Takip%20CRM%22%2C%22short_name%22%3A%22A-PRO%20CRM%22%2C%22start_url%22%3A%22.%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f1f35%22%2C%22theme_color%22%3A%22%230f1f35%22%2C%22orientation%22%3A%22portrait%22%2C%22icons%22%3A%5B%7B%22src%22%3A%22data%3Aimage%2Fsvg%2Bxml%2C%3Csvg%20xmlns%3D'http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg'%20viewBox%3D'0%200%20100%20100'%3E%3Crect%20width%3D'100'%20height%3D'100'%20rx%3D'22'%20fill%3D'%230f1f35'%2F%3E%3Ctext%20y%3D'68'%20x%3D'50'%20text-anchor%3D'middle'%20font-size%3D'55'%3E%E2%9A%A1%3C%2Ftext%3E%3C%2Fsvg%3E%22%2C%22sizes%22%3A%22192x192%22%2C%22type%22%3A%22image%2Fsvg%2Bxml%22%7D%5D%7D"/>
 <title>A-PRO İş Takip CRM</title>
-<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
-<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin/>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin/>
+<link rel="preconnect" href="https://apro-platform.vercel.app" crossorigin/>
+<script>
+// Ağır/nadir kullanılan kütüphaneler (SheetJS: Excel içe aktarma, EmailJS: mail testi) açılışta DEĞİL, ilk kullanımda yüklenir.
+window._loadScript=function(url){window._scriptP=window._scriptP||{};if(!window._scriptP[url]){window._scriptP[url]=new Promise(function(res,rej){var s=document.createElement('script');s.src=url;s.onload=res;s.onerror=function(){delete window._scriptP[url];rej(new Error('Yüklenemedi: '+url));};document.head.appendChild(s);});}return window._scriptP[url];};
+window.XLSX_URL='https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
+window.EMAILJS_URL='https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
+</script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
@@ -438,9 +445,13 @@ async function getCrmSessionToken() {
     if (!cu?.email) { window._crmAuthErr = 'kullanıcı e-postası yok'; return null; }
     const _meRec = (state.users || []).find(u => (u.email || '').toLowerCase() === (cu.email || '').toLowerCase()) || state.currentUser || {};
     let res;
+    // Zaman aşımı: sunucu soğuk başlangıcı / mobil ağ takılmasında istek sonsuza dek asılı kalmasın (her deneme en çok 15 sn).
+    const _ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const _to = _ac ? setTimeout(() => { try { _ac.abort(); } catch (_) {} }, 15000) : null;
     try {
       res = await fetch(TEKLIF_AUTH_URL, {
         method: 'POST',
+        signal: _ac ? _ac.signal : undefined,
         headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
         body: JSON.stringify({
           email:  cu.email,
@@ -452,7 +463,10 @@ async function getCrmSessionToken() {
           depo: !!_meRec.depo,
         }),
       });
-    } catch (e) { window._crmAuthErr = 'bağlantı hatası (' + ((e && e.message) || e) + ')'; return null; }
+    } catch (e) {
+      window._crmAuthErr = (e && e.name === 'AbortError') ? 'zaman aşımı (15 sn — sunucuya ulaşılamadı)' : 'bağlantı hatası (' + ((e && e.message) || e) + ')';
+      return null;
+    } finally { if (_to) clearTimeout(_to); }
     if (!res.ok) {
       const eb = await res.json().catch(() => null);
       window._crmAuthErr = 'HTTP ' + res.status + (eb?.error?.message ? ' — ' + eb.error.message : '');
@@ -467,7 +481,7 @@ async function getCrmSessionToken() {
     window._crmAuthErr = '';
     // Sunucu/veritabanı uyku modundan uyanırken (özellikle mobil ağda) ilk denemeler başarısız olabilir:
     // 3 deneme, artan bekleme (0.6 sn, 2.5 sn).
-    for (const wait of [0, 600, 2500]) {
+    for (const wait of [0, 600, 2500, 5000]) {
       if (wait) await new Promise(r => setTimeout(r, wait));
       const t = await _attempt();
       if (t) return t;
@@ -1568,7 +1582,11 @@ async function loadProfitActuals() {
   // blended marjı (ΣYTD kâr ÷ ΣYTD ciro) olarak DOĞRU hesaplar (aylık %'leri ortalamak yanlıştır).
   try {
     if (typeof TEKLIF_APP_URL === 'undefined' || typeof TEKLIF_API_KEY === 'undefined' || !TEKLIF_API_KEY) return {};
-    const res = await fetch(`${TEKLIF_APP_URL}/api/v1/crm/profit`, { headers: { 'x-crm-key': TEKLIF_API_KEY } });
+    const _ac = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const _to = _ac ? setTimeout(() => { try { _ac.abort(); } catch (_) {} }, 12000) : null;
+    let res;
+    try { res = await fetch(`${TEKLIF_APP_URL}/api/v1/crm/profit`, { headers: { 'x-crm-key': TEKLIF_API_KEY }, signal: _ac ? _ac.signal : undefined }); }
+    finally { if (_to) clearTimeout(_to); }
     if(!res.ok) return {};
     const body = await res.json().catch(()=>null);
     const data = body && body.data ? body.data : null;
@@ -1955,7 +1973,8 @@ async function loadAllData() {
     loadCollection('customers'), loadCollection('opportunities'),
     loadCollection('proposals'), loadCollection('services'), loadCollection('maintenances'),
     loadCollection('suppliers'), loadCollection('serviceOpps'), loadCollection('visits'), loadCollection('appointments'),
-    loadCollection('tasks'), loadCollection('evaluations'), loadCollection('checklists'), loadCollection('serviceForms'),
+    // 'evaluations' (prim/performans değerlendirmeleri) yalnız yönetici içindir (Personel ekranı admin'e kilitli) — diğer kullanıcılar için çekilmez.
+    loadCollection('tasks'), (state.currentUser && state.currentUser.isAdmin) ? loadCollection('evaluations') : Promise.resolve([]), loadCollection('checklists'), loadCollection('serviceForms'),
     loadCollection('fieldReports')
   ]);
   // Yumuşak silinenler (deletedAt dolu) ana listelere alınmaz → ekranlar, prim, hedef, karlılık hesabı onları görmez; yalnız "Silinenler" ekranında durur.
@@ -3742,7 +3761,7 @@ function buildImportModal() {
         const file = e.target.files[0];
         if(!file) return;
         const reader = new FileReader();
-        reader.onload = ev => {
+        reader.onload = async ev => {
           try {
             let rows = [];
             if(file.name.endsWith('.csv')) {
@@ -3751,7 +3770,8 @@ function buildImportModal() {
               const lines = text.split('\n').filter(l=>l.trim());
               rows = lines.map(l => l.split(',').map(v=>v.trim().replace(/^"|"$/g,'')));
             } else {
-              // Excel parse via SheetJS
+              // Excel parse via SheetJS (ilk kullanımda yüklenir)
+              await window._loadScript(window.XLSX_URL);
               const wb = XLSX.read(ev.target.result, {type:'array'});
               const ws = wb.Sheets[wb.SheetNames[0]];
               rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
@@ -11909,19 +11929,28 @@ function render() {
 // BAŞLATMA
 // ═══════════════════════════════════════════════════════
 (async function init() {
-  const users = await loadUsers();
+  // Bağımsız Firestore okumaları PARALEL (eskiden 8 ardışık gidiş-dönüştü; mobil ağda her biri 200–500 ms).
+  const [users, targetsByYear, activeFY, primLedger, strategy, evalConfig, geminiKey] = await Promise.all([
+    loadUsers(), loadTargets(), loadActiveFiscalYear(), loadPrimLedger(), loadStrategy(), loadEvalConfig(), loadApiKey()
+  ]);
   state.users = users;
-  state.targetsByYear = await loadTargets();          // { '2026': {...}, ... } yıl bazlı
-  state.activeFiscalYear = await loadActiveFiscalYear(); // GLOBAL aktif mali yıl (settings, 1 Ocak otomatik ilerler)
+  state.targetsByYear = targetsByYear;                 // { '2026': {...}, ... } yıl bazlı
+  state.activeFiscalYear = activeFY;                   // GLOBAL aktif mali yıl (settings, 1 Ocak otomatik ilerler)
   state.fiscalYear = state.activeFiscalYear;           // eski okuyucularla uyum (mercek = aktif yıl)
   state.targets = targetsForYear(state.fiscalYear);    // seçili yılın hedef işaretçisi (mevcut okuyucular bozulmaz)
-  state.primLedger = await loadPrimLedger();
-  state.strategy = await loadStrategy();
-  state.evalConfig = await loadEvalConfig();
-  state.profitActuals = await loadProfitActuals();
-  state.geminiKey = await loadApiKey();
+  state.primLedger = primLedger;
+  state.strategy = strategy;
+  state.evalConfig = evalConfig;
+  state.geminiKey = geminiKey;
+  state.profitActuals = state.profitActuals || {};
   state.loading = false;
   render();
+  // Teklif Programı kâr verisi ARKA PLANDA: eskiden ilk ekranı bloke ediyordu — sunucu soğuk başlangıcı veya
+  // telefonun ağı Teklif Programı'na ulaşamayınca CRM açılışı donuyordu. Artık yalnız Performans/Prim ekranı bu veriyi bekler.
+  loadProfitActuals().then(function(pa){
+    state.profitActuals = pa || {};
+    try { if(state.currentUser && !state.loading && !state.modal && state.view==='app' && (state.tab==='personel'||state.tab==='dashboard')) render(); } catch(e){}
+  }).catch(function(){});
   setTimeout(checkMonthlyReport, 3000);
   setTimeout(startNotificationTimer, 5000);
 })();
@@ -12540,9 +12569,11 @@ function mailBody(icon, title, details) {
     + '</div>';
 }
 
-function testMailNotification() {
+async function testMailNotification() {
   const cu = state.currentUser;
   if(!cu?.email) { showToast('⚠️ Kullanıcı mail adresi bulunamadı','#d97706'); return; }
+  if(state.sandbox === true) { showToast('🧪 Deneme modu açık — e-posta gönderilmez','#d97706'); return; }
+  try { await window._loadScript(window.EMAILJS_URL); } catch(e) {}
   if(typeof emailjs === 'undefined') { showToast('❌ EmailJS yüklenemedi','#dc2626'); return; }
   const body = mailBody('✉️', 'Mail Bildirimi Test', [
     ['Durum', 'EmailJS bağlantısı başarılı'],
