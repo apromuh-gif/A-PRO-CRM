@@ -963,7 +963,7 @@ Yeni yapıya göre iki ekranın tüm düğmeleri gözden geçirildi:
 - **`+ Yeni Fırsat` → "Teklifsiz İş Ekle"**: şimdilik **mevcut durum kalsın** (karar: sonra tekrar bakılacak). Gerekçe/öneri: yalnız kazanılmış iş açan, Satış Türü + dayanak zorunlu tek amaçlı form; 6 ayda tek örnek (RİVULİS, €100.000) olduğu için acil değil. Satışçılar da ekleyebilsin mi sorusu açık.
 - **Teklif Programı otomatik kalıcı silme** (30 gün) etkin; ilk çalışma 15 Kasım 03:00 UTC. Sonrasında gece yedeğinden sayılar doğrulanacak (beklenen: 97 silinir, 7 kalır).
 
-**Karara bağlananlar (14 Kasım):** CRM **Silinenler 30 gün sonra otomatik kalıcı silinir** (`trashAutoPurge`, mevcut davranış korunur). **Raporlar** (Aylık / 3 Aylık / Geçmiş) menüde **kalır**. **Yedeğe `reports` ve `fieldPhotos` eklendi.** Neon şifre sıfırlama ve 35 teklifsiz eski fırsatın gözden geçirilmesi iş listesinden çıkarıldı.
+**Karara bağlananlar (14 Kasım):** CRM **Silinenler 30 gün sonra otomatik kalıcı silinir** (`trashAutoPurge`, mevcut davranış korunur). **Raporlar** (Aylık / 3 Aylık / Geçmiş) menüde **kalır**. **Yedek saklama politikası kuruldu** (günlük 30 gün, aylık 12 ay, yıl sonu 5 yıl, fotoğraf 3 yıl, imzalı belge arşivi 5 yıl; ayrıntı: `A-PRO TEKLİF PROGRAMI/progress.md` → "15 Kasım — Yedek saklama politikası"). `reports` yedeğe eklendi. Neon şifre sıfırlama ve 35 teklifsiz eski fırsatın gözden geçirilmesi iş listesinden çıkarıldı.
 
 ### 14 Kasım — Araçlar menüsü sadeleştirildi (27 → 13 madde)
 Menü yalnız yöneticide görünür. Kalanlar gruplu: **Yıl** (Mali Yıl, Fırsatları Mali Yıla Taşı) · **Raporlar** (Aylık, 3 Aylık, Geçmiş) · **Veri** (Excel/CSV İçe Aktar, Yedek Al) · **Sistem** (Teklifleri şimdi eşitle, Bağlantı Testi, Bildirim & Ses Testi, Görev atama kontrolü, Sayfayı Yenile, Deneme modu).
