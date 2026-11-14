@@ -2795,6 +2795,29 @@ async function restoreTrashItem(col, id){
     showToast('♻️ Geri yüklendi.','#16a34a');
   }catch(e){ showToast('❌ Geri yüklenemedi: '+((e&&e.message)||e),'#dc2626'); }
 }
+// Silinenler'in TAMAMINI kalıcı siler (yalnız yönetici). Geri alınamaz → büyük harfle "SİL" yazılarak onaylanır.
+// Teklif Programı'ndaki teklifler ETKİLENMEZ (yalnız CRM kaydı silinir).
+async function purgeAllTrash(){
+  if(!_isAdminUser()) return; _trashInit();
+  if(state.sandbox===true || state.testMode){ showToast('🧪 Deneme/test modunda kalıcı silme yapılmaz.','#d97706'); return; }
+  const props = (state.trash.proposals||[]).slice(), opps = (state.trash.opportunities||[]).slice();
+  const total = props.length + opps.length;
+  if(!total){ showToast('Silinen kayıt yok.','#0891b2'); return; }
+  const liveQ = props.filter(function(p){ return p.quotationId && !p.quotationDeleted; }).length + opps.filter(function(o){ return o.quotationId && !o.quotationDeleted; }).length;
+  const msg = 'SİLİNENLERİN TAMAMI KALICI OLARAK SİLİNECEK:\n\n'
+    + '• '+props.length+' Teklif Talebi\n• '+opps.length+' Fırsat\n\n'
+    + (liveQ ? ('• '+liveQ+' kaydın Teklif Programı\'nda canlı teklifi var: teklif orada KALIR, yalnız CRM bağlantısı kopar.\n\n') : '')
+    + 'Bu işlem GERİ ALINAMAZ (kayıtların kopyası yalnızca gece yedeklerinde ~30 gün durur).\n\nDevam edilsin mi?';
+  if(!confirm(msg)) return;
+  const typed = prompt('Onaylamak için büyük harfle  SİL  yazın:', '');
+  if(String(typed||'').trim() !== 'SİL'){ showToast('İptal edildi — hiçbir kayıt silinmedi.','#0891b2'); return; }
+  showToast('🗑 Kalıcı silme başlıyor… ('+total+' kayıt)','#b91c1c');
+  let ok=0, fail=0;
+  for(const r of props){ try{ await purgeTrashItem('proposals', r.id, true); ok++; }catch(e){ fail++; console.error('[purgeAllTrash] proposals', r.id, e); } }
+  for(const r of opps){  try{ await purgeTrashItem('opportunities', r.id, true); ok++; }catch(e){ fail++; console.error('[purgeAllTrash] opportunities', r.id, e); } }
+  showToast('✅ '+ok+' kayıt kalıcı silindi'+(fail?(' · ⚠ '+fail+' başarısız (konsola bakın)'):'.'), fail?'#d97706':'#16a34a');
+  render();
+}
 async function purgeTrashItem(col, id, silent){
   if(!_isAdminUser()) return; _trashInit();
   const rec = (state.trash[col]||[]).find(x=>x.id===id); if(!rec) return;
@@ -2867,6 +2890,7 @@ function buildTrashModal(){
     });
   });
   const body = h('div',{style:{maxHeight:'65vh',overflowY:'auto'}},
+    (trashCount()>0 ? h('div',{style:{marginBottom:'10px'}}, btn('🔥 Tümünü kalıcı sil ('+trashCount()+')',function(){purgeAllTrash();},'#fef2f2','#b91c1c','8px 14px',{fontSize:'12px',fontWeight:'800',border:'1px solid #fca5a5'})) : h('span')),
     h('div',{style:{fontSize:'12px',color:T3,marginBottom:'10px'}},'Silinen kayıtlar '+TRASH_DAYS+' gün saklanır, sonra otomatik kalıcı silinir. Geri yüklenen fırsatın bağlı talepleri yeniden bağlanır. Teklif Programı\'ndaki teklifler etkilenmez.'),
     ...(rows.length?rows:[h('div',{style:{padding:'24px',textAlign:'center',color:T4}},'Silinen kayıt yok.')]));
   return modal('🗑 Silinenler', body, ()=>setState({modal:null}), '720px');
@@ -6717,7 +6741,7 @@ function renderProposals() {
       h('h2',{style:{fontSize:isMobP?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'📄 Teklif Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+propFiltered.length+'/'+_fyProps.length+')')),
       btn('+ Yeni Teklif Talebi',()=>setState({modal:{type:'proposal',item:null}}),'linear-gradient(135deg,#0284c7,#2563eb)','#fff',isMobP?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(2,132,199,.3)'})
     ),
-    h('div',{style:{display:'flex',alignItems:'flex-start',flexWrap:'wrap'}}, trashLink(), quotelessBar(), dupReportBtn()),
+    h('div',{style:{display:'flex',alignItems:'flex-start',flexWrap:'wrap'}}, quotelessBar(), dupReportBtn()),   // 'Silinenler' dugmesi bu ekrandan kaldirildi (14.11.2026); pencere Firsatlar ekranindan acilir
     fyEmptyBanner('proposals','teklif'),
     viewBar,
     propFilterBox,

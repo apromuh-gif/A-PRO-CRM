@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 12 Kasım 2026 (Satış Türü sistemi, sözleşme revizyonu, Deneme modu, Teknik Servis/Bakım ayrımı, görev görünürlüğü)
+> Son güncelleme: 14 Kasım 2026 (mobil açılış hızı, iPhone'da Teklif Programı erişimi — kendi alan adı `apro-teklif.nextaura.tr`)
 
 ---
 
@@ -913,11 +913,36 @@ Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departm
 - Teklif Programı veritabanı şifresi sohbette paylaşıldı → Neon'dan sıfırlanmalı (Vercel `DATABASE_URL` de yenilenmeli).
 - CRM GitHub deposu **public**: lisanslı yazı tipi dosyaları bu depoya konmamalı (duyuru aracı için ayrı, private depo).
 
-### 14 Kasım — Mobil açılış hızı + Teklif oturumu dayanıklılığı
-- **Açılış yavaşlığının kök nedeni:** `init()` 8 Firestore okumasını ardışık bekliyordu ve sonuncusu Teklif Programı'na (`crm/profit`, zaman aşımsız) yapılan istekti — sunucu soğuk başlangıcı ya da telefonun ağı Teklif Programı'na ulaşamayınca **giriş ekranı bile çizilmiyordu**.
-- Düzeltmeler (`index.html`): bağımsız okumalar `Promise.all` ile paralel; kâr verisi (`loadProfitActuals`) arka planda ve 12 sn zaman aşımlı; SheetJS (Excel içe aktarma) ve EmailJS (mail testi) açılışta değil ilk kullanımda yükleniyor (`_loadScript`); `evaluations` yalnız yönetici için çekiliyor; preconnect ipuçları.
-- **Teklif oturumu** (`getCrmSessionToken`): istek başına 15 sn zaman aşımı, 4 deneme; zaman aşımı mesajı net.
-- **Dosya karışıklığı giderildi:** canlı ve tek gerçek kaynak `index.html`; `APRO_CRM_Firebase.html` eski (21 Eki). `CLAUDE.md` kopyalama talimatı kaldırıldı (eski dosya Kasım işlerini silerdi).
-- **iPhone'da "Teklif Programı açılamıyor — Load failed" (kök neden):** `openLoadingTab()` tıklamada boş sekme açıyordu; iOS Safari yeni sekmeyi öne alınca CRM sekmesi arka plana düşüp bekleyen `fetch` (SSO oturum kodu) anında "Load failed" ile iptal oluyordu. Bilgisayarda görülmez. Düzeltme: iOS'ta ön sekme açılmaz, kod alınınca aynı sekmede Teklif Programı'na geçilir (`_isIOS`, `_openTeklifUrl`). Geri tuşu CRM'e döner.
-- **Kök neden netleşti (14 Kasım):** iPhone'da mobil veri (5G) hattından `*.vercel.app` alan adına erişilemiyor (Wi-Fi'de açılıyor; Bağlantı Testi: "Teklif sunucusu erişimi — Load failed"). Çözüm: Teklif Programı (`apro-platform` Vercel projesi, `apro-prod` dalı) **kendi alan adına** bağlandı: `https://apro-teklif.nextaura.tr` (Cloudflare DNS: CNAME `apro-teklif` → Vercel, DNS only). CRM `TEKLIF_APP_URL` bu adrese çevrildi. Eski `apro-platform.vercel.app` çalışmaya devam eder. Araçlar → 🔌 Bağlantı Testi ve 🔃 Sayfayı Yenile eklendi.
+### 14 Kasım — Mobil açılış hızı + iPhone'da Teklif Programı erişimi (✅ çözüldü)
+
+**Şikâyet:** CRM mobilde geç açılıyor; CRM'den Teklif Programı iPhone'da açılmıyor ("Oturum alınamadı — bağlantı hatası (Load failed)").
+
+**Bulunan üç ayrı neden ve çözümleri:**
+
+| # | Neden | Çözüm | Durum |
+|---|---|---|---|
+| 1 | `init()` 8 Firestore okumasını ardışık bekliyordu; sonuncusu Teklif Programı'na zaman aşımsız bir istekti (`crm/profit`) → ulaşılamazsa giriş ekranı bile çizilmiyordu | Okumalar `Promise.all` ile paralel; kâr verisi arka planda + 12 sn zaman aşımı; SheetJS/EmailJS ilk kullanımda yüklenir (`_loadScript`); `evaluations` yalnız yönetici için çekilir; preconnect ipuçları | ✅ canlı |
+| 2 | `openLoadingTab()` tıklamada boş sekme açıyordu; **iOS Safari** yeni sekmeyi öne alınca CRM sekmesi arka plana düşüp bekleyen `fetch` anında "Load failed" ile iptal oluyordu | iOS'ta ön sekme açılmaz; oturum kodu alınınca aynı sekmede geçilir (`_isIOS`, `_openTeklifUrl`) | ✅ canlı |
+| 3 | **Mobil operatör (5G) `*.vercel.app` alan adına erişimi engelliyor** (Wi-Fi'de açılıyor). Araçlar → Bağlantı Testi: "Teklif sunucusu erişimi — Load failed" | Teklif Programı **kendi alan adına** bağlandı: `https://apro-teklif.nextaura.tr` (Vercel `apro-platform` projesi, Cloudflare DNS: CNAME `apro-teklif` → Vercel, DNS only). CRM `TEKLIF_APP_URL` bu adrese çevrildi | ✅ canlı |
+
+**Teklif Programı tarafında (apro-platform, commit `4cb98e6`):** `crm-login` yönlendirmesi `NEXT_PUBLIC_APP_URL` yerine isteğin geldiği adrese (`url.origin`) göre kuruluyor; aksi halde oturum yeni alan adında açılıp telefonda engelli eski adrese yönlendirme yapılıyordu. Vercel'de `NEXT_PUBLIC_APP_URL` değeri `https://apro-teklif.nextaura.tr` yapıldı (Config türü; Secret + `NEXT_PUBLIC_` Vercel'de çelişiyor) ve yeniden dağıtıldı.
+
+**Ek iyileştirmeler:**
+- `getCrmSessionToken`: istek başına 15 sn zaman aşımı, 4 deneme, net hata mesajı (sürüm kodu `CRM_BUILD` mesajın sonunda görünür).
+- Araçlar menüsüne **🔌 Bağlantı Testi (Teklif Programı)** (genel internet / Teklif sunucusu / oturum isteği ayrı ayrı sınanır) ve **🔃 Sayfayı Yenile** (ana ekran kısayolunda yenileme düğmesi yok) eklendi.
+- **Dosya karışıklığı giderildi:** canlı ve tek gerçek kaynak `index.html`; `APRO_CRM_Firebase.html` ESKİ (21 Eki, Kasım işleri yok). `CLAUDE.md`'deki "Firebase.html → index.html kopyala" talimatı kaldırıldı (eski dosya son haftaların işini silerdi).
+
+**Doğrulama:** telefonda (iPhone 16 Plus, 5G ve Wi-Fi) Teklif Programı CRM'den açılıyor (sürüm `14Kas-DOM1`).
+
+**Bilmeniz gerekenler / açık kalanlar:**
+- Eski `apro-platform.vercel.app` adresi çalışmaya devam eder (bilgisayarda yer imleri bozulmaz). CRM artık yalnız yeni adresi kullanır.
+- CRM kayıtlı `quotationUrl` değerini yalnız saklıyor, açmak için `quotationId` + `TEKLIF_APP_URL` kullanıyor → eski kayıtlar için dönüşüm gerekmiyor.
+- Aynı değişiklikle ticari NextAura Teklif (`main` dalı) da güncellendi; davranışı aynı kaldı.
+- Hâlâ açık: Neon veritabanı şifresi sohbette paylaşılmıştı → sıfırlanmalı (Vercel `DATABASE_URL` / `DATABASE_URL_UNPOOLED` de yenilenmeli); 30 Ağustos güvenlik kalemleri (K5/Y1) ve Henkel/Rivulis ile Ahsen/Ilgın görev yeniden başlatma.
+
+### 14 Kasım — Silinenler: toplu kalıcı silme + Teklif Talepleri'nden kaldırıldı
+- **Teklif Talepleri** ekranından **🗑 Silinenler** düğmesi kaldırıldı. Silinenler penceresi **Fırsatlar** ekranındaki düğmeden açılır (hem fırsat hem talep çöpünü gösterir, geri yükleme orası üzerinden yapılır).
+- Silinenler penceresine yalnız yöneticide görünen **🔥 Tümünü kalıcı sil (N)** düğmesi eklendi (`purgeAllTrash`): iki aşamalı onay (özet + büyük harfle "SİL" yazma), Teklif Programı'ndaki tekliflere dokunmaz, deneme/test modunda çalışmaz.
+- Çöpteki 42 kayıt (34 talep + 8 fırsat; 10 Kasım toplu temizliği) bu düğmeyle kalıcı silinecek. Öncesi bilgi: bunların 2 talebinin (HAVMEKSAN, AXA YILDIZ PLAZA) Teklif Programı'nda canlı teklifi vardı; 10 gönderilmiş eski talep (Mayıs–Haziran) ve gerçek müşteri adlı birkaç fırsat içeriyordu. Kopyalar gece yedeklerinde ~30 gün durur.
+- **Otomatik silme denetimi:** yeni yapıda hiçbir teklif/talep elle silinmeden silinmez; tek otomatik işlem `trashAutoPurge` — zaten çöpe atılmış kaydı 30 gün sonra kalıcı siler. Teklif Programı'nda `default-org` (A-PRO) sıfırlamaya karşı kodda korumalı.
 
