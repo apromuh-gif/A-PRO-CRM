@@ -13,7 +13,7 @@
 <title>A-PRO İş Takip CRM</title>
 <link rel="preconnect" href="https://www.gstatic.com" crossorigin/>
 <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin/>
-<link rel="preconnect" href="https://apro-platform.vercel.app" crossorigin/>
+<link rel="preconnect" href="https://apro-teklif.nextaura.tr" crossorigin/>
 <script>
 // Ağır/nadir kullanılan kütüphaneler (SheetJS: Excel içe aktarma, EmailJS: mail testi) açılışta DEĞİL, ilk kullanımda yüklenir.
 window._loadScript=function(url){window._scriptP=window._scriptP||{};if(!window._scriptP[url]){window._scriptP[url]=new Promise(function(res,rej){var s=document.createElement('script');s.src=url;s.onload=res;s.onerror=function(){delete window._scriptP[url];rej(new Error('Yüklenemedi: '+url));};document.head.appendChild(s);});}return window._scriptP[url];};
@@ -283,7 +283,7 @@ const NAVY="#1e3a5f",NAVY2="#264875",ACC="#2563eb";
 // ═══════════════════════════════════════════════════════
 // A-PRO TEKLİF PROGRAMI ENTEGRASYONU
 // ═══════════════════════════════════════════════════════
-const TEKLIF_APP_URL  = 'https://apro-platform.vercel.app';
+const TEKLIF_APP_URL  = 'https://apro-teklif.nextaura.tr';
 const TEKLIF_API_URL  = TEKLIF_APP_URL + '/api/v1/crm/open-quotation';
 const TEKLIF_COPY_URL = TEKLIF_APP_URL + '/api/v1/crm/copy-quotation';
 const TEKLIF_SYNC_URL = TEKLIF_APP_URL + '/api/v1/crm/customers';
@@ -12581,7 +12581,7 @@ function mailBody(icon, title, details) {
 }
 
 // Teklif Programı bağlantı teşhisi (telefonda "Load failed" sorununu ayırt etmek için). Sonuç ekranda gösterilir.
-const CRM_BUILD = '14Kas-iOS2';
+const CRM_BUILD = '14Kas-DOM1';
 async function teklifConnectionTest() {
   const out = [];
   const standalone = (window.navigator.standalone === true) || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
