@@ -910,7 +910,6 @@ Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departm
 ### Açık kalanlar
 - Eski servis kayıtlarında Satış Temsilcisi boş → temsilci bazlı servis hedefi için elle doldurulmalı.
 - Henkel/Rivulis icra görevleri ve Ahsen/Ilgın görevleri silindi; yeniden başlatma/elle ekleme gerekirse "+ Bu aşamaya görev öner".
-- Teklif Programı veritabanı şifresi sohbette paylaşıldı → Neon'dan sıfırlanmalı (Vercel `DATABASE_URL` de yenilenmeli).
 - CRM GitHub deposu **public**: lisanslı yazı tipi dosyaları bu depoya konmamalı (duyuru aracı için ayrı, private depo).
 
 ### 14 Kasım — Mobil açılış hızı + iPhone'da Teklif Programı erişimi (✅ çözüldü)
@@ -938,7 +937,7 @@ Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departm
 - Eski `apro-platform.vercel.app` adresi çalışmaya devam eder (bilgisayarda yer imleri bozulmaz). CRM artık yalnız yeni adresi kullanır.
 - CRM kayıtlı `quotationUrl` değerini yalnız saklıyor, açmak için `quotationId` + `TEKLIF_APP_URL` kullanıyor → eski kayıtlar için dönüşüm gerekmiyor.
 - Aynı değişiklikle ticari NextAura Teklif (`main` dalı) da güncellendi; davranışı aynı kaldı.
-- Hâlâ açık: Neon veritabanı şifresi sohbette paylaşılmıştı → sıfırlanmalı (Vercel `DATABASE_URL` / `DATABASE_URL_UNPOOLED` de yenilenmeli); 30 Ağustos güvenlik kalemleri (K5/Y1) ve Henkel/Rivulis ile Ahsen/Ilgın görev yeniden başlatma.
+- Hâlâ açık: 30 Ağustos güvenlik kalemleri (K5/Y1) ve Henkel/Rivulis ile Ahsen/Ilgın görev yeniden başlatma.
 
 ### 14 Kasım — Silinenler: toplu kalıcı silme + Teklif Talepleri'nden kaldırıldı
 - **Teklif Talepleri** ekranından **🗑 Silinenler** düğmesi kaldırıldı. Silinenler penceresi **Fırsatlar** ekranındaki düğmeden açılır (hem fırsat hem talep çöpünü gösterir, geri yükleme orası üzerinden yapılır).
@@ -963,10 +962,8 @@ Yeni yapıya göre iki ekranın tüm düğmeleri gözden geçirildi:
 ### Ertelenen / açık kararlar (14 Kasım 2026 itibarıyla)
 - **`+ Yeni Fırsat` → "Teklifsiz İş Ekle"**: şimdilik **mevcut durum kalsın** (karar: sonra tekrar bakılacak). Gerekçe/öneri: yalnız kazanılmış iş açan, Satış Türü + dayanak zorunlu tek amaçlı form; 6 ayda tek örnek (RİVULİS, €100.000) olduğu için acil değil. Satışçılar da ekleyebilsin mi sorusu açık.
 - **Teklif Programı otomatik kalıcı silme** (30 gün) etkin; ilk çalışma 15 Kasım 03:00 UTC. Sonrasında gece yedeğinden sayılar doğrulanacak (beklenen: 97 silinir, 7 kalır).
-- **CRM Silinenler** 30 gün sonra otomatik kalıcı silme (`trashAutoPurge`) duruyor; kapatma/süre uzatma kararı verilmedi.
-- **Yedek eksikleri:** `reports` (AI rapor arşivi) ve `fieldPhotos` (saha fotoğrafları) iki yedekte de yok.
-- **Neon veritabanı şifresi sıfırlanmalı** (bağlantı adresi sohbette göründü); Vercel `DATABASE_URL`/`DATABASE_URL_UNPOOLED` ve GitHub `NEON_DATABASE_URL` birlikte güncellenecek.
-- **35 teklifsiz eski fırsat** (€12,1 M, çoğu Bahadır GÜDER, Mayıs'tan beri düzenlenmemiş): canlı/ölü ayrımı için bir kerelik gözden geçirme önerildi.
+
+**Karara bağlananlar (14 Kasım):** CRM **Silinenler 30 gün sonra otomatik kalıcı silinir** (`trashAutoPurge`, mevcut davranış korunur). **Raporlar** (Aylık / 3 Aylık / Geçmiş) menüde **kalır**. **Yedeğe `reports` ve `fieldPhotos` eklendi.** Neon şifre sıfırlama ve 35 teklifsiz eski fırsatın gözden geçirilmesi iş listesinden çıkarıldı.
 
 ### 14 Kasım — Araçlar menüsü sadeleştirildi (27 → 13 madde)
 Menü yalnız yöneticide görünür. Kalanlar gruplu: **Yıl** (Mali Yıl, Fırsatları Mali Yıla Taşı) · **Raporlar** (Aylık, 3 Aylık, Geçmiş) · **Veri** (Excel/CSV İçe Aktar, Yedek Al) · **Sistem** (Teklifleri şimdi eşitle, Bağlantı Testi, Bildirim & Ses Testi, Görev atama kontrolü, Sayfayı Yenile, Deneme modu).
