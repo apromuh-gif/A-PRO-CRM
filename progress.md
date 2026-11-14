@@ -968,3 +968,12 @@ Yeni yapıya göre iki ekranın tüm düğmeleri gözden geçirildi:
 - **Neon veritabanı şifresi sıfırlanmalı** (bağlantı adresi sohbette göründü); Vercel `DATABASE_URL`/`DATABASE_URL_UNPOOLED` ve GitHub `NEON_DATABASE_URL` birlikte güncellenecek.
 - **35 teklifsiz eski fırsat** (€12,1 M, çoğu Bahadır GÜDER, Mayıs'tan beri düzenlenmemiş): canlı/ölü ayrımı için bir kerelik gözden geçirme önerildi.
 
+### 14 Kasım — Araçlar menüsü sadeleştirildi (27 → 13 madde)
+Menü yalnız yöneticide görünür. Kalanlar gruplu: **Yıl** (Mali Yıl, Fırsatları Mali Yıla Taşı) · **Raporlar** (Aylık, 3 Aylık, Geçmiş) · **Veri** (Excel/CSV İçe Aktar, Yedek Al) · **Sistem** (Teklifleri şimdi eşitle, Bağlantı Testi, Bildirim & Ses Testi, Görev atama kontrolü, Sayfayı Yenile, Deneme modu).
+Kaldırılanlar ve sebepleri:
+- **Mail Testi** (+ `testMailNotification`, `mailBody`, EmailJS sabitleri): hatırlatma mailleri Temmuz'dan beri sunucu cron'undan gidiyor, istemci EmailJS yolu artık gerçeği test etmiyordu.
+- **Ses Testi**: Bildirim Testi zaten sesi de çalıyor → tek madde **Bildirim & Ses Testi**.
+- **Yazdır**: ekranın sağ altındaki yazıcı düğmesiyle aynı işi yapıyordu.
+- **Geri Yükle** (Yedekleme penceresinden): tek onayla `customers/opportunities/proposals/services/maintenances` koleksiyonlarındaki TÜM kayıtları silip eski bir JSON'la değiştiriyordu (silinenler çöpünü, görevleri, tedarikçileri kapsamıyordu). Geri yükleme gece yedeğinden (GitHub) kontrollü yapılır. Pencere artık yalnız **Yedek Al (indir)**.
+- **Tek seferlik düzeltme araçları** (işi bitti, veride yapılacak iş yok): Kazanma Tarihlerini Doldur (2 kapanmış fırsat, yeni kayıtlar otomatik damgalı), Kazanılanları Onayla (kazanılmış 1 teklif zaten onaylı), Stok rezervlerini yeniden kur (1 kazanılmış, rezervi var), Teklif Temsilcisi Eşle (Haziran'daki tek seferlik backfill).
+

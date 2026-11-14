@@ -18,7 +18,6 @@
 // Ağır/nadir kullanılan kütüphaneler (SheetJS: Excel içe aktarma, EmailJS: mail testi) açılışta DEĞİL, ilk kullanımda yüklenir.
 window._loadScript=function(url){window._scriptP=window._scriptP||{};if(!window._scriptP[url]){window._scriptP[url]=new Promise(function(res,rej){var s=document.createElement('script');s.src=url;s.onload=res;s.onerror=function(){delete window._scriptP[url];rej(new Error('Yüklenemedi: '+url));};document.head.appendChild(s);});}return window._scriptP[url];};
 window.XLSX_URL='https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
-window.EMAILJS_URL='https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
 </script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -295,145 +294,9 @@ const TEKLIF_APPROVE_URL    = TEKLIF_APP_URL + '/api/v1/crm/approve-quotation';
 const TEKLIF_CONVERT_URL = TEKLIF_APP_URL + '/api/v1/crm/convert-quotation';
 const TEKLIF_API_KEY  = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a83ef805af0';
 
-// Tek seferlik backfill: eski (salesRep boş) tekliflere, bağlı fırsatın sahibini (assignedTo) yaz.
-// quotationId -> {salesRep, preparedBy} eşlemesi CRM'de (fırsat/teklif talebi) mevcut; sunucu yalnızca
-// değeri null olanları doldurur, dolu olanı EZMEZ. Önce dryRun ile kaç kayıt etkilenecek gösterir.
-async function backfillTeklifSalesReps() {
-  const map = {};
-  for (const o of (state.opportunities || [])) {
-    if (!o.quotationId) continue;
-    const e = map[o.quotationId] = map[o.quotationId] || {};
-    if (!e.salesRep && o.assignedTo) e.salesRep = o.assignedTo;
-  }
-  for (const p of (state.proposals || [])) {
-    if (!p.quotationId) continue;
-    const e = map[p.quotationId] = map[p.quotationId] || {};
-    if (!e.salesRep) {
-      const opp = (state.opportunities || []).find(o => o.id === p.opportunityId);
-      if (opp && opp.assignedTo) e.salesRep = opp.assignedTo;
-    }
-    if (!e.preparedBy && p.preparedBy) e.preparedBy = p.preparedBy;
-  }
-  const items = Object.entries(map)
-    .map(([quotationId, v]) => ({ quotationId, salesRep: v.salesRep || '', preparedBy: v.preparedBy || '' }))
-    .filter(i => i.salesRep || i.preparedBy);
-  if (!items.length) { alert('Eşlenecek teklif bulunamadı (fırsat/teklif taleplerinde quotationId + sahip yok).'); return; }
 
-  async function call(dryRun) {
-    const res = await fetch(TEKLIF_BACKFILL_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
-      body: JSON.stringify({ dryRun, items }),
-    });
-    const b = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(b?.error?.message || ('HTTP ' + res.status));
-    return b.data;
-  }
-  try {
-    const dry = await call(true);
-    if (!dry.wouldUpdate) { alert('Güncellenecek boş teklif yok. (Eşlenen: ' + dry.matched + ', hepsi zaten dolu.)'); return; }
-    const lines = (dry.planned || []).slice(0, 20)
-      .map(p => '• ' + (p.projectName || p.id) + '  →  ' + (p.salesRep || '(temsilci yok)')).join('\n');
-    if (!confirm(dry.wouldUpdate + ' teklifin satış temsilcisi doldurulacak:\n\n' + lines + '\n\nDevam edilsin mi?')) return;
-    const done = await call(false);
-    alert('✅ Tamamlandı. ' + done.updated + ' teklif güncellendi.');
-  } catch (e) {
-    alert('Backfill hatası: ' + (e && e.message ? e.message : e));
-  }
-}
-window.backfillTeklifSalesReps = backfillTeklifSalesReps;
 
-// Tek seferlik: mevcut KAZANILDI fırsatların bağlı tekliflerini Teklif Programı'nda
-// toplu APPROVED'a çeker (karlılığa dahil eder). Bundan sonraki kazanmalar otomatik olur.
-async function approveWonQuotationsBulk() {
-  const targets = (state.opportunities || []).filter(o =>
-    o.stage === 'KAZANILDI' && o.quotationId && o.quotationStatus !== 'APPROVED');
-  if (!targets.length) { alert('Onaylanacak kazanılmış teklif yok. (KAZANILDI + bağlı teklif + henüz onaysız bulunamadı.)'); return; }
-  const lines = targets.slice(0, 20).map(o => '• ' + (o.title || o.quotationId) + '  →  ' + (o.assignedTo || '(temsilci yok)')).join('\n');
-  if (!confirm(targets.length + ' kazanılmış teklif APPROVED yapılacak (karlılığa dahil):\n\n' + lines + '\n\nDevam edilsin mi?')) return;
-  let ok = 0, fail = 0;
-  for (const o of targets) {
-    try {
-      const prop = (state.proposals || []).find(p => p.quotationId === o.quotationId);
-      const res = await fetch(TEKLIF_APPROVE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
-        body: JSON.stringify({ quotationId: o.quotationId, salesRep: o.assignedTo || '', preparedBy: (prop && prop.preparedBy) || '', wonAt: o.wonAt || null }),
-      });
-      const b = await res.json().catch(() => null);
-      if (res.ok && b && b.success) {
-        const upd = {...o, quotationStatus: 'APPROVED', ...stamp()};
-        await saveDoc('opportunities', o.id, upd);
-        setState({opportunities: (state.opportunities || []).map(x => x.id === o.id ? upd : x)});
-        ok++;
-      } else { fail++; }
-    } catch (e) { fail++; }
-  }
-  alert('✅ Tamamlandı. Onaylanan: ' + ok + (fail ? ', başarısız: ' + fail : ''));
-}
-window.approveWonQuotationsBulk = approveWonQuotationsBulk;
 
-// Stok: KAZANILDI + bağlı teklifi olan tüm fırsatlar için rezervi yeniden kurar (idempotent).
-// Stok kartı/takip işareti projeden SONRA eklendiyse kazanılmış projeler rezerve edilmemiş kalır; bu araç onları eşitler.
-async function resyncWonStockReservations() {
-  // Stok modülü başlangıç tarihinden (STOCK_START_DATE) önce kazanılan projeler stok kapsamı dışındadır.
-  const STOCK_START_DATE = '2026-10-19';
-  const targets = (state.opportunities || []).filter(o => o.stage === 'KAZANILDI' && o.quotationId && !o.quotationDeleted && String(o.wonAt || '') >= STOCK_START_DATE);
-  if (!targets.length) { alert('Stok kapsamında (' + STOCK_START_DATE + ' ve sonrası kazanılmış) ve teklifi bağlı fırsat yok.'); return; }
-  if (!confirm(targets.length + ' kazanılmış projenin stok kaydı/rezervi yeniden kurulacak (takipli stok kartlarına göre; ' + STOCK_START_DATE + ' ve sonrası). Devam edilsin mi?')) return;
-  let ok = 0, fail = 0;
-  for (const o of targets) {
-    try {
-      const prop = (state.proposals || []).find(p => p.quotationId === o.quotationId);
-      const res = await fetch(TEKLIF_APPROVE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-crm-key': TEKLIF_API_KEY },
-        body: JSON.stringify({ quotationId: o.quotationId, salesRep: o.assignedTo || '', preparedBy: (prop && prop.preparedBy) || '', wonAt: o.wonAt || null }),
-      });
-      const b = await res.json().catch(() => null);
-      if (res.ok && b && b.success) ok++; else fail++;
-    } catch (e) { fail++; }
-  }
-  _stockStatusCache.at = 0;
-  alert('✅ Tamamlandı. Eşitlenen: ' + ok + (fail ? ', başarısız: ' + fail : '') + '.');
-  render();
-}
-window.resyncWonStockReservations = resyncWonStockReservations;
-
-// Tek seferlik (K2 geri-doldurma): wonAt/closedAt damgası olmayan ESKİ kapanmış fırsatlara
-// tahmini kapanış tarihi yazar. Kaynak önceliği: _editedAt (son düzenleme, gerçeğe en yakın)
-// → dueDate → createdAt. Yeni kayıtlar saveOpp içinde zaten damgalanır; bu yalnız eskiler içindir.
-async function backfillOppCloseDates() {
-  const parseEdited = s => {                       // "30.08.2026 14:23:11" → "2026-08-30"
-    const m = String(s||'').match(/^(\d{2})\.(\d{2})\.(\d{4})/);
-    return m ? (m[3]+'-'+m[2]+'-'+m[1]) : '';
-  };
-  const targets = (state.opportunities||[]).filter(o=>{
-    if(o.stage==='KAZANILDI') return !o.wonAt;
-    if(_LOST_STAGES.indexOf(o.stage)>=0) return !o.closedAt;
-    return false;
-  }).map(o=>{
-    const guess = parseEdited(o._editedAt) || _toISO(o.dueDate||'') || o.createdAt || today();
-    const src   = parseEdited(o._editedAt) ? 'son düzenleme' : (o.dueDate ? 'sipariş tarihi' : 'oluşturma');
-    return { o, guess, src };
-  });
-  if(!targets.length){ alert('Damgasız kapanmış fırsat yok — tüm kayıtlarda wonAt/closedAt mevcut.'); return; }
-  const lines = targets.slice(0,25).map(t=>'• '+(t.o.title||t.o.id)+'  →  '+_toTR(t.guess)+'  ('+t.src+')').join('\n');
-  if(!confirm(targets.length+' fırsata tahmini kapanış tarihi yazılacak.\n\nBu tarih prim ve yıllık hedef hesabında kullanılır — yanlış olanları sonradan fırsat kartından düzeltebilirsiniz.\n\n'+lines+(targets.length>25?'\n… ve '+(targets.length-25)+' kayıt daha':'')+'\n\nDevam edilsin mi?')) return;
-  let ok=0, fail=0;
-  for(const t of targets){
-    try{
-      const patch = t.o.stage==='KAZANILDI' ? {wonAt:t.guess} : {closedAt:t.guess};
-      const upd = {...t.o, ...patch};
-      await saveDoc('opportunities', t.o.id, upd);
-      setState({opportunities:(state.opportunities||[]).map(x=>x.id===t.o.id?upd:x)});
-      ok++;
-    }catch(e){ fail++; }
-  }
-  alert('✅ Tamamlandı. '+ok+' fırsat damgalandı'+(fail?', '+fail+' başarısız':'')+'.');
-  render();
-}
-window.backfillOppCloseDates = backfillOppCloseDates;
 
 // CRM kullanıcısı için teklif programında oturum açar, session token döndürür.
 async function getCrmSessionToken() {
@@ -3954,75 +3817,7 @@ function buildImportModal() {
 
 
 function buildBackupModal() {
-  const fileInput = h('input',{type:'file',accept:'.json',style:{display:'none'}});
-  const statusDiv = h('div',{style:{display:'none'}});
   let drag = false;
-
-  async function restoreFromJSON(file) {
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = async e => {
-      try {
-        const d = JSON.parse(e.target.result);
-        if(!d.customers) throw new Error('Geçersiz dosya');
-        if(!confirm('Mevcut tüm veriler silinip yedekten geri yüklenecek. Emin misiniz?')) return;
-
-        statusDiv.style.display='block';
-        statusDiv.style.background='#1a1a0f';
-        statusDiv.style.border='1px solid #d97706';
-        statusDiv.style.color='#fbbf24';
-        statusDiv.textContent='⏳ Yükleniyor…';
-
-        // Firebase'e yaz
-        const cols = ['customers','opportunities','proposals','services','maintenances'];
-        for(const col of cols) {
-          // Önce mevcutları sil
-          const snap = await db.collection(col).get();
-          for(const doc of snap.docs) await doc.ref.delete();
-          // Yenilerini yaz
-          for(const item of (d[col]||[])) {
-            await db.collection(col).doc(String(item.id)).set(item);
-          }
-        }
-        // State güncelle
-        state.customers = d.customers||[];
-        state.opportunities = d.opportunities||[];
-        state.proposals = d.proposals||[];
-        state.services = d.services||[];
-        state.maintenances = d.maintenances||[];
-
-        statusDiv.style.background='#0f2a1a';
-        statusDiv.style.border='1px solid #10b981';
-        statusDiv.style.color='#4ade80';
-        statusDiv.textContent='✅ Veri başarıyla geri yüklendi!';
-        setTimeout(()=>setState({modal:null}),1500);
-      } catch(err) {
-        statusDiv.style.display='block';
-        statusDiv.style.background='#2a0f0f';
-        statusDiv.style.border='1px solid #ef4444';
-        statusDiv.style.color='#f87171';
-        statusDiv.textContent='❌ Geçersiz dosya. Lütfen doğru JSON yedek dosyasını seçin.';
-      }
-    };
-    reader.readAsText(file);
-  }
-
-  fileInput.addEventListener('change', e=>restoreFromJSON(e.target.files[0]));
-
-  const dropZone = h('div',{style:{border:`2px dashed ${G4}`,borderRadius:'10px',padding:'20px',textAlign:'center',cursor:'pointer',background:G,marginBottom:'4px'}},
-    h('div',{style:{fontSize:'28px',marginBottom:'6px'}},'📂'),
-    h('div',{style:{color:T3,fontSize:'13px'}},'JSON yedek dosyasını sürükleyin veya tıklayın'),
-    fileInput
-  );
-  dropZone.addEventListener('click',()=>fileInput.click());
-  dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.style.borderColor='#6366f1';dropZone.style.background='#1c2128';});
-  dropZone.addEventListener('dragleave',()=>{dropZone.style.borderColor=G4;dropZone.style.background=G;});
-  dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.style.borderColor=G4;dropZone.style.background=G;restoreFromJSON(e.dataTransfer.files[0]);});
-
-  statusDiv.style.padding='10px 14px';
-  statusDiv.style.borderRadius='8px';
-  statusDiv.style.fontSize='13px';
-  statusDiv.style.marginTop='10px';
 
   const content = h('div',{},
     h('div',{style:{background:'#0f0f0f',borderRadius:'10px',padding:'14px',marginBottom:'16px',border:`1px solid ${G3}`}},
@@ -4036,24 +3831,20 @@ function buildBackupModal() {
         )
       )
     ),
-    h('div',{style:{fontWeight:'700',color:T1,marginBottom:'10px',fontSize:'13px'}},'📥 Yedek Al'),
+    h('div',{style:{fontWeight:'700',color:T1,marginBottom:'10px',fontSize:'13px'}},'📥 Yedek Al (indir)'),
     h('div',{style:{display:'flex',flexDirection:'column',gap:'8px',marginBottom:'18px'}},
       h('button',{onClick:dlJSON,style:{display:'flex',alignItems:'center',gap:'10px',background:G,border:`1px solid ${G3}`,borderRadius:'10px',padding:'12px 14px',cursor:'pointer',width:'100%',fontFamily:"'DM Sans',sans-serif"}},
         h('span',{style:{fontSize:'24px'}},'📄'),
-        h('div',{},h('div',{style:{color:'#60a5fa',fontWeight:'700',fontSize:'13px'}},'JSON Yedek İndir'),h('div',{style:{color:T3,fontSize:'11px'}},'Geri yüklenebilir'))
+        h('div',{},h('div',{style:{color:'#60a5fa',fontWeight:'700',fontSize:'13px'}},'JSON Yedek İndir'),h('div',{style:{color:T3,fontSize:'11px'}},'Tüm veri, tek dosya'))
       ),
       h('button',{onClick:dlCSV,style:{display:'flex',alignItems:'center',gap:'10px',background:G,border:`1px solid ${G3}`,borderRadius:'10px',padding:'12px 14px',cursor:'pointer',width:'100%',fontFamily:"'DM Sans',sans-serif"}},
         h('span',{style:{fontSize:'24px'}},'📊'),
         h('div',{},h('div',{style:{color:'#4ade80',fontWeight:'700',fontSize:'13px'}},'Excel/CSV İndir'),h('div',{style:{color:T3,fontSize:'11px'}},'Google Sheets veya Excel'))
       )
     ),
-    h('div',{style:{fontWeight:'700',color:T1,marginBottom:'10px',fontSize:'13px'}},'📤 Geri Yükle'),
-    dropZone,
-    statusDiv,
-    h('div',{style:{marginTop:'12px'}}),
     btn('Kapat',()=>setState({modal:null}),'#21262d','#8b949e','10px 16px',{width:'100%'})
   );
-  return modal('🗄️ Yedekleme & Geri Yükleme', content, ()=>setState({modal:null}), '460px');
+  return modal('🗄️ Yedek Al', content, ()=>setState({modal:null}), '460px');
 }
 
 
@@ -8457,7 +8248,7 @@ function _monthNum(period){ return Number(String(period).slice(5,7))||0; }
 // Fırsatın prim/hedef atfında kullanılacak KAPANIŞ tarihi.
 // wonAt/closedAt saveOpp içinde aşama KAZANILDI/kayıp'a geçtiği anda damgalanır (K2).
 // updatedAt KULLANILMAZ: her düzenlemede değişir, cironun ayını/yılını kaydırırdı.
-// Eski (damgasız) kayıtlar için Araçlar → "Kazanma Tarihlerini Doldur" ile geri-doldurma yapılır;
+// Eski (damgasız) kayıtlar için geri-doldurma aracı 14.11.2026'da kaldırıldı (yeni kayıtlar otomatik damgalanır);
 // o zamana kadar dueDate/createdAt'a düşer — bu bir tahmindir, gerçek kapanış değildir.
 function _pOppDate(o){ return o.wonAt||o.closedAt||o.dueDate||o.createdAt; }
 // Kaybedilmiş sayılan aşamalar (closedAt damgası bunlarda basılır).
@@ -11652,30 +11443,26 @@ function render() {
             menu.style.right = (window.innerWidth-rect.right)+'px';
             const items = [
               ...(window.innerWidth<=768&&cu?.isAdmin?[{icon:'🎯',label:'Hedefler',color:'#0f1f35',action:()=>{menu.remove();openTargetsModal();}},{icon:'👥',label:'Kullanıcılar',color:'#0f1f35',action:()=>{menu.remove();setState({modal:{type:'admin',item:null}});}},{sep:true}]:[]),
+              // ── Yıl ──
               {icon:'📅', label:'Mali Yıl (Yıl Geçişi)', color:'#b45309', action:()=>{ menu.remove(); openFiscalYearModal(); }},
               {icon:'🔄', label:'Fırsatları Mali Yıla Taşı', color:'#b45309', action:()=>{ menu.remove(); openCarryoverModal(activeFiscalYear()); }},
               {sep:true},
+              // ── Raporlar ──
               {icon:'📅', label:'Aylık Rapor',     color:'#2563eb', action:()=>{ menu.remove(); generateMonthlyReport(); }},
               {icon:'📊', label:'3 Aylık Rapor',   color:'#7c3aed', action:()=>{ menu.remove(); generateQuarterlyReport(); }},
               {icon:'📋', label:'Geçmiş Raporlar', color:'#0f1f35', action:()=>{ menu.remove(); setState({modal:{type:'reports'}}); }},
               {sep:true},
+              // ── Veri ──
               {icon:'📥', label:'Excel / CSV İçe Aktar', color:'#059669', action:()=>{ menu.remove(); setState({modal:{type:'import'}}); }},
-              {icon:'🗄️', label:'Yedekleme & Geri Yükleme', color:'#0f1f35', action:()=>{ menu.remove(); setState({modal:{type:'backup'}}); }},
-              {icon:'🖨️', label:'Yazdır',          color:'#0f1f35', action:()=>{ menu.remove(); printDashboard(); }},
+              {icon:'🗄️', label:'Yedek Al (indir)', color:'#0f1f35', action:()=>{ menu.remove(); setState({modal:{type:'backup'}}); }},
               {sep:true},
-              {icon:'🔔', label:'Bildirim Testi',  color:'#6d28d9', action:()=>{ menu.remove(); testNotifications(); }},
-              {icon:'✉️', label:'Mail Testi',      color:'#1d4ed8', action:()=>{ menu.remove(); testMailNotification(); }},
-              {icon:'🔌', label:'Bağlantı Testi (Teklif Programı)', color:'#0e7490', action:()=>{ menu.remove(); teklifConnectionTest(); }},
-              {icon:'🔃', label:'Sayfayı Yenile', color:'#0f1f35', action:()=>{ menu.remove(); location.reload(); }},
-              {icon:'🔊', label:'Ses Testi',       color:'#059669', action:()=>{ menu.remove(); try{const ctx=window._audioCtx||(window._audioCtx=new(window.AudioContext||window.webkitAudioContext)());if(ctx.state==='suspended'){ctx.resume().then(()=>playBeep('win'));}else{playBeep('win');}}catch(e){} }},
-              {sep:true},
+              // ── Sistem / tanılama ──
               {icon:'🔄', label:'Teklifleri şimdi eşitle', color:'#0369a1', action:()=>{ menu.remove(); syncQuotationRefsNow(); }},
+              {icon:'🔌', label:'Bağlantı Testi (Teklif Programı)', color:'#0e7490', action:()=>{ menu.remove(); teklifConnectionTest(); }},
+              {icon:'🔔', label:'Bildirim & Ses Testi', color:'#6d28d9', action:()=>{ menu.remove(); testNotifications(); }},
               {icon:'🔎', label:'Görev atama kontrolü', color:'#0e7490', action:()=>{ menu.remove(); setState({modal:{type:'taskcheck'}}); }},
+              {icon:'🔃', label:'Sayfayı Yenile', color:'#0f1f35', action:()=>{ menu.remove(); location.reload(); }},
               {icon:'🧪', label:'Deneme modu (hiçbir şey kaydedilmez)', color:'#b91c1c', action:()=>{ menu.remove(); sandboxToggle(); }},
-              {icon:'🔁', label:'Teklif Temsilcisi Eşle', color:'#15803d', action:()=>{ menu.remove(); backfillTeklifSalesReps(); }},
-              {icon:'🏆', label:'Kazanılanları Onayla', color:'#4f46e5', action:()=>{ menu.remove(); approveWonQuotationsBulk(); }},
-              {icon:'🔄', label:'Stok rezervlerini yeniden kur', color:'#4f46e5', action:()=>{ menu.remove(); resyncWonStockReservations(); }},
-              {icon:'📆', label:'Kazanma Tarihlerini Doldur', color:'#b45309', action:()=>{ menu.remove(); backfillOppCloseDates(); }},
             ];
             items.forEach(item=>{
               if(item.sep){
@@ -12516,23 +12303,6 @@ function taxCalendarSync(){
 
 
 
-// Mail gövde şablonu — yalnızca Araçlar → "Mail Testi" tarafından kullanılır.
-// (Düzenli hatırlatma mailleri 4 Tem 2026'dan beri nextaura-admin cron'undan gidiyor.)
-function mailBody(icon, title, details) {
-  return '<div style="padding:12px 0;border-bottom:2px solid #2563eb;margin-bottom:16px">'
-    + '<span style="font-size:24px">' + icon + '</span>'
-    + '<span style="font-size:18px;font-weight:800;color:#0f1f35;margin-left:10px">' + title + '</span>'
-    + '</div>'
-    + '<table style="width:100%;border-collapse:collapse">'
-    + details.map(([k,v]) =>
-        '<tr><td style="padding:8px 12px;background:#e8f0fb;font-weight:700;font-size:13px;color:#1e3a5f;width:40%;border-radius:6px 0 0 6px">' + k + '</td>'
-        + '<td style="padding:8px 12px;font-size:13px;color:#374151;border-bottom:1px solid #e2e8f0">' + v + '</td></tr>'
-      ).join('')
-    + '</table>'
-    + '<div style="margin-top:16px;padding:10px 14px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 8px 8px 0;font-size:12px;color:#92400e">'
-    + '⏰ Bu bildirim A-PRO CRM tarafından otomatik gönderilmiştir. Lütfen gerekli aksiyonu alınız.'
-    + '</div>';
-}
 
 // Teklif Programı bağlantı teşhisi (telefonda "Load failed" sorununu ayırt etmek için). Sonuç ekranda gösterilir.
 const CRM_BUILD = '14Kas-DOM1';
@@ -12558,29 +12328,6 @@ async function teklifConnectionTest() {
 }
 window.teklifConnectionTest = teklifConnectionTest;
 
-async function testMailNotification() {
-  const cu = state.currentUser;
-  if(!cu?.email) { showToast('⚠️ Kullanıcı mail adresi bulunamadı','#d97706'); return; }
-  if(state.sandbox === true) { showToast('🧪 Deneme modu açık — e-posta gönderilmez','#d97706'); return; }
-  try { await window._loadScript(window.EMAILJS_URL); } catch(e) {}
-  if(typeof emailjs === 'undefined') { showToast('❌ EmailJS yüklenemedi','#dc2626'); return; }
-  const body = mailBody('✉️', 'Mail Bildirimi Test', [
-    ['Durum', 'EmailJS bağlantısı başarılı'],
-    ['Gönderen', 'A-PRO CRM'],
-    ['Alıcı', cu.email],
-    ['Zaman', new Date().toLocaleString('tr-TR')],
-  ]);
-  emailjs.send(EMAILJS_SERVICE, EMAILJS_TEMPLATE, {
-    subject: '✅ A-PRO CRM Mail Testi',
-    body: body,
-    to_email: cu.email,
-  }, {publicKey: EMAILJS_KEY}).then(()=>{
-    showToast('✅ Test maili gönderildi → ' + cu.email, '#16a34a');
-  }).catch(e=>{
-    showToast('❌ Mail gönderilemedi: ' + (e.text||e.message||JSON.stringify(e)), '#dc2626');
-    console.error('Mail test error:', e);
-  });
-}
 
 function testNotifications() {
   // Önceki test bildirimlerini temizle
@@ -12690,9 +12437,6 @@ async function syncQuotationRefsNow() {
 // EMAİL BİLDİRİM SİSTEMİ (EmailJS)
 // ═══════════════════════════════════════════════════════
 
-const EMAILJS_SERVICE  = 'service_xm7vpad';
-const EMAILJS_TEMPLATE = 'template_tfhbxqv';
-const EMAILJS_KEY      = 'aFlqv_CSdq9QliGtN';
 
 if(!window._mailSentKeys) window._mailSentKeys = new Set();
 
