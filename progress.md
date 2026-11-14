@@ -960,3 +960,11 @@ Yeni yapıya göre iki ekranın tüm düğmeleri gözden geçirildi:
 - **Doğrulandı (değişiklik gerekmedi):** Teklif Programı'nda teklif gönderilince talep **otomatik "Gönderildi"** olur ve **fırsat kendiliğinden açılır** (`syncQuotationRefs`, en geç 15 dk; "Araçlar → Teklifleri şimdi eşitle" ile hemen). Durum elle "Gönderildi" yapılamaz.
 - Karar bekleyen: `+ Yeni Fırsat` → "Teklifsiz İş Ekle" (yalnız yönetici, Satış Türü zorunlu).
 
+### Ertelenen / açık kararlar (14 Kasım 2026 itibarıyla)
+- **`+ Yeni Fırsat` → "Teklifsiz İş Ekle"**: şimdilik **mevcut durum kalsın** (karar: sonra tekrar bakılacak). Gerekçe/öneri: yalnız kazanılmış iş açan, Satış Türü + dayanak zorunlu tek amaçlı form; 6 ayda tek örnek (RİVULİS, €100.000) olduğu için acil değil. Satışçılar da ekleyebilsin mi sorusu açık.
+- **Teklif Programı otomatik kalıcı silme** (30 gün) etkin; ilk çalışma 15 Kasım 03:00 UTC. Sonrasında gece yedeğinden sayılar doğrulanacak (beklenen: 97 silinir, 7 kalır).
+- **CRM Silinenler** 30 gün sonra otomatik kalıcı silme (`trashAutoPurge`) duruyor; kapatma/süre uzatma kararı verilmedi.
+- **Yedek eksikleri:** `reports` (AI rapor arşivi) ve `fieldPhotos` (saha fotoğrafları) iki yedekte de yok.
+- **Neon veritabanı şifresi sıfırlanmalı** (bağlantı adresi sohbette göründü); Vercel `DATABASE_URL`/`DATABASE_URL_UNPOOLED` ve GitHub `NEON_DATABASE_URL` birlikte güncellenecek.
+- **35 teklifsiz eski fırsat** (€12,1 M, çoğu Bahadır GÜDER, Mayıs'tan beri düzenlenmemiş): canlı/ölü ayrımı için bir kerelik gözden geçirme önerildi.
+
