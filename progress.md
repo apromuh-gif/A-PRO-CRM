@@ -918,4 +918,5 @@ Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departm
 - Düzeltmeler (`index.html`): bağımsız okumalar `Promise.all` ile paralel; kâr verisi (`loadProfitActuals`) arka planda ve 12 sn zaman aşımlı; SheetJS (Excel içe aktarma) ve EmailJS (mail testi) açılışta değil ilk kullanımda yükleniyor (`_loadScript`); `evaluations` yalnız yönetici için çekiliyor; preconnect ipuçları.
 - **Teklif oturumu** (`getCrmSessionToken`): istek başına 15 sn zaman aşımı, 4 deneme; zaman aşımı mesajı net.
 - **Dosya karışıklığı giderildi:** canlı ve tek gerçek kaynak `index.html`; `APRO_CRM_Firebase.html` eski (21 Eki). `CLAUDE.md` kopyalama talimatı kaldırıldı (eski dosya Kasım işlerini silerdi).
+- **iPhone'da "Teklif Programı açılamıyor — Load failed" (kök neden):** `openLoadingTab()` tıklamada boş sekme açıyordu; iOS Safari yeni sekmeyi öne alınca CRM sekmesi arka plana düşüp bekleyen `fetch` (SSO oturum kodu) anında "Load failed" ile iptal oluyordu. Bilgisayarda görülmez. Düzeltme: iOS'ta ön sekme açılmaz, kod alınınca aynı sekmede Teklif Programı'na geçilir (`_isIOS`, `_openTeklifUrl`). Geri tuşu CRM'e döner.
 

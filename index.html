@@ -539,7 +539,16 @@ async function clearDeletedQuotationLink(qid) {
 // dokunuşuyla senkron bağı koptuğu için pop-up engelleyiciye takılır ve sessizce hiçbir şey
 // açılmaz. Çözüm: sekme tıklamayla senkron olarak hemen (boş) açılır, adres async işlem
 // bitince location.href ile yazılır. win null dönerse (engellenmişse) olduğu gibi bırakılır.
+// iPhone/iPad Safari: boş sekme açmak CRM sekmesini arka plana atar ve içindeki bekleyen fetch'ler anında "Load failed" ile iptal olur.
+// Bu yüzden iOS'ta ön sekme AÇILMAZ; oturum kodu alınınca aynı sekmede Teklif Programı'na geçilir (_openTeklifUrl).
+function _isIOS() { return /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+function _openTeklifUrl(win, url) {
+  if (win) { win.location.href = url; return; }
+  if (_isIOS()) { window.location.href = url; return; }
+  window.open(url, '_blank');
+}
 function openLoadingTab() {
+  if (_isIOS()) return null;
   const win = window.open('', '_blank');
   try {
     win?.document.write('<title>Teklif Programı</title><body style="font-family:sans-serif;padding:60px 20px;text-align:center;color:#64748b">Yükleniyor…</body>');
@@ -623,7 +632,7 @@ async function openQuotationWithSSO(quotationId, existingWin) {
   const token = await getCrmSessionToken();
   if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.' + (window._crmAuthErr ? ' [' + window._crmAuthErr + ']' : '')); return; }
   const _url = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=/quotations/${quotationId}`;
-  if (_win) _win.location.href = _url; else window.open(_url, '_blank');
+  _openTeklifUrl(_win, _url);
 }
 
 // Aşama 3: Müşteri güncelleme senkronizasyonu (fire-and-forget)
@@ -1014,7 +1023,7 @@ async function teklifKopyala(o) {
       showToast('⚠️ Teklif kopyalandı. Teklif Programı açılamadı, "Taslağı Aç" ile tekrar deneyin.');
     } else {
       const openUrl = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations/${quotationId}`;
-      if (_win) _win.location.href = openUrl; else window.open(openUrl, '_blank');
+      _openTeklifUrl(_win, openUrl);
       showToast('✅ Teklif kopyalandı ve fırsata bağlandı.');
     }
     syncQuotationRefsNow();
@@ -1177,7 +1186,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId, proposal
     }
     // Yeni oluşturulan teklif direkt açılır (az önce DB'ye yazıldı, 404 yok)
     const openUrl = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(sessionToken)}&redirect=/quotations/${quotationId}`;
-    if (_win) _win.location.href = openUrl; else window.open(openUrl, '_blank');
+    _openTeklifUrl(_win, openUrl);
     showToast('✅ Teklif oluşturuldu — Fırsat ve Teklif Talepleri güncellendi!');
   } catch(e) {
     try { _win?.close(); } catch {}
@@ -2129,7 +2138,7 @@ async function openStockWithSSO(quotationId) {
   if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.' + (window._crmAuthErr ? ' [' + window._crmAuthErr + ']' : '')); return; }
   const path = quotationId ? '/stock/projects/' + encodeURIComponent(quotationId) : '/stock';
   const _url = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=${encodeURIComponent(path)}`;
-  if (_win) _win.location.href = _url; else window.open(_url, '_blank');
+  _openTeklifUrl(_win, _url);
 }
 window.openStockWithSSO = openStockWithSSO;
 
