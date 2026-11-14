@@ -630,7 +630,7 @@ async function openQuotationWithSSO(quotationId, existingWin) {
   } catch {}
   // 2. Teklif mevcut → SSO ile doğrudan aç
   const token = await getCrmSessionToken();
-  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.' + (window._crmAuthErr ? ' [' + window._crmAuthErr + ']' : '')); return; }
+  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.' + (window._crmAuthErr ? ' [' + window._crmAuthErr + ']' : '') + ' · ' + CRM_BUILD); return; }
   const _url = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=/quotations/${quotationId}`;
   _openTeklifUrl(_win, _url);
 }
@@ -2135,7 +2135,7 @@ function _ensureStockStatus() {
 async function openStockWithSSO(quotationId) {
   const _win = openLoadingTab();
   const token = await getCrmSessionToken();
-  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.' + (window._crmAuthErr ? ' [' + window._crmAuthErr + ']' : '')); return; }
+  if (!token) { try { _win?.close(); } catch {} showToast('⚠️ Oturum alınamadı, tekrar deneyin.' + (window._crmAuthErr ? ' [' + window._crmAuthErr + ']' : '') + ' · ' + CRM_BUILD); return; }
   const path = quotationId ? '/stock/projects/' + encodeURIComponent(quotationId) : '/stock';
   const _url = `${TEKLIF_APP_URL}/crm-login?token=${encodeURIComponent(token)}&redirect=${encodeURIComponent(path)}`;
   _openTeklifUrl(_win, _url);
@@ -11711,6 +11711,8 @@ function render() {
               {sep:true},
               {icon:'🔔', label:'Bildirim Testi',  color:'#6d28d9', action:()=>{ menu.remove(); testNotifications(); }},
               {icon:'✉️', label:'Mail Testi',      color:'#1d4ed8', action:()=>{ menu.remove(); testMailNotification(); }},
+              {icon:'🔌', label:'Bağlantı Testi (Teklif Programı)', color:'#0e7490', action:()=>{ menu.remove(); teklifConnectionTest(); }},
+              {icon:'🔃', label:'Sayfayı Yenile', color:'#0f1f35', action:()=>{ menu.remove(); location.reload(); }},
               {icon:'🔊', label:'Ses Testi',       color:'#059669', action:()=>{ menu.remove(); try{const ctx=window._audioCtx||(window._audioCtx=new(window.AudioContext||window.webkitAudioContext)());if(ctx.state==='suspended'){ctx.resume().then(()=>playBeep('win'));}else{playBeep('win');}}catch(e){} }},
               {sep:true},
               {icon:'🔄', label:'Teklifleri şimdi eşitle', color:'#0369a1', action:()=>{ menu.remove(); syncQuotationRefsNow(); }},
@@ -12577,6 +12579,30 @@ function mailBody(icon, title, details) {
     + '⏰ Bu bildirim A-PRO CRM tarafından otomatik gönderilmiştir. Lütfen gerekli aksiyonu alınız.'
     + '</div>';
 }
+
+// Teklif Programı bağlantı teşhisi (telefonda "Load failed" sorununu ayırt etmek için). Sonuç ekranda gösterilir.
+const CRM_BUILD = '14Kas-iOS2';
+async function teklifConnectionTest() {
+  const out = [];
+  const standalone = (window.navigator.standalone === true) || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  out.push('Sürüm: ' + CRM_BUILD + (standalone ? ' · ana ekran uygulaması' : ' · tarayıcı'));
+  out.push('Çevrimiçi: ' + (navigator.onLine ? 'evet' : 'HAYIR'));
+  const timed = async (label, fn) => {
+    const t0 = Date.now();
+    try { const r = await fn(); out.push('✅ ' + label + ' — ' + (r || 'tamam') + ' (' + (Date.now() - t0) + ' ms)'); }
+    catch (e) { out.push('❌ ' + label + ' — ' + ((e && e.name) || '') + ': ' + ((e && e.message) || e) + ' (' + (Date.now() - t0) + ' ms)'); }
+  };
+  showToast('🔌 Bağlantı test ediliyor…');
+  await timed('Genel internet (gstatic)', async () => { await fetch('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js', { mode: 'no-cors', cache: 'no-store' }); });
+  await timed('Teklif sunucusu erişimi', async () => { await fetch(TEKLIF_APP_URL + '/login?_=' + Date.now(), { mode: 'no-cors', cache: 'no-store' }); });
+  await timed('Teklif oturum isteği (CORS + POST)', async () => {
+    const tok = await getCrmSessionToken();
+    if (!tok) throw new Error(window._crmAuthErr || 'oturum kodu alınamadı');
+    return 'oturum kodu alındı';
+  });
+  alert(out.join('\n'));
+}
+window.teklifConnectionTest = teklifConnectionTest;
 
 async function testMailNotification() {
   const cu = state.currentUser;
