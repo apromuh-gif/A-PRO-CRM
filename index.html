@@ -3554,29 +3554,8 @@ function buildImportModal() {
         {key:'notes',        label:'Notlar'},
       ]
     },
-    opportunities: {
-      label: '🎯 Fırsatlar',
-      fields: [
-        {key:'title',      label:'Başlık *', required:true},
-        {key:'value',      label:'Değer (EUR)'},
-        {key:'stage',      label:'Aşama'},
-        {key:'sector',     label:'Sektör'},
-        {key:'assignedTo', label:'Satış Temsilcisi'},
-        {key:'dueDate',    label:'Sipariş Tarihi'},
-        {key:'notes',      label:'Notlar'},
-      ]
-    },
-    proposals: {
-      label: '📄 Teklif Talepleri',
-      fields: [
-        {key:'title',       label:'Başlık *', required:true},
-        {key:'amount',      label:'Tutar (EUR)'},
-        {key:'status',      label:'Durum'},
-        {key:'preparedBy',  label:'Hazırlayan'},
-        {key:'validUntil',  label:'Dead Line'},
-        {key:'notes',       label:'Notlar'},
-      ]
-    },
+    // Fırsat ve Teklif Talebi aktarımı 14.11.2026'da KAPATILDI: yeni akışı atlıyordu (Satış Türü, Teklif Programı bağı, mükerrer kontrolü yok).
+    // Fırsat, Teklif Talebi 'Gönderildi' olunca kendiliğinden doğar.
   };
 
   const wrap = h('div',{});
@@ -3764,7 +3743,7 @@ function buildImportModal() {
       wrap.appendChild(previewWrap);
 
       // Mükerrer kontrol - firmName bazında
-      const DUPE_KEY = {customers:'firmName', suppliers:'firmName', opportunities:'title', proposals:'title'};
+      const DUPE_KEY = {customers:'firmName', suppliers:'firmName'};
       const dupeField = DUPE_KEY[selectedModule]||'firmName';
       const existingNames = new Set((state[selectedModule]||[]).map(x=>(x[dupeField]||'').trim().toLowerCase()));
       const toImport = parsedRows.filter(r=>(r[dupeField]||'').trim());
