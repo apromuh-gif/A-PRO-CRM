@@ -825,12 +825,11 @@ async function convertQuotationFormat(quotationId,currentFormat){
   }
 }
 
-// Fırsat satırı: yalnız MEVCUT teklifin düğmeleri (Taslağı Aç / Teklif Programı / Format / Stok). Oluştur-Kopyala-Bağla artık Teklif Talebi satırında.
+// Fırsat satırı: yalnız MEVCUT teklifi açan düğme (✏️ Taslağı Aç / 🔗 Teklif Programı) + stok rozeti.
+// Oluştur / Kopyala / Bağla / Format Teklif Talebi satırında kalır (tek giriş yolu: önce talep — Satış Türü, müşteri ve mükerrer kontrolü orada).
 function oppTeklifBtns(o, pad){
-  const btns = _teklifBtnsFor(o, pad, false);
-  const hasTalep = !!(o && o.id) && (state.proposals||[]).some(function(p){ return p.opportunityId===o.id; });
-  if(!hasTalep) return btns;   // güvenlik ağı: fırsata bağlı hiç talep kaydı yoksa (çok eski veri) düğmeler burada kalır
-  return btns.filter(function(b){ return b && b.textContent && /Rezerve|Stok eksik|Sevk edildi/.test(b.textContent); });   // yalnız stok
+  const btns = _teklifBtnsFor(o, pad, false);   // allowCreate=false → teklif yoksa boş döner
+  return btns.filter(function(b){ return b && b.textContent && !/Format/.test(b.textContent); });
 }
 // Teklif Talebi satırı: teklif yoksa Oluştur/Kopyala/Bağla, varsa Taslağı Aç/Format.
 function propTeklifBtns(p, pad){

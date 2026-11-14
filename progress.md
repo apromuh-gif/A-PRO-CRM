@@ -946,3 +946,7 @@ Proje bazlı günlük/periyodik saha imalat raporu sistemi kuruldu. Saha departm
 - Çöpteki 42 kayıt (34 talep + 8 fırsat; 10 Kasım toplu temizliği) bu düğmeyle kalıcı silinecek. Öncesi bilgi: bunların 2 talebinin (HAVMEKSAN, AXA YILDIZ PLAZA) Teklif Programı'nda canlı teklifi vardı; 10 gönderilmiş eski talep (Mayıs–Haziran) ve gerçek müşteri adlı birkaç fırsat içeriyordu. Kopyalar gece yedeklerinde ~30 gün durur.
 - **Otomatik silme denetimi:** yeni yapıda hiçbir teklif/talep elle silinmeden silinmez; tek otomatik işlem `trashAutoPurge` — zaten çöpe atılmış kaydı 30 gün sonra kalıcı siler. Teklif Programı'nda `default-org` (A-PRO) sıfırlamaya karşı kodda korumalı.
 
+### 14 Kasım — Fırsatlar: mevcut teklifi açan düğme
+- **Fırsatlar** satırında artık, fırsata bağlı canlı teklif varsa **✏️ Taslağı Aç** (taslak) veya **🔗 Teklif Programı** (gönderilmiş/onaylı) düğmesi var (+ kazanılmışsa stok rozeti). Oluştur / Kopyala / Bağla / Format düğmeleri **Teklif Talepleri**'nde kalır (tek giriş yolu: önce talep; Satış Türü, müşteri ve mükerrer kontrolü orada).
+- Fırsatlardan "Teklif Talebi Aç" düğmesi **eklenmedi**: yeni akışta fırsat yalnız talep "Gönderildi" olunca doğuyor; teklifsiz 35 fırsatın hepsi Mayıs/Haziran'daki ilk veri aktarımından kalma (33'ü hiç düzenlenmemiş), Ekim'den bu yana açılan 8 fırsatın hepsinin teklifi var.
+
