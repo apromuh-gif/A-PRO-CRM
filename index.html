@@ -11458,8 +11458,6 @@ function render() {
               {sep:true},
               // ── Sistem / tanılama ──
               {icon:'🔄', label:'Teklifleri şimdi eşitle', color:'#0369a1', action:()=>{ menu.remove(); syncQuotationRefsNow(); }},
-              {icon:'🔌', label:'Bağlantı Testi (Teklif Programı)', color:'#0e7490', action:()=>{ menu.remove(); teklifConnectionTest(); }},
-              {icon:'🔔', label:'Bildirim & Ses Testi', color:'#6d28d9', action:()=>{ menu.remove(); testNotifications(); }},
               {icon:'🔎', label:'Görev atama kontrolü', color:'#0e7490', action:()=>{ menu.remove(); setState({modal:{type:'taskcheck'}}); }},
               {icon:'🔃', label:'Sayfayı Yenile', color:'#0f1f35', action:()=>{ menu.remove(); location.reload(); }},
               {icon:'🧪', label:'Deneme modu (hiçbir şey kaydedilmez)', color:'#b91c1c', action:()=>{ menu.remove(); sandboxToggle(); }},
@@ -12304,68 +12302,10 @@ function taxCalendarSync(){
 
 
 
-// Teklif Programı bağlantı teşhisi (telefonda "Load failed" sorununu ayırt etmek için). Sonuç ekranda gösterilir.
+// Sürüm kodu: "Oturum alınamadı" uyarısının sonunda görünür (destekte hangi sürümün açık olduğunu anlamak için).
 const CRM_BUILD = '14Kas-DOM1';
-async function teklifConnectionTest() {
-  const out = [];
-  const standalone = (window.navigator.standalone === true) || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
-  out.push('Sürüm: ' + CRM_BUILD + (standalone ? ' · ana ekran uygulaması' : ' · tarayıcı'));
-  out.push('Çevrimiçi: ' + (navigator.onLine ? 'evet' : 'HAYIR'));
-  const timed = async (label, fn) => {
-    const t0 = Date.now();
-    try { const r = await fn(); out.push('✅ ' + label + ' — ' + (r || 'tamam') + ' (' + (Date.now() - t0) + ' ms)'); }
-    catch (e) { out.push('❌ ' + label + ' — ' + ((e && e.name) || '') + ': ' + ((e && e.message) || e) + ' (' + (Date.now() - t0) + ' ms)'); }
-  };
-  showToast('🔌 Bağlantı test ediliyor…');
-  await timed('Genel internet (gstatic)', async () => { await fetch('https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js', { mode: 'no-cors', cache: 'no-store' }); });
-  await timed('Teklif sunucusu erişimi', async () => { await fetch(TEKLIF_APP_URL + '/login?_=' + Date.now(), { mode: 'no-cors', cache: 'no-store' }); });
-  await timed('Teklif oturum isteği (CORS + POST)', async () => {
-    const tok = await getCrmSessionToken();
-    if (!tok) throw new Error(window._crmAuthErr || 'oturum kodu alınamadı');
-    return 'oturum kodu alındı';
-  });
-  alert(out.join('\n'));
-}
-window.teklifConnectionTest = teklifConnectionTest;
 
 
-function testNotifications() {
-  // Önceki test bildirimlerini temizle
-  document.querySelectorAll('.apro-notif').forEach(n=>n.remove());
-  const testKeys = [...window._notifiedKeys].filter(k=>k.startsWith('TEST_'));
-  testKeys.forEach(k=>window._notifiedKeys.delete(k));
-  
-  // Mac'te AudioContext kullanıcı etkileşimi gerektirir - resume et
-  try {
-    const testCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(testCtx.state === 'suspended') {
-      testCtx.resume().then(()=>console.log('AudioContext resumed'));
-    }
-    testCtx.close();
-  } catch(e) { console.warn('AudioContext test:', e); }
-  
-  let delay = 0;
-  const tests = [
-    ['TEST_1','🚨 TEST: Randevu 90 Dk Sonra!','Gurbag Group · Saat 14:30 · Erkan','urgent'],
-    ['TEST_2','📅 TEST: Yarın Randevu','ABC Firma · 08.05.2026 · 10:00 · Uğur','warning'],
-    ['TEST_3','📝 TEST: Ziyaret 90 Dk Sonra!','XYZ A.Ş. · Proje ABC · Saat 11:00','urgent'],
-    ['TEST_4','⚠️ TEST: Ziyaret Notu Eksik','DEF Ltd ziyareti (06.05.2026) için not eklenmedi.','warning'],
-    ['TEST_5','⏰ TEST: Sipariş Tarihi 7 Gün Kaldı','Yangın Sistemi Projesi · ABC Firma · 14.05.2026','warning'],
-    ['TEST_6','🏆 TEST: Fırsat Kazanıldı!','Hastane Yangın Sistemi · €150.000','win'],
-    ['TEST_7','❌ TEST: Fırsat Kaybedildi','Okul Projesi · ABC A.Ş. (KAÇTI)','lose'],
-    ['TEST_8','⏰ TEST: Teklif Dead Line Yarın!','PRJ-2026-001 · DEF Ltd · 08.05.2026','urgent'],
-    ['TEST_9','🚨 TEST: Teklif Süresi Geçti!','PRJ-2025-047 · XYZ A.Ş. · 3 gün geçti','urgent'],
-    ['TEST_10','✅ TEST: Teklif Onaylandı!','Yangın Algılama Sistemi · €45.000','win'],
-    ['TEST_11','🔧 TEST: Yarın Servis Randevusu','Bakım Servisi · ABC Fabrika · 08.05.2026','warning'],
-    ['TEST_12','⚙️ TEST: Bakım 7 Gün Sonra','Yıllık Bakım · XYZ Fabrika · 14.05.2026','warning'],
-  ];
-  
-  tests.forEach(([key,title,body,type],i)=>{
-    setTimeout(()=>showNotification(key,title,body,type,'all'), i*800);
-  });
-  
-  showToast('🔔 '+tests.length+' test bildirimi gönderildi — sesler ve kartlar kontrol edin','#7c3aed');
-}
 
 
 // Ekran döndürme / resize → render güncelle

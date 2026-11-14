@@ -976,4 +976,6 @@ Kaldırılanlar ve sebepleri:
 - **Yazdır**: ekranın sağ altındaki yazıcı düğmesiyle aynı işi yapıyordu.
 - **Geri Yükle** (Yedekleme penceresinden): tek onayla `customers/opportunities/proposals/services/maintenances` koleksiyonlarındaki TÜM kayıtları silip eski bir JSON'la değiştiriyordu (silinenler çöpünü, görevleri, tedarikçileri kapsamıyordu). Geri yükleme gece yedeğinden (GitHub) kontrollü yapılır. Pencere artık yalnız **Yedek Al (indir)**.
 - **Tek seferlik düzeltme araçları** (işi bitti, veride yapılacak iş yok): Kazanma Tarihlerini Doldur (2 kapanmış fırsat, yeni kayıtlar otomatik damgalı), Kazanılanları Onayla (kazanılmış 1 teklif zaten onaylı), Stok rezervlerini yeniden kur (1 kazanılmış, rezervi var), Teklif Temsilcisi Eşle (Haziran'daki tek seferlik backfill).
+- **Araçlar menüsü 13 → 11:** **Bağlantı Testi** (iPhone sorunu çözüldü; asıl etkilenecek satışçılar menüyü görmüyor; "Oturum alınamadı" uyarısı artık gerçek nedeni + sürüm kodunu yazıyor) ve **Bildirim & Ses Testi** (yalnız yöneticinin kendi cihazını test ediyordu) kaldırıldı. `CRM_BUILD` sürüm kodu uyarı mesajında kalıyor.
+- Açık: **Excel/CSV İçe Aktar**'ın Fırsat ve Teklif Talebi modülleri yeni akışı atlıyor (Satış Türü, Teklif Programı bağı, mükerrer kontrolü yok) — daraltma kararı bekliyor. **Teklifleri şimdi eşitle** yalnız yöneticide (Araçlar'da) kalıyor.
 
