@@ -10841,6 +10841,11 @@ function buildTaskCheckModal(){
       '⚠ Hiçbir aktif kullanıcıyla eşleşmeyen görev sahipleri: '+orphans.map(([n,c])=>'"'+n+'" ('+c+')').join(', ')) : h('div',{style:{fontSize:'12px',color:'#15803d'}},'✓ Tüm görev sahipleri bir kullanıcıyla eşleşiyor.'));
   return modal('🔎 Görev Atama Kontrolü', body, ()=>setState({modal:null}), '720px');
 }
+// Görevler ekranı sekme düğmeleri: koyu, kalın, belirgin (seçili = lacivert dolgu; seçili değil = açık dolgu + koyu çerçeve).
+function _gTab(label, onClick, on){
+  return btn(label, onClick, on?'#0b1f45':'#e3ecf8', on?'#ffffff':'#0b1f45', '9px 16px',
+    { fontSize:'13.5px', fontWeight:'800', border:'2px solid '+(on?'#0b1f45':'#6f8db8'), borderRadius:'9px', boxShadow:on?'0 3px 8px rgba(11,31,69,.35)':'none' });
+}
 function renderPersonelGorevler(period, isAdmin, cu){
   const myName = cu && cu.displayName;
   let list = tasksForFY(activeFiscalYear());
@@ -10855,7 +10860,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
   const ctxTabs = [{v:'hepsi',l:'👁 Tümü'},{v:'bana',l:'⭐ Bana Atananlar'}, ...TASK_CONTEXTS.map(c=>({v:c.v,l:c.l}))];
   const ctx = PMOD.taskCtx||'hepsi';
   const ctxBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-    ...ctxTabs.map(tb=>btn(tb.l,()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v?'#1e3a6e':'#e8eef7',ctx===tb.v?'#fff':'#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}))
+    ...ctxTabs.map(tb=>_gTab(tb.l,()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v))
   );
 
   if(ctx==='bana') list = list.filter(t=>_sameName(t.assignedTo,myName));
@@ -10887,7 +10892,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
 
   const chips = [['acik','Açık'],['geciken','Bugün/Geciken'],['hafta','Bu hafta'],['onay','Onay Bekleyen'],['tamam','Kapalı'],['hepsi','Hepsi']];
   const filterBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-    ...chips.map(([id,lb])=>btn(lb,()=>{PMOD.taskFilter=id;render();},f===id?'#1e3a6e':'#e8eef7',f===id?'#fff':'#2a5080','7px 13px',{fontSize:'12px',border:'1px solid #b8c8de'}))
+    ...chips.map(([id,lb])=>_gTab(lb,()=>{PMOD.taskFilter=id;render();},f===id))
   );
 
   let mgrBar = h('span');
@@ -10909,9 +10914,9 @@ function renderPersonelGorevler(period, isAdmin, cu){
     (PMOD.taskProj||PMOD.taskSearch) ? btn('✕ Temizle',()=>{PMOD.taskProj='';PMOD.taskSearch='';render();},'#fef2f2','#dc2626','9px 14px',{fontSize:'12px',border:'1px solid #fecaca'}) : h('span')
   );
   const viewBar = h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},
-    btn('📋 Liste',()=>{PMOD.taskView='liste';try{localStorage.setItem('apro_taskView','liste');}catch(e){}render();},PMOD.taskView==='liste'?'#1e3a6e':'#e8eef7',PMOD.taskView==='liste'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
-    btn('📂 Gruplu',()=>{PMOD.taskView='gruplu';try{localStorage.setItem('apro_taskView','gruplu');}catch(e){}render();},PMOD.taskView==='gruplu'?'#1e3a6e':'#e8eef7',PMOD.taskView==='gruplu'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
-    btn('🗂 Kanban',()=>{PMOD.taskView='kanban';try{localStorage.setItem('apro_taskView','kanban');}catch(e){}render();},PMOD.taskView==='kanban'?'#1e3a6e':'#e8eef7',PMOD.taskView==='kanban'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'})
+    _gTab('📋 Liste',()=>{PMOD.taskView='liste';try{localStorage.setItem('apro_taskView','liste');}catch(e){}render();},PMOD.taskView==='liste'),
+    _gTab('📂 Gruplu',()=>{PMOD.taskView='gruplu';try{localStorage.setItem('apro_taskView','gruplu');}catch(e){}render();},PMOD.taskView==='gruplu'),
+    _gTab('🗂 Kanban',()=>{PMOD.taskView='kanban';try{localStorage.setItem('apro_taskView','kanban');}catch(e){}render();},PMOD.taskView==='kanban')
   );
 
   const addBtn = btn('+ Görev Ekle',()=>{
