@@ -11027,7 +11027,10 @@ function renderPersonelGorevler(period, isAdmin, cu){
     list = list.filter(t=>_mine(t) || (_lk(t) && myLinks.has(_lk(t))));
   }
 
-  const ctxTabs = [{v:'hepsi',l:'👁 Tümü',c:'#0b1f45'},{v:'bana',l:'⭐ Bana Atananlar',c:'#4338ca'}, ...TASK_CONTEXTS.map(c=>({v:c.v,l:c.l,c:c.c}))];
+  // Normal kullanıcıda yalnız İÇİNDE görevi olan türlerin sekmesi gösterilir (boş sekmeler kalabalık yapmasın); yönetici hepsini görür. Seçili tür boş olsa da görünür kalır.
+  const _ctxHas = new Set(list.map(t=>t.context));
+  const ctxTabs = [{v:'hepsi',l:'👁 Tümü',c:'#0b1f45'},{v:'bana',l:'⭐ Bana Atananlar',c:'#4338ca'},
+    ...TASK_CONTEXTS.filter(c=>isAdmin || _ctxHas.has(c.v) || (PMOD.taskCtx||'hepsi')===c.v).map(c=>({v:c.v,l:c.l,c:c.c}))];
   const ctx = PMOD.taskCtx||'hepsi';
   const ctxBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
     ...ctxTabs.map(tb=>_gTab(tb.l,()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v,tb.c))
