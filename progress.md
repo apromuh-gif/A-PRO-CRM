@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 14 Kasım 2026 (mobil açılış hızı, iPhone'da Teklif Programı erişimi — kendi alan adı `apro-teklif.nextaura.tr`)
+> Son güncelleme: 15 Kasım 2026 (yedek ve silme doğrulaması, ticari satış analizi, geliştirme önerileri; önceki: mobil açılış hızı, iPhone'da Teklif Programı erişimi)
 
 ---
 
@@ -233,7 +233,8 @@
 |---|---|
 | GitHub repo | ✅ Public (Pages için gerekli) |
 | DEFAULT_USERS şifreleri | ✅ Temizlendi (sadece admin var) |
-| Firebase Security Rules | ⚠️ AÇIK — evaluations/settings herkese okunur; imzalı belge silme kilidi yalnız arayüzde |
+| Firebase Security Rules | ✅ 15 Kas 2026: evaluations/prim/reports/settings(primLedger, evalConfig, strategy, ai) yalnız admin; imzalı belge silme/güncelleme kuralda kilitli (Console'da yayında) |
+| Teklif Programı API anahtarı | ✅ 15 Kas 2026: sabit anahtar kaldırıldı (Firebase ID token), `default-org` anahtarı Neon'da yenilendi, eski anahtar 401 |
 | Şifre hashing | ✅ Firebase Auth (signInWithEmailAndPassword) — düz metin parola yok |
 | Erişim logu | ❌ Yapılmadı (PENDING) |
 | KVKK / VERBİS | ❌ Yapılmadı (PENDING) |
@@ -262,13 +263,13 @@ EUR karşılıkları (1 EUR = 53 TRY): CRM €55/€110/€205 · Teklif €47/�
 ## 📋 PENDING — Yapılacaklar
 
 ### Yüksek Öncelik
-- [ ] **Firebase Security Rules** güncellenmeli
+- [x] **Firebase Security Rules** güncellendi (15 Kasım 2026)
 - [ ] **Erişim logu** (kim/ne zaman/ne yaptı)
 - [ ] **KVKK** — VERBİS kaydı, Aydınlatma Metni, DPA şablonu
 
 ### Orta Öncelik
 - [ ] **Oturum zaman aşımı** (X dakika işlem yapılmazsa çıkış)
-- [ ] **WhatsApp Business entegrasyonu**
+- [ ] **WhatsApp Business entegrasyonu** → 15 Kasım kararı: API DEĞİL, şablon mesaj + kayıt yeterli (aşağıdaki "Önerilen geliştirmeler" madde 2)
 - [ ] **Mobil ince ayarlar** (test & feedback bazlı)
 - [ ] **NextAura web sitesi** KVKK sayfası
 
@@ -277,6 +278,27 @@ EUR karşılıkları (1 EUR = 53 TRY): CRM €55/€110/€205 · Teklif €47/�
 - [ ] **Firebase Authentication** (mevcut şifre sistemi yerine)
 - [ ] **Muhasebe entegrasyonu** (Logo, Netsis, Paraşüt)
 - [ ] **Beyaz etiket** (müşteri logosu)
+
+### 15 Kasım 2026 — Doğrulamalar ve ticari analiz (özet)
+- **Yedekleme doğrulandı:** Teklif Programı yedek akışı yeşil, geçmiş tek commit'e sıkıştırılmış, aylık + imzalı belge arşivi ve yeni koleksiyonlar (checklists, serviceForms, fieldReports, leads, reports) yedekte; CRM yedek deposu 19 koleksiyonla çalışıyor. Ayrıntı: `A-PRO TEKLİF PROGRAMI/progress.md` → "15 Kasım 2026 (yedek ve silme doğrulaması)".
+- **Teklif otomatik silme** çalıştı (97 teklif temizlendi, Silinen Teklifler'de 8, listede 35). CRM'de Silinenler boşaltıldı (34 teklif talebi + 8 fırsat kalıcı silindi; 14 Kasım yedeğinde duruyor).
+- **Ticari satış analizi** yapıldı: `A-PRO PLATFORM/NextAura-Satis-Stratejisi.pdf` (15 sayfa; canlı sürüm https://claude.ai/artifact/72bEgFLmzwMVnMUGH6uu7j). Özeti: genel CRM'lerle yarışılmaz, niş dikey (yangın/MEP için mühendislik hesaplı teklif + CRM) satılabilir; fiyatta Zoho Professional / Pipedrive Growth bandındayız, özellikte o bandın genel CRM genişliğinin altında; Kurumsal paketin rakip karşılığı yok (ya fiyat ya içerik gözden geçirilmeli); ilk engeller: ticari sürümde sunucu tarafı yetki kuralları, KVKK/sözleşme, A-PRO'nun rakip olması, başka markalar için katalog yükleme. Ticari yol haritası: `TİCARİ CRM & TEKLİF/progress.md` sonu.
+- **Karar:** Şimdilik A-PRO olarak devam; geliştirme önerileri (aşağıdaki liste) ileriye bırakıldı.
+
+### Önerilen geliştirmeler — 15 Kasım 2026 analizi (ertelendi, "sonra yapabiliriz")
+Kaynak: CRM'in Salesforce/HubSpot/Zoho/Pipedrive ile karşılaştırması ve ticari satış analizi. Rapor: `A-PRO PLATFORM/NextAura-Satis-Stratejisi.pdf` (canlı sürüm: https://claude.ai/artifact/72bEgFLmzwMVnMUGH6uu7j). **A-PRO olarak devam** varsayımıyla öncelik sırası; ölçüt: ekibin her gün yaptığı bir işi kısaltıyor mu. Mevcut durum bulguları: wa.me ile tek tıkla WhatsApp var (5 yerde); e-posta gönderimi EmailJS ile var, okuma/senkron yok; randevu modülü var ama telefon takvimine aktarma yok; service worker ve Firestore çevrimdışı önbelleği YOK (uygulama internetsiz açılmaz); `firestore.rules` dosyası zaten sıkılaştırılmış (fırsat oluşturma/silme yönetici kontrollü) ama Console'daki yayında olanla karşılaştırılmadı.
+
+| # | İş | Getirisi | Efor |
+|---|---|---|---|
+| 1 | **Takvime ekle**: randevu/ziyaret/bakım/görev için Google Takvim bağlantısı + iPhone için .ics (tek yönlü, sunucusuz) | Telefon takviminde görünür; telefonun kendi hatırlatması uygulama dışı bildirim boşluğunu kapatır. En iyi getiri. | Küçük |
+| 2 | **WhatsApp şablonları** (teklif hazır, randevu hatırlatma, bakım yaklaşıyor) + gönderimi müşteri kartına kaydet; **şablonlu e-posta gönder** + kayıt | Tekrar yazmayı bitirir, kim neyi ne zaman gönderdi görünür | Küçük |
+| 3 | **Service worker** (uygulama kabuğu önbelleği) | İkinci açılış hızlı (mobil yavaş açılış şikâyetinin kalıcı çözümü) + temel çevrimdışı açılış. Risk: eski sürüm takılı kalması → `CRM_BUILD` ile güncelleme stratejisi şart | Orta |
+| 4 | **Denetim kaydı** (kim neyi değiştirdi: fırsat durumu, tutar, silme) | Sorumluluk ve eski değer izlenir | Küçük–orta |
+| 5 | **Kazanılan tekliflerin Excel dışa aktarımı** (mali müşavir) | Yalnız faturalama düzenine uyuyorsa | Küçük |
+| 6 | **Çevrimdışı form kaydı** (checklist, servis formu, saha raporu) | Pompa odası/bodrum gibi sahada internet kesilirse veri kaybı olmaz. Firestore önbelleğinin yumuşak silme/eşitleme mantığıyla çakışması denenmeli | Orta–büyük |
+| 7 | (İsteğe bağlı) **Takvim abonelik akışı** (token'lı .ics uç noktası) | Randevular telefona otomatik düşer | Orta |
+
+**Yapılmayacaklar (A-PRO için):** Gmail/Outlook tam senkron (sunucu + OAuth + tüm posta erişimi, küçük ekipte getirisi düşük; ertelendi), WhatsApp Business API (Meta onayı + mesaj başı ücret), iki yönlü takvim senkronu, özel alan/aşama tanımlama, açık API/webhook, SSO, ISO 27001. Teklif için müşteri onay bağlantısı: şimdilik yok.
 
 ---
 
@@ -774,7 +796,7 @@ hiç yansımıyordu.
 **Ayrıca:** `updatedAt` yazılmadığı için **hiç tetiklenmeyen 4 anlık bildirim** (Fırsat
 Kazanıldı/Kaybedildi, Teklif Onaylandı/Reddedildi, Servis Onaylandı) O6 ile çalışır hale geldi.
 
-### ⚠️ Bu turda YAPILMAYAN — açık güvenlik kalemleri
+### ⚠️ Bu turda YAPILMAYAN — açık güvenlik kalemleri (K5 ve Y1 15 Kasım 2026'da KAPANDI, aşağıdaki bölüme bakın)
 
 | Kod | Açık | Gereken |
 |---|---|---|
@@ -976,3 +998,10 @@ Kaldırılanlar ve sebepleri:
 - **Araçlar menüsü 13 → 11:** **Bağlantı Testi** (iPhone sorunu çözüldü; asıl etkilenecek satışçılar menüyü görmüyor; "Oturum alınamadı" uyarısı artık gerçek nedeni + sürüm kodunu yazıyor) ve **Bildirim & Ses Testi** (yalnız yöneticinin kendi cihazını test ediyordu) kaldırıldı. `CRM_BUILD` sürüm kodu uyarı mesajında kalıyor.
 - **Excel/CSV İçe Aktar yalnız Müşteri ve Tedarikçi** aktarır (Fırsat ve Teklif Talebi modülleri kapatıldı, 14 Kasım): yeni akışı atlıyordu (Satış Türü, Teklif Programı bağı, mükerrer kontrolü yok; teklifsiz 35 eski fırsat Mayıs'ta böyle doğmuştu). Fırsat, talep "Gönderildi" olunca kendiliğinden doğar. Mevcut fırsat/talep kayıtları ve **Yedek Al (indir)** (tüm CRM verisi) etkilenmez. **Teklifleri şimdi eşitle** yalnız yöneticide (Araçlar'da) kalıyor.
 
+### 15 Kasım 2026 — Güvenlik kalemleri kapatıldı (K5 + Y1)
+- **K5 · API anahtarı:** CRM artık Teklif Programı'na sabit `x-crm-key` göndermiyor; `window.fetch` sarmalayıcısı Teklif Programı adresine giden her isteğe oturum açan kullanıcının **Firebase ID token'ını** (`Authorization: Bearer`) ekliyor. Teklif Programı belirteci Google JWKS ile doğruluyor (`src/lib/org.ts` → `getCrmIdentity`, `jose`; issuer/audience `a-pro-crm`, `email_verified` aranmaz çünkü CRM hesapları doğrulanmamış). SSO (`crm/auth`) belirteç e-postası istek e-postasıyla eşleşmeli; istisna: Teklif Programı'nda ADMIN/SUPER_ADMIN (CRM "kullanıcı olarak dene" modu). `TEKLIF_API_KEY` artık yalnız `'firebase-id-token'` işaretidir. **Neon'da `default-org` anahtarı yenilendi** (eski anahtar canlıda 401 doğrulandı); eski anahtar git geçmişinde kaldığı için yenileme gerekliydi. Eski `x-crm-key` yolu kodda ticari (NextAura) kurum anahtarları için duruyor.
+- **K5 · Firestore okuma:** `evaluations`, `prim`, `reports` yalnız admin; `settings` içinde yalnız `config` ve `targets` herkese açık, `primLedger`/`evalConfig`/`strategy`/`ai` yalnız admin. Groq/Gemini anahtarı `settings/config`'ten **`settings/ai`**'ye taşındı (admin ilk girişte otomatik taşır ve config'ten siler).
+- **Y1 · İmzalı belge:** Kural dosyası (silme admin, tamam olan belge güncellemesi admin) Console'da yayınlandı (15 Kasım 19:06). `reports` kuralı eksikti, eklendi.
+- **Commit'ler:** CRM `896ca58`, `fcb6e06`, `ff9c56e`; Teklif Programı `34fec39`, `a277329`, `aecc0a9`.
+- **Doğrulama:** Yönetici ve deneme modunda (Servet SAVAŞÇI olarak) Teklif Programı açılıyor, Dashboard/kâr kartları yükleniyor, Neon anahtar yenilemesinden sonra da çalışıyor.
+- **Bilinen sınırlar:** Gerçek bir normal kullanıcı hesabıyla (deneme modu dışında) tam test yapılmadı. Teklif Programı'nın `set-fiscal-year`/`backfill-salesrep` uçları belirteç sahibinin CRM yöneticisi olup olmadığını denetlemiyor (yalnız oturum açmış A-PRO kullanıcısı). Ticari `TİCARİ CRM & TEKLİF` kurulumu kendi `teklifApiKey` ayarını kullanıyor (A-PRO anahtarıyla yapılandırıldıysa belirteç yoluna geçirilmeli). Firestore'da imzalı belge oluşturma (create) herkese açık; sahte "tamam" belge oluşturma kuralla engellenmiyor.
