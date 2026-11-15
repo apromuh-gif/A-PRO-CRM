@@ -3589,8 +3589,14 @@ async function maintSyncTask(m, opts){
     const title = '🔁 Periyodik Bakım'+(occ?(' ('+occ+')'):'')+': '+((cust&&cust.firmName)||'Müşteri')+' — '+(m.jobName||'Bakım');
     const existing = liveOpen.slice().sort((a,b)=>String(b.dueDate||'').localeCompare(String(a.dueDate||'')))[0];
     if(!existing){
-      if(all.some(t=>String(t.dueDate||'').slice(0,10)===dueISO)) return;   // bu vade için görev zaten var (elle kapatılmış olabilir) → yeniden açma
       if(_diffDays(dueISO) > MAINT_TASK_LEAD_DAYS) return;                    // vade daha uzak: görev vadesine 30 gün kala (maintTaskSweep) açılır
+      const closedSame = all.find(t=>String(t.dueDate||'').slice(0,10)===dueISO);
+      if(closedSame){
+        // Ziyaret tamamlansaydı vade ilerlerdi; vade hâlâ aynıysa görev bakım kaydı işlenmeden ELLE kapatılmıştır → yeniden aç.
+        const cm = (closedSame.comments||[]).concat([{by:'sistem', text:'↩ Bakım ziyareti kayda işlenmediği (vade hâlâ '+_toTR(dueISO)+') için görev yeniden açıldı. Kapatmak için bakım kaydında "Servis Hizmetini Tamamla" kullanın.', at:today()}]);
+        await personelSaveDoc('tasks', Object.assign({}, closedSame, {status:'yapilacak', completedAt:null, needsApproval:false, comments:cm}));
+        return;
+      }
       // Servis ilgilisi boşsa görev kaybolmasın: Teknik Servis'te en az yüklü kişiye (ilgili kişi sonradan girilince görev ona devredilir).
       const _who = m.serviceContact || leastBusyInDept('teknik');
       if(!_who) return;
@@ -3631,15 +3637,16 @@ function maintTaskSweep(){
   try{
     if(!state.currentUser) return;
     const nowMs = Date.now();
-    if(window._maintSweepAt && nowMs - window._maintSweepAt < 30*60*1000) return;
+    const _mode = state.sandbox===true ? 's' : 'n';
+    if(window._maintSweepAt && window._maintSweepMode===_mode && nowMs - window._maintSweepAt < 10*60*1000) return;   // mod değişince (Deneme ↔ normal) hemen yeniden tara
     if(!(state.tasks||[]).length && !(state.maintenances||[]).length) return;   // veri henüz yüklenmedi
-    window._maintSweepAt = nowMs;
+    window._maintSweepAt = nowMs; window._maintSweepMode = _mode;
     (state.maintenances||[]).forEach(m=>{
       const due = maintNextDue(m); if(!due) return;
       const dueISO = String(due).slice(0,10);
       if(_diffDays(dueISO) > MAINT_TASK_LEAD_DAYS) return;
       const base = maintTaskId(m);
-      const has = (state.tasks||[]).some(t=>(t.id===base || String(t.id).indexOf(base+'_')===0) && String(t.dueDate||'').slice(0,10)===dueISO);
+      const has = (state.tasks||[]).map(normTask).some(t=>(t.id===base || String(t.id).indexOf(base+'_')===0) && String(t.dueDate||'').slice(0,10)===dueISO && !taskIsClosed(t));
       if(!has) maintSyncTask(m);
     });
   }catch(e){}
