@@ -9136,14 +9136,31 @@ function printPersonelReport(person, period, isAdmin){
   }catch(e){}
 })();
 function sandboxBar(){
+  // Deneme modu göstergesi: sayfa içeriğini kapatmasın diye sol alt köşede küçük bir rozet; tıklayınca panel açılır/kapanır.
+  // (Eskiden alt-ortada geniş bir çubuktu: tablo satırlarını ve işlem düğmelerini örtüyordu.)
   let b = document.getElementById('sandbox-bar');
   if(!state.sandbox){ if(b) b.remove(); return; }
-  if(!b){ b = document.createElement('div'); b.id='sandbox-bar'; b.style.cssText='position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:99999;background:#7f1d1d;color:#fff;padding:9px 14px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.45);display:flex;gap:12px;align-items:center;flex-wrap:wrap;max-width:94vw;font-size:13px;font-weight:700;'; document.body.appendChild(b); }
+  if(!b){ b = document.createElement('div'); b.id='sandbox-bar'; b.style.cssText='position:fixed;left:12px;bottom:12px;z-index:99999;font-family:inherit;'; document.body.appendChild(b); }
   b.innerHTML = '';
-  const t = document.createElement('span'); t.textContent = '🧪 DENEME MODU — hiçbir şey kaydedilmez'; b.appendChild(t);
-  const lab = document.createElement('span'); lab.textContent='Kullanıcı olarak dene:'; lab.style.cssText='font-weight:600;opacity:.9;'; b.appendChild(lab);
-  const sel = document.createElement('select'); sel.style.cssText='padding:5px 8px;border-radius:7px;border:none;font-size:12px;';
+  const open = state._sbxOpen === true;           // varsayılan: küçük rozet (kapalı)
   const orig = state._sbxUser;
+  const who = (state.currentUser && state.currentUser.displayName) || '';
+  const asOther = !!(orig && who && who !== orig.displayName);
+
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.title = 'Deneme modu — hiçbir şey kaydedilmez (ayrıntı için tıklayın)';
+  chip.textContent = '🧪 DENEME' + (asOther ? ' · ' + who.split(' ')[0] : '') + (open ? '  ▾' : '  ▴');
+  chip.style.cssText = 'background:#7f1d1d;color:#fff;border:none;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.35);opacity:.92;';
+  chip.addEventListener('click', function(){ state._sbxOpen = !open; sandboxBar(); });
+
+  if(!open){ b.appendChild(chip); return; }
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'background:#7f1d1d;color:#fff;padding:10px 12px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:8px;min-width:230px;max-width:86vw;font-size:12px;font-weight:700;margin-bottom:6px;';
+  const t = document.createElement('div'); t.textContent = '🧪 DENEME MODU — hiçbir şey kaydedilmez'; panel.appendChild(t);
+  const lab = document.createElement('div'); lab.textContent='Kullanıcı olarak dene:'; lab.style.cssText='font-weight:600;opacity:.9;'; panel.appendChild(lab);
+  const sel = document.createElement('select'); sel.style.cssText='padding:5px 8px;border-radius:7px;border:none;font-size:12px;width:100%;';
   const opt0 = document.createElement('option'); opt0.value=''; opt0.textContent='Ben ('+((orig&&orig.displayName)||'-')+')'; sel.appendChild(opt0);
   (state.users||[]).filter(function(u){ return u.active!==false && u.displayName; }).forEach(function(u){
     const o = document.createElement('option'); o.value=u.email||u.displayName; o.textContent=u.displayName+(u.isAdmin?' (yönetici)':''); if(state.currentUser && state.currentUser.displayName===u.displayName && u.displayName!==(orig&&orig.displayName)) o.selected=true; sel.appendChild(o);
@@ -9154,13 +9171,15 @@ function sandboxBar(){
     else { const u=(state.users||[]).find(function(x){ return (x.email||x.displayName)===v; }); if(u) state.currentUser = Object.assign({}, u); }
     render(); sandboxBar();
   });
-  b.appendChild(sel);
-  const ex = document.createElement('button'); ex.textContent='Çıkış (gerçek veriye dön)'; ex.style.cssText='background:#fff;color:#7f1d1d;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;'; ex.addEventListener('click', sandboxExit); b.appendChild(ex);
+  panel.appendChild(sel);
+  const ex = document.createElement('button'); ex.textContent='Çıkış (gerçek veriye dön)'; ex.style.cssText='background:#fff;color:#7f1d1d;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:800;cursor:pointer;'; ex.addEventListener('click', sandboxExit); panel.appendChild(ex);
+  b.appendChild(panel);
+  b.appendChild(chip);
 }
 function sandboxToggle(){ if(state.sandbox) sandboxExit(); else sandboxEnter(); }
 function sandboxEnter(){
   if(!confirm('DENEME MODU açılsın mı?\n\n• Yaptığınız hiçbir işlem veritabanına kaydedilmez.\n• Teklif Programı\'na yazılmaz (teklif oluşturma/kopyalama çalışmaz), e-posta gönderilmez.\n• Çıkışta veya sayfa yenilenince tüm deneme kayıtları kaybolur.\n\nDevam edilsin mi?')) return;
-  state._sbxUser = state.currentUser; state.sandbox = true; state.testMode = true;
+  state._sbxUser = state.currentUser; state.sandbox = true; state.testMode = true; state._sbxOpen = true;
   sandboxBar(); showToast('🧪 Deneme modu açık — hiçbir şey kaydedilmez','#7f1d1d'); render();
 }
 async function sandboxExit(){
