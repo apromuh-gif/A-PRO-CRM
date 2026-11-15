@@ -11033,7 +11033,11 @@ function renderPersonelGorevler(period, isAdmin, cu){
     ...TASK_CONTEXTS.filter(c=>isAdmin || _ctxHas.has(c.v) || (PMOD.taskCtx||'hepsi')===c.v).map(c=>({v:c.v,l:c.l,c:c.c}))];
   const ctx = PMOD.taskCtx||'hepsi';
   const ctxBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-    ...ctxTabs.map(tb=>_gTab(tb.l,()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v,tb.c))
+    ...ctxTabs.map(tb=>{
+      // Sekme yanında AÇIK görev sayısı (süzgeçten bağımsız): sekmenin neden dolu/boş olduğu anlaşılsın.
+      const n = list.filter(t=>!taskIsClosed(t) && (tb.v==='hepsi' ? true : tb.v==='bana' ? _sameName(t.assignedTo,myName) : t.context===tb.v)).length;
+      return _gTab(tb.l+' ('+n+')',()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v);
+    })
   );
 
   if(ctx==='bana') list = list.filter(t=>_sameName(t.assignedTo,myName));
@@ -11113,7 +11117,9 @@ function renderPersonelGorevler(period, isAdmin, cu){
   const kanbanList = list.filter(t=>statusFilter(t) || (f==='acik' && taskIsClosed(t) && String(t.approvedAt||t.completedAt||t.updatedAt||'')>=_recent))
     .sort((a,b)=>_dueKey(a).localeCompare(_dueKey(b)));
 
+  const _openInView = list.filter(t=>!taskIsClosed(t)).length;
   const emptyMsg = h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.',
+    (_openInView>0 && f!=='acik' && f!=='hepsi') ? h('div',{style:{fontSize:'12px',color:'#0b1f45',marginTop:'8px',fontWeight:'600'}},'Bu görünümde '+_openInView+' açık görev var, ama seçili süzgeçe ('+({geciken:'Bugün ve Geciken',hafta:'Önümüzdeki 7 Gün',onay:'Onay Bekleyen',tamam:'Kapalı'}[f]||f)+') uymuyor. "Açık" süzgecine bakın.') : h('span'),
     isAdmin ? h('span') : h('div',{style:{fontSize:'11px',color:'#94a3b8',marginTop:'8px'}},'Tanı: oturum adı "'+(myName||'-')+'" · sistemde yüklü görev: '+((state.tasks||[]).length)+' · sizin görev: '+list.length+' (Yöneticiye bu satırı iletin).'));
   // Görünüm otomatik: 'Bugün/Geciken' ve 'Bu hafta' zaman odaklı → proje bağımsız, vade sırasında düz liste (kartta kırmızı proje rozeti var);
   // diğer süzgeçlerde (Açık / Onay Bekleyen / Kapalı / Hepsi) proje başlıklı Gruplu görünüm.
