@@ -1104,7 +1104,8 @@ let state = {
 let toastTimer = null;
 
 // Personel modülü (Faz 1) — geçici UI durumu (render dışı, additive)
-let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'liste', taskDept:'', taskPerson:'', projView:'liste', projDept:'', projPerson:'', projShowClosed:false, arizaTab:'tumu', arizaView:'liste', maintTab:'tumu' };
+let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'gruplu', taskDept:'', taskPerson:'', taskProj:'', taskSearch:'', projView:'liste', projDept:'', projPerson:'', projShowClosed:false, arizaTab:'tumu', arizaView:'liste', maintTab:'tumu' };
+try{ var _tv=localStorage.getItem('apro_taskView'); if(_tv==='liste'||_tv==='gruplu'||_tv==='kanban') PMOD.taskView=_tv; }catch(e){}
 
 function setState(patch) {
   Object.assign(state, patch);
@@ -10873,6 +10874,16 @@ function renderPersonelGorevler(period, isAdmin, cu){
 
   if(isAdmin && PMOD.taskDept) list = list.filter(t=>t.department===PMOD.taskDept);
   if(isAdmin && PMOD.taskPerson) list = list.filter(t=>t.assignedTo===PMOD.taskPerson);
+  // Proje süzgeci: seçenekler (bu noktada görünür görevlerden) + açık görev sayısı; arama: başlık/proje/kişi/açıklama.
+  const _pk = t=>(t.linkType && t.linkType!=='none' && t.linkId) ? t.linkType+'::'+t.linkId : '';
+  const _projMap = {};
+  list.forEach(t=>{ const k=_pk(t); if(!k) return; if(!_projMap[k]) _projMap[k]={label:t.linkLabel||k, open:0}; if(!taskIsClosed(t)) _projMap[k].open++; });
+  if(PMOD.taskProj && !_projMap[PMOD.taskProj]) PMOD.taskProj='';
+  const projOpts = [{v:'',l:'📁 Tüm projeler'}, ...Object.keys(_projMap).filter(k=>_projMap[k].open>0 || k===PMOD.taskProj)
+    .sort((a,b)=>_projMap[a].label.localeCompare(_projMap[b].label,'tr')).map(k=>({v:k,l:_projMap[k].label+' ('+_projMap[k].open+' açık)'}))];
+  if(PMOD.taskProj) list = list.filter(t=>_pk(t)===PMOD.taskProj);
+  const _q = String(PMOD.taskSearch||'').trim().toLocaleLowerCase('tr');
+  if(_q) list = list.filter(t=>[t.title,t.linkLabel,t.assignedTo,t.desc].some(x=>String(x||'').toLocaleLowerCase('tr').indexOf(_q)>=0));
 
   const chips = [['acik','Açık'],['geciken','Bugün/Geciken'],['hafta','Bu hafta'],['onay','Onay Bekleyen'],['tamam','Kapalı'],['hepsi','Hepsi']];
   const filterBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
@@ -10888,10 +10899,19 @@ function renderPersonelGorevler(period, isAdmin, cu){
       sel(perOpts, PMOD.taskPerson, v=>{PMOD.taskPerson=v;render();})
     );
   }
+  const _doSearch = ()=>{ PMOD.taskSearch = (searchInp.value||'').trim(); render(); };
+  const searchInp = h('input',{type:'text',placeholder:'Görev / proje / kişi ara…',value:PMOD.taskSearch||'',style:{flex:'1',minWidth:'180px',padding:'9px 12px',background:'#edf5fc',border:'1.5px solid #90b0cc',borderRadius:'8px',fontSize:'13px',boxSizing:'border-box',fontFamily:"'Inter',sans-serif"}});
+  searchInp.addEventListener('keydown',e=>{ if(e.key==='Enter') _doSearch(); });
+  const projBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px',alignItems:'center'}},
+    h('div',{style:{flex:'1 1 260px',minWidth:'220px'}}, sel(projOpts, PMOD.taskProj, v=>{PMOD.taskProj=v;render();})),
+    searchInp,
+    btn('Ara',_doSearch,'#f97316','#fff','9px 16px',{fontSize:'13px'}),
+    (PMOD.taskProj||PMOD.taskSearch) ? btn('✕ Temizle',()=>{PMOD.taskProj='';PMOD.taskSearch='';render();},'#fef2f2','#dc2626','9px 14px',{fontSize:'12px',border:'1px solid #fecaca'}) : h('span')
+  );
   const viewBar = h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},
-    btn('📋 Liste',()=>{PMOD.taskView='liste';render();},PMOD.taskView==='liste'?'#1e3a6e':'#e8eef7',PMOD.taskView==='liste'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
-    btn('📂 Gruplu',()=>{PMOD.taskView='gruplu';render();},PMOD.taskView==='gruplu'?'#1e3a6e':'#e8eef7',PMOD.taskView==='gruplu'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
-    btn('🗂 Kanban',()=>{PMOD.taskView='kanban';render();},PMOD.taskView==='kanban'?'#1e3a6e':'#e8eef7',PMOD.taskView==='kanban'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'})
+    btn('📋 Liste',()=>{PMOD.taskView='liste';try{localStorage.setItem('apro_taskView','liste');}catch(e){}render();},PMOD.taskView==='liste'?'#1e3a6e':'#e8eef7',PMOD.taskView==='liste'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
+    btn('📂 Gruplu',()=>{PMOD.taskView='gruplu';try{localStorage.setItem('apro_taskView','gruplu');}catch(e){}render();},PMOD.taskView==='gruplu'?'#1e3a6e':'#e8eef7',PMOD.taskView==='gruplu'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}),
+    btn('🗂 Kanban',()=>{PMOD.taskView='kanban';try{localStorage.setItem('apro_taskView','kanban');}catch(e){}render();},PMOD.taskView==='kanban'?'#1e3a6e':'#e8eef7',PMOD.taskView==='kanban'?'#fff':'#2a5080','7px 13px',{fontSize:'12px'})
   );
 
   const addBtn = btn('+ Görev Ekle',()=>{
@@ -10917,7 +10937,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
     ? renderTaskGrouped(filtered, isAdmin, myName)
     : h('div',{}, ...(filtered.length? filtered.map(t=>taskCard(t,isAdmin,myName)) : [emptyMsg]));
 
-  return h('div',{}, (tasksForFY(activeFiscalYear()).length ? h('span') : fyEmptyBanner('tasks','görev')), renderTaskDigest(isAdmin, myName), addBtn, addPanel, ctxBar, mgrBar, filterBar, viewBar, body);
+  return h('div',{}, (tasksForFY(activeFiscalYear()).length ? h('span') : fyEmptyBanner('tasks','görev')), renderTaskDigest(isAdmin, myName), addBtn, addPanel, ctxBar, mgrBar, projBar, filterBar, viewBar, body);
 }
 
 function renderTaskDigest(isAdmin, myName){
@@ -11036,8 +11056,10 @@ function renderTaskGrouped(tasks, isAdmin, myName){
   });
   const CTX_ICON = {servis:'🔧',saha:'🚧',proje:'📋',bakim:'🔁',sirket:'🧾',idari:'🏢',genel:'🗂'};
   const CTX_COLOR = {servis:'#0e7490',saha:'#ea580c',proje:'#be185d',bakim:'#15803d',sirket:'#b45309',idari:'#0369a1',genel:'#9333ea'};
+  const _od = k=>groups[k].tasks.filter(t=>taskIsOverdue(t)).length;
   const sortedKeys = Object.keys(groups).sort((a,b)=>{
     if(a==='_genel') return 1; if(b==='_genel') return -1;
+    const d=_od(b)-_od(a); if(d) return d;   // en çok geciken proje en üstte
     return (groups[a].linkLabel||'').localeCompare(groups[b].linkLabel||'','tr');
   });
   if(!PMOD._groupOpen) PMOD._groupOpen = {};
@@ -11052,7 +11074,7 @@ function renderTaskGrouped(tasks, isAdmin, myName){
     const isOpen = PMOD._groupOpen[key] !== undefined ? PMOD._groupOpen[key] : open || (!isGenel && g.tasks.some(t=>!taskIsClosed(t)));
     const openCount = g.tasks.filter(t=>!taskIsClosed(t)).length;
     const overdueCount = g.tasks.filter(t=>taskIsOverdue(t)).length;
-    const header = h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'10px 14px',background:isOpen?color+'0d':'#f8fafc',border:'1px solid '+(isOpen?color+'33':'#e2e8f0'),borderRadius:isOpen?'11px 11px 0 0':'11px',cursor:'pointer',userSelect:'none',marginTop:'8px'},onclick:()=>{PMOD._groupOpen[key]=!isOpen;render();}},
+    const header = h('div',{style:{display:'flex',alignItems:'center',gap:'8px',padding:'10px 14px',background:isOpen?color+'0d':'#f8fafc',border:'1px solid '+(overdueCount?'#fca5a5':(isOpen?color+'33':'#e2e8f0')),borderRadius:isOpen?'11px 11px 0 0':'11px',cursor:'pointer',userSelect:'none',marginTop:'8px'},onclick:()=>{PMOD._groupOpen[key]=!isOpen;render();}},
       h('span',{style:{fontSize:'14px',transition:'transform .15s',transform:isOpen?'rotate(90deg)':'rotate(0)'}},'▶'),
       h('span',{style:{fontSize:'13px'}},icon),
       h('span',{style:{fontWeight:'700',fontSize:'13px',color:color}},label),
