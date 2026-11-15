@@ -3451,6 +3451,18 @@ function maintSysSection(f){
 // Bir bakım kaydına bağlı tek "kayan" görevi (varsa) senkronlar: oluştur/güncelle,
 // vade değiştiyse yeniden aç, ilgili kişi değiştiyse otomatik devret + bildir.
 function maintTaskId(m){ return 'auto_maint_'+m.id; }
+// Fatura görevi açıklaması: kayıttaki tutar (Tutar €) sözleşmenin TOPLAMI kabul edilir; programdaki toplam ziyaret sayısına EŞİT bölünür.
+// Ziyaret sayısı = tüm sistemlerin program tarihlerinin birleşimi (aynı gün = tek ziyaret). Program (bitiş tarihi) yoksa yalnız toplam tutar yazılır.
+function maintInvoiceDesc(m, visitISO){
+  const amt = Number(m && m.amount) || 0;
+  if(!amt) return 'Bakım kaydında tutar girilmemiş (€0). Fatura tutarını sözleşmeden doğrulayın; ileride için bakım kaydındaki "Tutar (€)" alanına sözleşme tutarını girin.';
+  const set = new Set();
+  (m.mtSystems||[]).forEach(s=>{ mtGenerateSchedule(m.mtBaseDate, m.mtEndDate, s.freq).forEach(d=>set.add(d)); });
+  const all = [...set].sort(); const total = all.length;
+  if(!total) return 'Sözleşme tutarı: '+eur(amt)+'. (Program/bitiş tarihi girilmediği için ziyaret başına pay hesaplanamadı.) Tutarı sözleşmeden doğrulayın.';
+  let idx = all.indexOf(visitISO); idx = idx>=0 ? idx+1 : 0;
+  return 'Sözleşme tutarı '+eur(amt)+' · '+total+' ziyaret'+(idx?(' · bu fatura '+idx+'. ziyaret'):'')+' → ziyaret başına ≈ '+eur(Math.round(amt/total*100)/100)+' (eşit pay varsayımıyla). Gerçek fatura tutarını sözleşmeye göre doğrulayın.';
+}
 // Önümüzdeki N gün içindeki (ve geçmiş/yapılmamış) tüm bakım ziyaretleri: {m, date, systems[]}. Aynı gün birden çok sistem tek ziyaret sayılır.
 function maintPlanEntries(days){
   const out = []; const endISO = _offsetDay(days);
@@ -3668,7 +3680,7 @@ async function maintVisitDone(m){
   showToast('✅ Ziyaret tamamlandı — sonraki vade: '+(nextDue?_toTR(nextDue):'-'));
   // Fatura: HER bakım ziyareti tamamlandığında o ziyaret için bir fatura görevi (4 bakımlık sözleşme → 4 fatura, 2 bakımlık → 2 fatura).
   { const cn = _custName(m.customerId);
-    autoCreateTask({ dedupeKey:'fatura_bakim_'+m.id+'_'+recordDue, title:'\u{1F9FE} Fatura kesilmesi — '+(cn||'')+' bakım ziyareti'+(_occLbl?(' ('+_occLbl+')'):''), dept:'fatura', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'', dueOffset:3, priority:'orta' });
+    autoCreateTask({ dedupeKey:'fatura_bakim_'+m.id+'_'+recordDue, title:'\u{1F9FE} Fatura kesilmesi — '+(cn||'')+' bakım ziyareti'+(_occLbl?(' ('+_occLbl+')'):''), desc:maintInvoiceDesc(m, recordDue), dept:'fatura', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'', dueOffset:3, priority:'orta' });
   }
 }
 // Devam eden (zaten süregelen) bakım işleri için geçmişe dönük, elle tarihli kayıt ekler.
@@ -10414,7 +10426,7 @@ async function maintDone(m){
   showToast('✅ Bakım tamamlandı — sonraki vade: ' + (nextDue ? _toTR(nextDue) : '-'));
   // Fatura: HER bakım ziyaretinden sonra (sözleşme kapsamından bağımsız).
   { const cn = _custName(m.customerId);
-    autoCreateTask({ dedupeKey:'fatura_bakim_'+m.id+'_'+now, title:'\u{1F9FE} Fatura kesilmesi — '+(cn||'')+' bakım ziyareti', dept:'fatura', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'', dueOffset:3, priority:'orta' });
+    autoCreateTask({ dedupeKey:'fatura_bakim_'+m.id+'_'+now, title:'\u{1F9FE} Fatura kesilmesi — '+(cn||'')+' bakım ziyareti', desc:maintInvoiceDesc(m, now), dept:'fatura', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'', dueOffset:3, priority:'orta' });
   }
 }
 // Bakım geçmişi modalı (tamamlanan bakımlar).
