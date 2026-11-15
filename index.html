@@ -113,7 +113,7 @@ function _isSalesOpp(o){ return !(o && (o.salesType==='servis' || o.salesType===
 function _svcExtraWon(repName){ return (state.maintenances||[]).filter(function(m){ return m.opportunityId && (!repName || m.assignedTo===repName); }).reduce(function(a,m){ return a+(Number(m.amount)||0); },0); }
 const JOB_ST = ["SON KULLANICI","ALMIŞ MÜTEAHHİT","ALMIŞ TAŞERON","MÜTEAHHİT İHALESİ","TAŞERON İHALESİ","KEŞİF","BAYİ","OEM"];
 const PROP_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Reddedildi"];
-const SERV_ST = ["Gönderildi","Revize","Onaylandı","Randevu"];
+const SERV_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Randevu"];
 const MAINT_ST = ["Hizmet Verildi","Hizmet Henüz Verilmedi"];
 const HOT = ["SICAK-1","SICAK-2","KAZANILDI","KAÇTI"];
 const SC = {"KAZANILDI":"#4f46e5","TEKLİF":"#0284c7","SICAK-1":"#ea580c","SICAK-2":"#dc2626","KAÇTI":"#64748b","NO GO":"#475569","FIRSAT ÖLDÜ":"#374151","ERTELENDİ":"#b45309"};
@@ -534,7 +534,7 @@ function syncCustomerToTeklif(customer) {
 }
 
 // Teklif türü seçim ekranı — Promise döndürür (format kodu veya null)
-function selectTeklifFormat() {
+function selectTeklifFormat(defaultFormat) {
   return new Promise(resolve => {
     let selFormat = null, selCurrency = null, selLanguage = null;
     const overlay = document.createElement('div');
@@ -646,6 +646,8 @@ function selectTeklifFormat() {
     box.appendChild(cancel);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
+    // Varsayılan tür (örn. servisten açılan talepte 'Teknik Servis') önceden seçili gelir.
+    if(defaultFormat){ const _ix = formats.findIndex(x=>x.value===defaultFormat); if(_ix>=0 && fmtBtns[_ix]) fmtBtns[_ix].onclick(); }
   });
 }
 
@@ -713,6 +715,25 @@ async function convertQuotationFormat(quotationId,currentFormat){
 function oppTeklifBtns(o, pad){
   const btns = _teklifBtnsFor(o, pad, false);   // allowCreate=false → teklif yoksa boş döner
   return btns.filter(function(b){ return b && b.textContent && !/Format/.test(b.textContent); });
+}
+// ── Teknik Servis ↔ Teklif ──
+// Servis kaydından teklif: önce standart Teklif Talebi açılır (Satış Türü 'Teknik Servis', müşteri/mükerrer/Dead Line kontrolleri aynı),
+// kaydedilince servis kaydına bağlanır ve Teklif Programı'nda 'Teknik Servis' türüyle teklif açılır. Gönderilince fırsat kendiliğinden doğar.
+function servLinkedProposal(s){
+  return s && s.proposalId ? (state.proposals||[]).find(function(p){ return p.id===s.proposalId; }) || null : null;
+}
+function servToProposal(s, autoQuote){
+  setState({ tab:'proposals', modal:{ type:'proposal', item:null, prefill:{ title:s.jobName||'', customerId:s.customerId||'', preparedBy:s.preparedBy||'',
+    salesRep:s.assignedTo||'', salesType:'servis', validUntil:s.validUntil||'', notes:s.notes||'', serviceId:s.id, autoQuote:!!autoQuote } } });
+}
+// Servis satırındaki teklif düğmeleri: bağlı talep varsa onun düğmeleri; fırsattan doğmuş servisse fırsatın teklifi; yoksa 'Teklif Oluştur'.
+function servTeklifBtns(s, pad){
+  const p = servLinkedProposal(s);
+  if(p) return propTeklifBtns(p, pad);
+  const o = s.opportunityId ? (state.opportunities||[]).find(function(x){ return x.id===s.opportunityId; }) : null;
+  if(o) return oppTeklifBtns(o, pad);
+  if(!s.customerId) return [];
+  return [ btn('📋 Teklif Oluştur',function(){ servToProposal(s, true); },'#ecfdf5','#15803d',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #86efac',borderRadius:'7px'}) ];
 }
 // Teklif Talebi satırı: teklif yoksa Oluştur/Kopyala/Bağla, varsa Taslağı Aç/Format.
 function propTeklifBtns(p, pad){
@@ -940,7 +961,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId, proposal
     }
   }
   // Format + para birimi + dil seçimi. Yükleme sekmesi, seçim onaylanınca (tıklamayla senkron) açılır.
-  const selection = await selectTeklifFormat();
+  const selection = await selectTeklifFormat((proposal && proposal.salesType==='servis') ? 'SERVICE' : null);
   if (!selection) return;
   const { format, currency, language } = selection;
   const _win = selection.win;
@@ -2097,6 +2118,19 @@ async function applyWonFlow(o){
 }
 // Teknik Servis: kazanılan fırsattan T.Servis'te 'Onaylandı' servis kaydı açılır ve servis icrası başlar (Teknik Servis işaretli kişiye).
 async function createServiceFromOpp(o){
+  // Servis kaydından açılan talep → mevcut servis kaydı kullanılır (mükerrer kayıt açılmaz)
+  try{
+    const _prop = o.proposalId ? (state.proposals||[]).find(function(p){ return p.id===o.proposalId; }) : null;
+    const _sv = (_prop && _prop.serviceId) ? (state.services||[]).find(function(x){ return x.id===_prop.serviceId; }) : null;
+    if(_sv){
+      const upd={ ..._sv, status:'Onaylandı', amount:Number(o.value)||Number(_sv.amount)||0, opportunityId:o.id, proposalId:_prop.id,
+        tenderRef:o.tenderRef||_sv.tenderRef||'', serviceContact:_sv.serviceContact||leastBusyInDept('teknik'), assignedTo:_sv.assignedTo||o.assignedTo||'', ...stamp() };
+      await saveDoc('services', upd.id, upd);
+      setState({ services:(state.services||[]).map(function(x){ return x.id===upd.id?upd:x; }) });
+      if(upd.execActive!==true){ await servStart(upd); showToast('\u{1F527} Servis teklifi kazanıldı — mevcut servis kaydı güncellendi, icra başlatıldı.','#0891b2'); }
+      return;
+    }
+  }catch(e){ console.warn('createServiceFromOpp bağlı servis', e); }
   const id='svc_'+o.id;
   if((state.services||[]).some(function(x){ return x.id===id; })) return;
   const owner=leastBusyInDept('teknik');
@@ -2248,6 +2282,17 @@ async function proposalToOpportunity(prop){
     await db.collection('proposals').doc(String(prop.id)).set({ opportunityId:oid, ...stamp() }, { merge:true });
     setState({ proposals:(state.proposals||[]).map(p=>p.id===prop.id ? {...p, opportunityId:oid} : p) });
   }
+  // Servisten açılan talep gönderildi → servis kaydının durumu 'Hazırlanıyor'dan 'Gönderildi'ye geçer
+  try{
+    if(prop.serviceId){
+      const sv=(state.services||[]).find(function(x){ return x.id===prop.serviceId; });
+      if(sv && sv.status==='Hazırlanıyor'){
+        const su={...sv, status:'Gönderildi', ...stamp()};
+        await db.collection('services').doc(String(sv.id)).set(su);
+        setState({ services:(state.services||[]).map(function(x){ return x.id===sv.id?su:x; }) });
+      }
+    }
+  }catch(e){}
   // Satış temsilcisine bildirim: takip görevi (canlı dinleyici kendi ekranında bildirir)
   if(prop.salesRep){
     autoCreateTask({ dedupeKey:'teklif_takip_'+prop.id, title:'\u{1F4C4} Teklif takibi — '+(prop.title||'Teklif'), dept:'satis', assignedTo:prop.salesRep, context:'genel',
@@ -2493,6 +2538,7 @@ function buildDupModal(){
   return modal('🔎 Olası Mükerrer Kayıtlar', body, ()=>setState({modal:null}), '760px');
 }
 async function saveProp(form, isEdit) {
+  const _autoQuote = !!(form && form.autoQuote); if(form) delete form.autoQuote;   // yalnız akış bayrağı, kayda yazılmaz
   setState({saving:true});
   const id = isEdit ? form.id : genId();
   const data = {...form, id, ...stamp(), createdAt: form.createdAt||today(), fiscalYear: form.fiscalYear || activeFiscalYear(), ...((!isEdit && state.currentUser) ? {createdBy: state.currentUser.displayName} : {})};
@@ -2509,6 +2555,17 @@ async function saveProp(form, isEdit) {
   const list = isEdit ? state.proposals.map(p=>p.id===id?data:p) : [...state.proposals, data];
   setState({proposals:list, modal:null, saving:false});
   showToast('✅ Teklif kaydedildi!');
+  // Servisten açılan talep: servis kaydı bu talebe bağlanır (teklif kazanılınca ikinci servis kaydı AÇILMAZ, bu kayıt güncellenir)
+  try{
+    if(!isEdit && data.serviceId){
+      await db.collection('services').doc(String(data.serviceId)).set({ proposalId:id, ...stamp() }, { merge:true });
+      setState({ services:(state.services||[]).map(function(x){ return x.id===data.serviceId ? {...x, proposalId:id} : x; }) });
+      if(_autoQuote){
+        const cust=(state.customers||[]).find(function(c){ return c.id===data.customerId; });
+        if(cust) teklifOlustur(cust, data.title, '', data); else showToast('⚠ Müşteri bulunamadı — satırdaki "Teklif Oluştur" ile devam edin.','#d97706');
+      } else showToast('🔗 Servis kaydına bağlandı — satırdaki "Teklif Oluştur" ile teklifi hazırlayın.','#0891b2');
+    }
+  }catch(e){ showToast('⚠ Talep kaydedildi ama servis kaydına bağlanamadı: '+((e&&e.message)||e),'#d97706'); }
   // Potansiyelden açılan talep: potansiyel "Teklife dönüştü" olur
   try{ if(!isEdit && data.leadId){ const lp={ status:'Teklife dönüştü', proposalId:id, lastActivityAt:today(), ...stamp() }; await db.collection('leads').doc(String(data.leadId)).set(lp,{merge:true}); setState({ leads:(state.leads||[]).map(l=>l.id===data.leadId?{...l,...lp}:l) }); } }catch(e){}
   // Satış türü sonradan değiştiyse bağlı fırsata da yansır (KAZANILDI ise ilgili süreç görevleri tamamlanır)
@@ -2548,6 +2605,7 @@ async function saveServ(form, isEdit) {
     await servStart(data);
     render();
   }
+  return data;
 }
 async function saveMaint(form, isEdit) {
   setState({saving:true});
@@ -3173,7 +3231,7 @@ function buildPropModal(item) {
 }
 
 function buildServModal(item) {
-  const f = item ? JSON.parse(JSON.stringify(item)) : {jobName:'',customerId:'',preparedBy:'',serviceContact:'',amount:'',status:'Gönderildi',createdAt:today(),validUntil:'',appointmentDate:'',notes:'',tenderRef:''};
+  const f = item ? JSON.parse(JSON.stringify(item)) : {jobName:'',customerId:'',preparedBy:'',serviceContact:'',amount:'',status:'Hazırlanıyor',createdAt:today(),validUntil:'',appointmentDate:'',notes:'',tenderRef:''};
   const custOpts = [{v:'',l:'Seçin…'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))];
   const fJob=inp('İşin adını girin',f.jobName,v=>f.jobName=v);
   const fCust=sel(custOpts,f.customerId,v=>f.customerId=v);
@@ -3200,7 +3258,21 @@ function buildServModal(item) {
     row(field('Talep Tarihi',fCreated,true),field('Dead Line',fValid,true)),
     field('Randevu Tarihi',fApp),field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.jobName&&f.preparedBy)saveServ({...f,amount:Number(f.amount)||0},!!item);},'linear-gradient(135deg,#06b6d4,#0284c7)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{
+        if(!(f.jobName&&f.preparedBy)) return;
+        // Teklif hazırlanmadan 'Gönderildi/Revize' denemez (Teklif Talepleri ile aynı kural). Onaylandı/Randevu teklifsiz işler için serbest.
+        const _linked = !!(servLinkedProposal(f) || f.opportunityId);
+        if(['Gönderildi','Revize'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !_linked){
+          showToast('⚠ Teklif hazırlanmadan "'+f.status+'" yapılamaz. "Kaydet ve Teklif Oluştur"u kullanın ya da durumu "Hazırlanıyor" bırakın.','#dc2626'); return;
+        }
+        saveServ({...f,amount:Number(f.amount)||0},!!item);
+      },'linear-gradient(135deg,#06b6d4,#0284c7)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      (!(servLinkedProposal(f)||f.opportunityId)) ? btn('📋 Kaydet ve Teklif Oluştur →',async()=>{
+        if(!(f.jobName&&f.preparedBy)){ showToast('⚠ İşin adı ve Hazırlayan zorunlu.','#d97706'); return; }
+        if(!f.customerId){ showToast('⚠ Teklif için müşteri seçin.','#d97706'); return; }
+        const saved = await saveServ({...f,amount:Number(f.amount)||0, status:(f.status==='Gönderildi'||f.status==='Revize')?'Hazırlanıyor':f.status},!!item);
+        if(saved) servToProposal(saved, true);
+      },'#ecfdf5','#15803d','11px 16px',{flex:'1',fontSize:'14px',border:'1px solid #86efac'}) : h('span'),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -6706,7 +6778,7 @@ function renderServices() {
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},s.validUntil||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:s.appointmentDate?'#06b6d4':T4,fontWeight:s.appointmentDate?'600':'400'}},s.appointmentDate||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},s._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},s._editedBy),h('br'),h('span',{style:{color:T4}},s._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'service',item:s}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(s.customerId)||c.name===s.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('services',s.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'nowrap',whiteSpace:'nowrap'}},btn('Düzenle',()=>setState({modal:{type:'service',item:s}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),...servTeklifBtns(s,'6px 10px'),(()=>{const cust=state.customers.find(c=>String(c.id)===String(s.customerId)||c.name===s.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('services',s.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
   });
   const isMobSvc = window.innerWidth <= 768;
@@ -6769,8 +6841,9 @@ function renderServices() {
             s.preparedBy?h('span',{style:{background:'#f0fdf4',color:'#16a34a',padding:'3px 8px',borderRadius:'12px',fontSize:'11px'}},'👤 '+s.preparedBy):h('span')
           ),
           s.appointmentDate?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'📅 Randevu: '+_toTR(s.appointmentDate)):h('span'),
-          h('div',{style:{display:'flex',gap:'8px'}},
+          h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             btn('✏️ Düzenle',()=>setState({modal:{type:'service',item:s}}),'#e0f2fe','#0891b2','7px 14px',{fontSize:'12px',border:'1px solid #bae6fd',borderRadius:'7px',flex:'1'}),
+            ...servTeklifBtns(s,'7px 12px'),
             btn('🗑️',()=>delItem('services',s.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
         );
