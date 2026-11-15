@@ -1104,7 +1104,7 @@ let state = {
 let toastTimer = null;
 
 // Personel modülü (Faz 1) — geçici UI durumu (render dışı, additive)
-let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'gruplu', taskDept:'', taskPerson:'', taskProj:'', taskSearch:'', projView:'liste', projDept:'', projPerson:'', projShowClosed:false, arizaTab:'tumu', arizaView:'liste', maintTab:'tumu' };
+let PMOD = { taskFilter:'acik', taskAdd:false, draft:null, perfOpen:{}, primOpen:{}, settingsOpen:false, taskCtx:'hepsi', taskView:'gruplu', taskDept:'', taskPerson:'', taskProj:'', taskSearch:'', taskOldClosed:false, projView:'liste', projDept:'', projPerson:'', projShowClosed:false, arizaTab:'tumu', arizaView:'liste', maintTab:'tumu' };
 try{ var _tv=localStorage.getItem('apro_taskView'); if(_tv==='liste'||_tv==='gruplu'||_tv==='kanban') PMOD.taskView=_tv; }catch(e){}
 
 function setState(patch) {
@@ -10867,7 +10867,12 @@ function renderPersonelGorevler(period, isAdmin, cu){
   else if(ctx!=='hepsi') list = list.filter(t=>t.context===ctx);
 
   const f = PMOD.taskFilter;
+  // Kapanan görevler: 30 günden eski olanlar 'Kapalı' / 'Hepsi' listelerinde varsayılan olarak GİZLİ (silinmez; "Daha eskileri göster" ile açılır).
+  const _oldCut = _offsetDay(-30);
+  const _isOldClosed = t => taskIsClosed(t) && (()=>{ const d=String(t.approvedAt||t.completedAt||t.updatedAt||'').slice(0,10); return !!d && d<_oldCut; })();
+  const _hideOld = !PMOD.taskOldClosed && (PMOD.taskFilter==='tamam' || PMOD.taskFilter==='hepsi');
   const statusFilter = t => {
+    if(_hideOld && _isOldClosed(t)) return false;
     if(f==='acik') return !taskIsClosed(t);
     // 'Bugün/Geciken': bugün bitenler + gecikenler (özet çipindeki sayıyla AYNI kural). Kartın kırmızı GECİKEN rozeti ise yalnız gerçekten geçmiş olanlarda.
     if(f==='geciken') return !taskIsClosed(t) && t.dueDate && String(t.dueDate)<=today();
@@ -10913,6 +10918,12 @@ function renderPersonelGorevler(period, isAdmin, cu){
     btn('Ara',_doSearch,'#f97316','#fff','9px 16px',{fontSize:'13px'}),
     (PMOD.taskProj||PMOD.taskSearch) ? btn('✕ Temizle',()=>{PMOD.taskProj='';PMOD.taskSearch='';render();},'#fef2f2','#dc2626','9px 14px',{fontSize:'12px',border:'1px solid #fecaca'}) : h('span')
   );
+  const _hiddenOldCount = (PMOD.taskFilter==='tamam' || PMOD.taskFilter==='hepsi') ? list.filter(_isOldClosed).length : 0;   // dept/kişi/proje/arama süzgeçlerinden SONRA sayılır
+  const oldBar = (_hiddenOldCount>0 || PMOD.taskOldClosed) && (PMOD.taskFilter==='tamam' || PMOD.taskFilter==='hepsi')
+    ? h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap',marginBottom:'10px',fontSize:'12px',color:'#475569'}},
+        h('span',{},PMOD.taskOldClosed ? 'Tüm kapanan görevler gösteriliyor.' : '30 günden eski '+_hiddenOldCount+' kapalı görev gizli.'),
+        btn(PMOD.taskOldClosed ? '🙈 Eskileri gizle' : '🗄 Daha eskileri göster ('+_hiddenOldCount+')',()=>{PMOD.taskOldClosed=!PMOD.taskOldClosed;render();},'#f1f5f9','#0b1f45','6px 12px',{fontSize:'12px',fontWeight:'700',border:'1.5px solid #94a3b8'}))
+    : h('span');
   const viewBar = h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},
     _gTab('📋 Liste',()=>{PMOD.taskView='liste';try{localStorage.setItem('apro_taskView','liste');}catch(e){}render();},PMOD.taskView==='liste'),
     _gTab('📂 Gruplu',()=>{PMOD.taskView='gruplu';try{localStorage.setItem('apro_taskView','gruplu');}catch(e){}render();},PMOD.taskView==='gruplu'),
@@ -10942,7 +10953,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
     ? renderTaskGrouped(filtered, isAdmin, myName)
     : h('div',{}, ...(filtered.length? filtered.map(t=>taskCard(t,isAdmin,myName)) : [emptyMsg]));
 
-  return h('div',{}, (tasksForFY(activeFiscalYear()).length ? h('span') : fyEmptyBanner('tasks','görev')), renderTaskDigest(isAdmin, myName), addBtn, addPanel, ctxBar, mgrBar, projBar, filterBar, viewBar, body);
+  return h('div',{}, (tasksForFY(activeFiscalYear()).length ? h('span') : fyEmptyBanner('tasks','görev')), renderTaskDigest(isAdmin, myName), addBtn, addPanel, ctxBar, mgrBar, projBar, filterBar, oldBar, viewBar, body);
 }
 
 function renderTaskDigest(isAdmin, myName){
