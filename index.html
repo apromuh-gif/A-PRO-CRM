@@ -1907,9 +1907,10 @@ async function saveAppointment(form, isEdit) {
 }
 
 function buildAppointmentModal(item) {
-  const f = item ? JSON.parse(JSON.stringify(item)) : {
+  const _pf = (!item && state.modal && state.modal.prefill) ? state.modal.prefill : null;   // başka ekrandan (ör. Periyodik Bakım) ön dolu yeni randevu
+  const f = item ? JSON.parse(JSON.stringify(item)) : Object.assign({
     customerId:'', apptDate:today(), apptTime:'', assignedTo:'', notes:'', createdAt:today(), status:'Planlandı'
-  };
+  }, _pf||{});
   const custOpts2=[{v:'',l:'Seçin…'},...[...state.customers].sort((a,b)=>(a.firmName||'').localeCompare(b.firmName||'','tr')).map(c=>({v:c.id,l:c.firmName}))];
   const repOpts2=[{v:'',l:'-- Seçin --'},...usersAllActive().map(u=>({v:u.displayName,l:u.displayName}))];
   const APPT_ST=['Planlandı','Tamamlandı','İptal','Ertelendi'];
@@ -2626,6 +2627,8 @@ async function saveMaint(form, isEdit) {
   await persistMaint(data);
   setState({modal:null, saving:false});
   showToast('✅ Periyodik Bakım kaydedildi!');
+  const _miss = maintMissing(data);
+  if(_miss.length) setTimeout(()=>showToast('⚠️ Eksik bilgi: '+_miss.join(', ')+' — girilene kadar bu kayıt için görev ve uyarı üretilmez.','#d97706'), 600);
 }
 
 // ═══ YUMUŞAK SİLME: Fırsat ve Teklif Talebi ═══
@@ -3323,6 +3326,7 @@ function buildMaintModal(item) {
   const mtBtnFg = mtBlocked?'#475569':'#fff';
   const mtCaptionEl = mtCaption ? h('div',{style:{fontSize:'11px',color:'#92400e',fontWeight:'600',marginBottom:'8px'}}, mtCaption) : h('span');
   const mtUtilRow = h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
+    btn('📅 Randevu Oluştur',()=>maintNewAppt(item),'#f5f3ff','#6d28d9','8px 12px',{fontSize:'12px',flex:'1 1 150px',border:'1px solid #c4b5fd'}),
     btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','8px 12px',{fontSize:'12px',flex:'1 1 150px',border:'1px solid #fde68a'}),
     btn('🕘 Geçmiş'+(item&&maintHistory(item).length?(' ('+maintHistory(item).length+')'):''),()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','8px 12px',{fontSize:'12px',flex:'1 1 110px',border:'1px solid #bfdbfe'}),
     btn('📋 Checklist & Servis Formu',()=>setState({modal:{type:'bakimformlar',maintId:item.id}}),'#f0fdf4','#15803d','8px 12px',{fontSize:'12px',flex:'1 1 170px',border:'1px solid #bbf7d0'})
@@ -3442,6 +3446,21 @@ function maintSysSection(f){
 // Bir bakım kaydına bağlı tek "kayan" görevi (varsa) senkronlar: oluştur/güncelle,
 // vade değiştiyse yeniden aç, ilgili kişi değiştiyse otomatik devret + bildir.
 function maintTaskId(m){ return 'auto_maint_'+m.id; }
+// Bakım kaydından ön dolu yeni randevu: müşteri, vade tarihi (geçmişse bugün), sorumlu teknisyen, bakım notu.
+function maintNewAppt(m){
+  const due = maintNextDue(m);
+  const occ = maintOccurrenceLabel(m);
+  setState({ modal:{ type:'appointment', item:null, prefill:{
+    customerId:m.customerId||'', apptDate:(due && due>=today()) ? due : today(), assignedTo:m.serviceContact||'',
+    notes:'Periyodik bakım'+(occ?(' ('+occ+')'):'')+': '+(m.jobName||'')+'.', linkType:'maintenance', linkId:m.id } } });
+}
+// Takibi başlatmayan eksikler: müşteri yok / vade ve sistem-periyot yok → ne görev ne uyarı üretilir.
+function maintMissing(m){
+  const miss = [];
+  if(!m || !m.customerId) miss.push('müşteri');
+  if(!maintIsTracked(m)) miss.push('sistem/periyot ve ilk vade');
+  return miss;
+}
 // Sıradaki vadeye denk gelen sistem(ler)in kaçıncı bakım olduğunu etiketler (ör. "3. Bakım").
 // Program (mtEndDate) girilmemiş kayıtlarda etiket üretilmez (geri uyumlu).
 function maintOccurrenceLabel(m){
@@ -3483,6 +3502,7 @@ function maintProgressLabel(m){
   const nextDue = mtRecordNextDue(m.mtSystems);
   return {text: occ+'/'+total+'. Bakım · '+(nextDue?_toTR(nextDue):'-'), color:'#d97706', done:false};
 }
+const MAINT_TASK_LEAD_DAYS = 30;   // bakım görevi vadesine bu kadar gün kala açılır (listeyi erkenden kalabalıklaştırmasın)
 // Periyodik bakım görevi — ZİYARET BAŞINA ayrı görev: id = auto_maint_<kayıt>_<vade>. (Eski kayıtlarda tek görev 'auto_maint_<kayıt>' idi; yine tanınır.)
 // Ziyaret tamamlanınca (opts.visitDone) açık görev TAMAMLANDI (bugünün tarihiyle) kapanır ve bir sonraki vade için YENİ görev açılır →
 // her ziyaretin "zamanında/geç" kaydı performansta kalır. Görev elle kapatılmışsa (aynı vade için görev varsa) yeniden açılmaz.
@@ -3509,6 +3529,7 @@ async function maintSyncTask(m, opts){
     const existing = liveOpen.slice().sort((a,b)=>String(b.dueDate||'').localeCompare(String(a.dueDate||'')))[0];
     if(!existing){
       if(all.some(t=>String(t.dueDate||'').slice(0,10)===dueISO)) return;   // bu vade için görev zaten var (elle kapatılmış olabilir) → yeniden açma
+      if(_diffDays(dueISO) > MAINT_TASK_LEAD_DAYS) return;                    // vade daha uzak: görev vadesine 30 gün kala (maintTaskSweep) açılır
       // Servis ilgilisi boşsa görev kaybolmasın: Teknik Servis'te en az yüklü kişiye (ilgili kişi sonradan girilince görev ona devredilir).
       const _who = m.serviceContact || leastBusyInDept('teknik');
       if(!_who) return;
@@ -3520,7 +3541,9 @@ async function maintSyncTask(m, opts){
         needsApproval:false, revisionCount:0, assignmentHistory:[], comments:[],
         autoGenerated:true, createdBy:'sistem', createdAt:today(), fiscalYear:wantFY
       });
-      await personelSaveDoc('tasks', t);
+      // Deterministik id: yalnız YOKSA oluştur (iki kullanıcı aynı anda açıksa / kapatılmış görev varsa ezilmez, çift oluşmaz).
+      if(!state.testMode){ const created = await _saveTaskIfAbsent(t); if(!created) return; }
+      if(!(state.tasks||[]).some(x=>x.id===t.id)) setState({ tasks:(state.tasks||[]).concat([t]) });
       return;
     }
     let next = Object.assign({}, existing, {title, department:dept});
@@ -3540,6 +3563,24 @@ async function maintSyncTask(m, opts){
       await personelSaveDoc('tasks', next);
     }
   }catch(e){ /* sessiz — görev senkronu ana CRM akışını etkilemez (personelAutoGenerateTasks deseniyle tutarlı) */ }
+}
+// Vadesine MAINT_TASK_LEAD_DAYS gün kalan (ya da geçmiş) bakımlar için görevi açar. CRM açıkken yarım saatte bir (ve ilk dakikada) çalışır; kimse kaydetmese de görev kendiliğinden açılır.
+function maintTaskSweep(){
+  try{
+    if(!state.currentUser || state.testMode || state.sandbox) return;
+    const nowMs = Date.now();
+    if(window._maintSweepAt && nowMs - window._maintSweepAt < 30*60*1000) return;
+    if(!(state.tasks||[]).length && !(state.maintenances||[]).length) return;   // veri henüz yüklenmedi
+    window._maintSweepAt = nowMs;
+    (state.maintenances||[]).forEach(m=>{
+      const due = maintNextDue(m); if(!due) return;
+      const dueISO = String(due).slice(0,10);
+      if(_diffDays(dueISO) > MAINT_TASK_LEAD_DAYS) return;
+      const base = maintTaskId(m);
+      const has = (state.tasks||[]).some(t=>(t.id===base || String(t.id).indexOf(base+'_')===0) && String(t.dueDate||'').slice(0,10)===dueISO);
+      if(!has) maintSyncTask(m);
+    });
+  }catch(e){}
 }
 // maintenances koleksiyonuna yazan TÜM yollar bunu kullanır — saveDoc + state + görev senkronu tek yerde.
 async function persistMaint(data, opts){
@@ -8262,6 +8303,7 @@ function renderMaintenances() {
       ),
       h('span',{style:{background:c+'18',color:c,border:'1px solid '+c+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},dl<0?Math.abs(dl)+' gün gecikti':dl+' gün kaldı'),
       btn('✅ Tamamla',()=>maintCompleteAction(m),'linear-gradient(135deg,#16a34a,#15803d)','#fff','7px 12px',{fontSize:'12px'}),
+      btn('📅 Randevu',()=>maintNewAppt(m),'#f5f3ff','#6d28d9','7px 12px',{fontSize:'12px',border:'1px solid #c4b5fd'}),
       btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe'}),
       btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'12px',border:'1px solid #fecaca'})
     );
@@ -8297,7 +8339,10 @@ function renderMaintenances() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',color:'#10b981'}},eur(m.amount)),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},(()=>{
         const p=maintProgressLabel(m);
-        return p ? h('span',{style:{background:(p.done?'#dcfce7':'#fef3c7'),color:(p.done?'#15803d':'#b45309'),padding:'4px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},p.text) : badge(m.status,MS[m.status]||T3);
+        const _mm = maintMissing(m);
+        const mainBadge = p ? h('span',{style:{background:(p.done?'#dcfce7':'#fef3c7'),color:(p.done?'#15803d':'#b45309'),padding:'4px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},p.text) : badge(m.status,MS[m.status]||T3);
+        return _mm.length ? h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-start'}}, mainBadge,
+          h('span',{title:'Takip başlamaz: '+_mm.join(', ')+' eksik',style:{background:'#fee2e2',color:'#b91c1c',padding:'3px 9px',borderRadius:'20px',fontSize:'10.5px',fontWeight:'800',whiteSpace:'nowrap'}},'⚠ Eksik bilgi: '+_mm.join(', '))) : mainBadge;
       })()),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},m._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},m._editedBy),h('br'),h('span',{style:{color:T4}},m._editedAt||'')):h('span',{style:{color:T4}},'—')),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(m.customerId)||c.name===m.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
@@ -12199,6 +12244,7 @@ function checkAllNotifications() {
   const todayStr = _todayISO();
   const tmrw  = _tomorrowISO();
   if(!state.currentUser) return;
+  maintTaskSweep();
 
   // ── RANDEVULAR ─────────────────────────────────────
   (state.appointments||[]).forEach(a=>{
