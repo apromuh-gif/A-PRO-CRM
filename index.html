@@ -1496,8 +1496,7 @@ function _cumMarginPct(name, period){
 // yönetici ilk girişte anahtar buraya taşınır ve config'ten silinir.
 async function loadApiKey() {
   try {
-    const isAdm = !!(state.currentUser && state.currentUser.isAdmin);
-    if(!isAdm) return '';
+    // Not: init giriş ekranından ÖNCE çalışır (currentUser henüz yok) — yetkiyi Firestore kuralı sağlar; yönetici değilse okuma reddedilir → ''.
     const ai = await db.collection('settings').doc('ai').get();
     if(ai.exists && ai.data().geminiKey) return ai.data().geminiKey;
     const snap = await db.collection('settings').doc('config').get();
