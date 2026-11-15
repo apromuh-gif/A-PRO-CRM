@@ -10842,9 +10842,11 @@ function buildTaskCheckModal(){
   return modal('🔎 Görev Atama Kontrolü', body, ()=>setState({modal:null}), '720px');
 }
 // Görevler ekranı sekme düğmeleri: koyu, kalın, belirgin (seçili = lacivert dolgu; seçili değil = açık dolgu + koyu çerçeve).
-function _gTab(label, onClick, on){
-  return btn(label, onClick, on?'#0b1f45':'#e3ecf8', on?'#ffffff':'#0b1f45', '9px 16px',
-    { fontSize:'13.5px', fontWeight:'800', border:'2px solid '+(on?'#0b1f45':'#6f8db8'), borderRadius:'9px', boxShadow:on?'0 3px 8px rgba(11,31,69,.35)':'none' });
+// color verilirse düğme o renkle boyanır: seçili = düz renk dolgu + beyaz yazı; seçili değil = açık renk zemin + renkli yazı/çerçeve.
+function _gTab(label, onClick, on, color){
+  const c = color || '#0b1f45';
+  return btn(label, onClick, on?c:(c+'1f'), on?'#ffffff':c, '9px 16px',
+    { fontSize:'13.5px', fontWeight:'800', border:'2px solid '+(on?c:(c+'99')), borderRadius:'9px', boxShadow:on?'0 3px 8px '+c+'66':'none' });
 }
 function renderPersonelGorevler(period, isAdmin, cu){
   const myName = cu && cu.displayName;
@@ -10857,10 +10859,10 @@ function renderPersonelGorevler(period, isAdmin, cu){
     list = list.filter(t=>_mine(t) || (_lk(t) && myLinks.has(_lk(t))));
   }
 
-  const ctxTabs = [{v:'hepsi',l:'👁 Tümü'},{v:'bana',l:'⭐ Bana Atananlar'}, ...TASK_CONTEXTS.map(c=>({v:c.v,l:c.l}))];
+  const ctxTabs = [{v:'hepsi',l:'👁 Tümü',c:'#0b1f45'},{v:'bana',l:'⭐ Bana Atananlar',c:'#4338ca'}, ...TASK_CONTEXTS.map(c=>({v:c.v,l:c.l,c:c.c}))];
   const ctx = PMOD.taskCtx||'hepsi';
   const ctxBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-    ...ctxTabs.map(tb=>_gTab(tb.l,()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v))
+    ...ctxTabs.map(tb=>_gTab(tb.l,()=>{PMOD.taskCtx=tb.v;render();},ctx===tb.v,tb.c))
   );
 
   if(ctx==='bana') list = list.filter(t=>_sameName(t.assignedTo,myName));
@@ -10895,9 +10897,9 @@ function renderPersonelGorevler(period, isAdmin, cu){
   const _q = String(PMOD.taskSearch||'').trim().toLocaleLowerCase('tr');
   if(_q) list = list.filter(t=>[t.title,t.linkLabel,t.assignedTo,t.desc].some(x=>String(x||'').toLocaleLowerCase('tr').indexOf(_q)>=0));
 
-  const chips = [['acik','Açık'],['geciken','Bugün Geciken'],['hafta','Bu Hafta Geciken'],['onay','Onay Bekleyen'],['tamam','Kapalı'],['hepsi','Hepsi']];
+  const chips = [['acik','Açık','#2563eb'],['geciken','Bugün Geciken','#dc2626'],['hafta','Bu Hafta Geciken','#d97706'],['onay','Onay Bekleyen','#7c3aed'],['tamam','Kapalı','#16a34a'],['hepsi','Hepsi','#0b1f45']];
   const filterBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-    ...chips.map(([id,lb])=>_gTab(lb,()=>{PMOD.taskFilter=id;render();},f===id))
+    ...chips.map(([id,lb,cl])=>_gTab(lb,()=>{PMOD.taskFilter=id;render();},f===id,cl))
   );
 
   let mgrBar = h('span');
