@@ -10924,11 +10924,6 @@ function renderPersonelGorevler(period, isAdmin, cu){
         h('span',{},PMOD.taskOldClosed ? 'Tüm kapanan görevler gösteriliyor.' : '30 günden eski '+_hiddenOldCount+' kapalı görev gizli.'),
         btn(PMOD.taskOldClosed ? '🙈 Eskileri gizle' : '🗄 Daha eskileri göster ('+_hiddenOldCount+')',()=>{PMOD.taskOldClosed=!PMOD.taskOldClosed;render();},'#f1f5f9','#0b1f45','6px 12px',{fontSize:'12px',fontWeight:'700',border:'1.5px solid #94a3b8'}))
     : h('span');
-  const viewBar = h('div',{style:{display:'flex',gap:'6px',marginBottom:'12px'}},
-    _gTab('📋 Liste',()=>{PMOD.taskView='liste';try{localStorage.setItem('apro_taskView','liste');}catch(e){}render();},PMOD.taskView==='liste'),
-    _gTab('📂 Gruplu',()=>{PMOD.taskView='gruplu';try{localStorage.setItem('apro_taskView','gruplu');}catch(e){}render();},PMOD.taskView==='gruplu'),
-    _gTab('🗂 Kanban',()=>{PMOD.taskView='kanban';try{localStorage.setItem('apro_taskView','kanban');}catch(e){}render();},PMOD.taskView==='kanban')
-  );
 
   const addBtn = btn('+ Görev Ekle',()=>{
     PMOD.taskAdd=true;
@@ -10947,13 +10942,13 @@ function renderPersonelGorevler(period, isAdmin, cu){
 
   const emptyMsg = h('div',{style:{padding:'28px',textAlign:'center',color:T4,background:'#ffffff',borderRadius:'12px',border:'1px solid #d0daea'}},'Bu filtrede görev yok.',
     isAdmin ? h('span') : h('div',{style:{fontSize:'11px',color:'#94a3b8',marginTop:'8px'}},'Tanı: oturum adı "'+(myName||'-')+'" · sistemde yüklü görev: '+((state.tasks||[]).length)+' · sizin görev: '+list.length+' (Yöneticiye bu satırı iletin).'));
-  const body = PMOD.taskView==='kanban'
-    ? renderTaskKanban(kanbanList)
-    : PMOD.taskView==='gruplu'
-    ? renderTaskGrouped(filtered, isAdmin, myName)
-    : h('div',{}, ...(filtered.length? filtered.map(t=>taskCard(t,isAdmin,myName)) : [emptyMsg]));
+  // Görünüm otomatik: 'Bugün/Geciken' ve 'Bu hafta' zaman odaklı → proje bağımsız, vade sırasında düz liste (kartta kırmızı proje rozeti var);
+  // diğer süzgeçlerde (Açık / Onay Bekleyen / Kapalı / Hepsi) proje başlıklı Gruplu görünüm.
+  const body = (f==='geciken' || f==='hafta')
+    ? h('div',{}, ...(filtered.length? filtered.map(t=>taskCard(t,isAdmin,myName)) : [emptyMsg]))
+    : renderTaskGrouped(filtered, isAdmin, myName);
 
-  return h('div',{}, (tasksForFY(activeFiscalYear()).length ? h('span') : fyEmptyBanner('tasks','görev')), renderTaskDigest(isAdmin, myName), addBtn, addPanel, ctxBar, mgrBar, projBar, filterBar, oldBar, viewBar, body);
+  return h('div',{}, (tasksForFY(activeFiscalYear()).length ? h('span') : fyEmptyBanner('tasks','görev')), renderTaskDigest(isAdmin, myName), addBtn, addPanel, ctxBar, mgrBar, projBar, filterBar, oldBar, body);
 }
 
 function renderTaskDigest(isAdmin, myName){
