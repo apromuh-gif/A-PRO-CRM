@@ -90,18 +90,48 @@ service cloud.firestore {
     match /appointments/{id}  { allow read, write: if signedIn(); }
     // İmzalı (status=='tamam') checklist/servis formu yasal delildir.
     // Silme: yalnız admin. Güncelleme: tamam olan belge değiştirilemez (admin hariç).
+    // Oluşturma / 'tamam'a geçiş: sahte imzalı belgeyi önlemek için CRM'in kayıt öncesi kontrolleri burada da ZORUNLU
+    // (müşteri, iki tarafın adı + imza görseli, imza tarihi, kaydeden = oturumdaki kullanıcı). Yönetici hariç.
+    function sigOk(m) {
+      return m is map
+        && m.get('name', '') is string && m.get('name', '') != ''
+        && m.get('dataURL', '') is string && m.get('dataURL', '').size() > 100
+        && m.get('dataURL', '').matches('^data:image/.*');
+    }
+    function clTamamOk(d) {
+      return d.get('customerId', '') != ''
+        && sigOk(d.get('staffSign', null))
+        && sigOk(d.get('custSign', null))
+        && d.get('completedAt', '') != ''
+        && d.get('_editedBy', '') == myName();
+    }
+    // Servis formunda müşteri ilgilisinin adı custContact.name'de, imzası custSign.dataURL'de tutulur.
+    function sfTamamOk(d) {
+      return d.get('customerId', '') != ''
+        && sigOk(d.get('staffSign', null))
+        && d.get('custContact', {}).get('name', '') != ''
+        && d.get('custSign', {}).get('dataURL', '') is string
+        && d.get('custSign', {}).get('dataURL', '').size() > 100
+        && d.get('custSign', {}).get('dataURL', '').matches('^data:image/.*')
+        && d.get('completedAt', '') != ''
+        && d.get('_editedBy', '') == myName();
+    }
     match /checklists/{id} {
       allow read: if signedIn();
-      allow create: if signedIn();
+      allow create: if signedIn()
+        && (request.resource.data.get('status', '') != 'tamam' || isAdmin() || clTamamOk(request.resource.data));
       allow update: if signedIn()
-        && (resource.data.status != 'tamam' || isAdmin());
+        && (resource.data.status != 'tamam' || isAdmin())
+        && (request.resource.data.get('status', '') != 'tamam' || isAdmin() || clTamamOk(request.resource.data));
       allow delete: if isAdmin();
     }
     match /serviceForms/{id} {
       allow read: if signedIn();
-      allow create: if signedIn();
+      allow create: if signedIn()
+        && (request.resource.data.get('status', '') != 'tamam' || isAdmin() || sfTamamOk(request.resource.data));
       allow update: if signedIn()
-        && (resource.data.status != 'tamam' || isAdmin());
+        && (resource.data.status != 'tamam' || isAdmin())
+        && (request.resource.data.get('status', '') != 'tamam' || isAdmin() || sfTamamOk(request.resource.data));
       allow delete: if isAdmin();
     }
     // Saha raporu fotoğrafları (küçültülmüş JPEG, rapordan ayrı doküman). Değiştirilemez; oluşturma boyut sınırlı.
@@ -112,11 +142,24 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if signedIn() && (isAdmin() || resource.data.get('createdBy', '') == myName());
     }
+    // Saha raporu 'tamam': proje seçili, kaydeden = oturumdaki kullanıcı, imza tarihi dolu; çalışılmayan gün değilse en az 1 iş kalemi + imza.
+    function frTamamOk(d) {
+      return d.get('projectId', '') != ''
+        && d.get('completedAt', '') != ''
+        && d.get('_editedBy', '') == myName()
+        && (d.get('noWork', false) == true
+            || (d.get('workItems', []).size() > 0
+                && d.get('staffSign', {}).get('dataURL', '') is string
+                && d.get('staffSign', {}).get('dataURL', '').size() > 100
+                && d.get('staffSign', {}).get('dataURL', '').matches('^data:image/.*')));
+    }
     match /fieldReports/{id} {
       allow read: if signedIn();
-      allow create: if signedIn();
+      allow create: if signedIn()
+        && (request.resource.data.get('status', '') != 'tamam' || isAdmin() || frTamamOk(request.resource.data));
       allow update: if signedIn()
-        && (resource.data.status != 'tamam' || isAdmin());
+        && (resource.data.status != 'tamam' || isAdmin())
+        && (request.resource.data.get('status', '') != 'tamam' || isAdmin() || frTamamOk(request.resource.data));
       allow delete: if isAdmin();
     }
 
