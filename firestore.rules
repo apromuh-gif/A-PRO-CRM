@@ -141,8 +141,11 @@ service cloud.firestore {
     }
     // Değerlendirmeler (prim/performans puanları, yönetici notları): yalnız yönetici — Personel ekranı zaten admin'e kilitli.
     match /evaluations/{id}   { allow read, write: if isAdmin(); }
-    // Prim (para tutarları): herkes okur, yalnız admin yazar (sunucu tarafı kilit)
+    // Prim (para tutarları): yalnız yönetici
     match /prim/{id}          { allow read, write: if isAdmin(); }
+
+    // AI raporları (aylık / 3 aylık / geçmiş): yalnız yönetici (Araçlar menüsü zaten yöneticiye özel).
+    match /reports/{id}       { allow read, write: if isAdmin(); }
 
     // --- Kullanıcı/rol dokümanları ---
     // Okuma: tüm oturum açmış kullanıcılar (atama listeleri vb.)
