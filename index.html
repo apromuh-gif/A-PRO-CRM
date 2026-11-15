@@ -10895,7 +10895,7 @@ function renderPersonelGorevler(period, isAdmin, cu){
   const _q = String(PMOD.taskSearch||'').trim().toLocaleLowerCase('tr');
   if(_q) list = list.filter(t=>[t.title,t.linkLabel,t.assignedTo,t.desc].some(x=>String(x||'').toLocaleLowerCase('tr').indexOf(_q)>=0));
 
-  const chips = [['acik','Açık'],['geciken','Bugün/Geciken'],['hafta','Bu hafta'],['onay','Onay Bekleyen'],['tamam','Kapalı'],['hepsi','Hepsi']];
+  const chips = [['acik','Açık'],['geciken','Bugün Geciken'],['hafta','Bu Hafta Geciken'],['onay','Onay Bekleyen'],['tamam','Kapalı'],['hepsi','Hepsi']];
   const filterBar = h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
     ...chips.map(([id,lb])=>_gTab(lb,()=>{PMOD.taskFilter=id;render();},f===id))
   );
@@ -10963,8 +10963,8 @@ function renderTaskDigest(isAdmin, myName){
     : all.filter(t=>t.status==='tamamlandi' && t.needsApproval && t.assignedBy===myName);
   const chip=(lbl,n,color,onClick)=> n?h('div',{style:{background:color+'14',border:'1px solid '+color+'55',borderRadius:'10px',padding:'8px 12px',cursor:'pointer',fontSize:'12px',fontWeight:'700',color},onclick:onClick},lbl+': '+n):null;
   const items=[
-    chip('⏰ Bugün/Geciken', bugun.length, '#dc2626', ()=>{PMOD.taskFilter='geciken';PMOD.taskCtx='bana';PMOD.taskDept='';PMOD.taskPerson='';render();}),
-    chip('📅 Bu hafta', buHafta.length, '#b45309', ()=>{PMOD.taskFilter='hafta';PMOD.taskCtx='bana';PMOD.taskDept='';PMOD.taskPerson='';render();}),
+    chip('⏰ Bugün Geciken', bugun.length, '#dc2626', ()=>{PMOD.taskFilter='geciken';PMOD.taskCtx='bana';PMOD.taskDept='';PMOD.taskPerson='';render();}),
+    chip('📅 Bu Hafta Geciken', buHafta.length, '#b45309', ()=>{PMOD.taskFilter='hafta';PMOD.taskCtx='bana';PMOD.taskDept='';PMOD.taskPerson='';render();}),
     chip('✅ Onay bekleyen', onayBekleyen.length, '#16a34a', ()=>{PMOD.taskFilter='onay';PMOD.taskCtx='hepsi';render();}),
   ].filter(Boolean);
   if(!items.length) return h('span');
