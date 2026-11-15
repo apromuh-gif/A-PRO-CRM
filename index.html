@@ -6789,7 +6789,7 @@ function renderServices() {
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:T3}},s.validUntil||''),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',color:s.appointmentDate?'#06b6d4':T4,fontWeight:s.appointmentDate?'600':'400'}},s.appointmentDate||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},s._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},s._editedBy),h('br'),h('span',{style:{color:T4}},s._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'nowrap',whiteSpace:'nowrap'}},btn('Düzenle',()=>setState({modal:{type:'service',item:s}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),...servTeklifBtns(s,'6px 10px'),(()=>{const cust=state.customers.find(c=>String(c.id)===String(s.customerId)||c.name===s.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('services',s.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'nowrap',whiteSpace:'nowrap'}},btn('Düzenle',()=>setState({modal:{type:'service',item:s}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),...servTeklifBtns(s,'6px 10px'),_icraGitBtn(s,'6px 10px'),(()=>{const cust=state.customers.find(c=>String(c.id)===String(s.customerId)||c.name===s.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('services',s.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
   });
   const isMobSvc = window.innerWidth <= 768;
@@ -6799,17 +6799,21 @@ function renderServices() {
   const activeS=_svcAll.filter(servIsActive);
   const closedS=_svcAll.filter(servIsClosed);
   const isAdminS=!!(state.currentUser&&state.currentUser.isAdmin);
-  const arTab=PMOD.arizaTab||'tumu';
-  const tabBar=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
-    ...[['tumu','📋 Tümü',svcFiltered.length],['bekleyen','⏳ Başlamadı',awaitingS.length],['aktif','🚀 Devam eden',activeS.length],['kapanan','✅ Bitti',closedS.length]].map(x=>
+  const _icra = state.tab==='servisicra';   // Servis İcra sayfası (arıza icra sekmeleri); aksi halde Servis Talepleri (kayıt/teklif tablosu)
+  const arTab = _icra ? ((PMOD.arizaTab && PMOD.arizaTab!=='tumu') ? PMOD.arizaTab : 'aktif') : 'tumu';
+  const tabBar = !_icra ? h('span') : h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'10px'}},
+    ...[['bekleyen','⏳ Başlamadı',awaitingS.length],['aktif','🚀 Devam eden',activeS.length],['kapanan','✅ Bitti',closedS.length]].map(x=>
       btn(x[1]+' ('+x[2]+')',()=>{PMOD.arizaTab=x[0];render();},arTab===x[0]?'#0e7490':'#e8eef7',arTab===x[0]?'#fff':'#2a5080','7px 13px',{fontSize:'12px'}))
   );
-  const infoNote=h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},
-    h('div',{},'ℹ️ Servis İş Takip = servis satış/fırsat; Teknik Servis icra = gelen arıza müdahale takibi.'),
-    h('div',{style:{marginTop:'3px',color:'#0e7490',fontWeight:'600'}},'🧭 Akış: 1) Onaylanınca otomatik icraya alınır → 2) Aşamayı ilerlet → 3) Checklist + imza → 4) Kapat'));
+  const infoNote = _icra
+    ? h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},
+        h('div',{style:{color:'#0e7490',fontWeight:'600'}},'🧭 Akış: 1) Servis onaylanınca otomatik icraya alınır → 2) Kartı açıp aşamayı ilerlet → 3) Checklist + Servis Formu (imza) → 4) Kapat'),
+        h('div',{style:{marginTop:'3px'}},'Yeni kayıt ve teklif için: Servis ▾ → Servis Talepleri.'))
+    : h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},
+        h('div',{},'ℹ️ Burada servis kaydı ve teklif hazırlanır. Onaylanan servis otomatik icraya alınır; Checklist/Servis Formu için satırdaki "🚀 İcraya git" ya da Servis ▾ → Servis İcra.'));
   const headerRow=h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
-    h('h2',{style:{fontSize:isMobSvc?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},'🔧 Teknik Servis ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},'('+svcFiltered.length+'/'+state.services.length+')')),
-    btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#0891b2,#0284c7)','#fff',isMobSvc?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(8,145,178,.3)'})
+    h('h2',{style:{fontSize:isMobSvc?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},_icra?'🚀 Servis İcra ':'🔧 Servis Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},_icra?('('+(awaitingS.length+activeS.length+closedS.length)+')'):('('+svcFiltered.length+'/'+state.services.length+')'))),
+    _icra ? h('span') : btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#0891b2,#0284c7)','#fff',isMobSvc?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(8,145,178,.3)'})
   );
 
   if(arTab==='bekleyen'){
@@ -6854,7 +6858,7 @@ function renderServices() {
           s.appointmentDate?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'📅 Randevu: '+_toTR(s.appointmentDate)):h('span'),
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             btn('✏️ Düzenle',()=>setState({modal:{type:'service',item:s}}),'#e0f2fe','#0891b2','7px 14px',{fontSize:'12px',border:'1px solid #bae6fd',borderRadius:'7px',flex:'1'}),
-            ...servTeklifBtns(s,'7px 12px'),
+            ...servTeklifBtns(s,'7px 12px'),_icraGitBtn(s,'7px 12px'),
             btn('🗑️',()=>delItem('services',s.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
         );
@@ -6862,6 +6866,12 @@ function renderServices() {
     ) :
     makeScrollTable(thead, tbody, [160,150,120,130,110,110,110,110,110,130,110], !svcFiltered.length, 'Henüz teknik servis kaydı yok.')
   );
+}
+// Servis Talepleri satırından Servis İcra sayfasına (ilgili sekme) geçiş; yalnız icraya alınmış / alınmayı bekleyen / kapanmış kayıtlarda.
+function _icraGitBtn(s, pad){
+  const st = servIsActive(s) ? 'aktif' : (servIsClosed(s) ? 'kapanan' : (servIsAwaiting(s) ? 'bekleyen' : ''));
+  if(!st) return h('span');
+  return btn('🚀 İcraya git',()=>{ PMOD.arizaTab=st; setState({tab:'servisicra'}); },'#ecfdf5','#047857',pad||'6px 10px',{fontSize:'12px',border:'1px solid #a7f3d0',borderRadius:'7px'});
 }
 function arizaAwaitingRow(s){
   const cust=(state.customers||[]).find(c=>c.id===s.customerId)||null;
@@ -11624,11 +11634,12 @@ function render() {
 
   // TABS
   const SERVICE_TABS = [
-    {id:'services',   l:'🔧 T. Servis Hizmet Takibi'},
+    {id:'services',   l:'🔧 Servis Talepleri'},
     {id:'serviceopps',l:'🔧 T. Servis Teklif Takip'},
+    {id:'servisicra', l:'🚀 Servis İcra'},
     {id:'maintenance',l:'⚙️ Periyodik Bakım Takip'},
   ];
-  const isServiceTab = ['services','serviceopps','maintenance'].includes(state.tab);
+  const isServiceTab = ['services','serviceopps','servisicra','maintenance'].includes(state.tab);
   const serviceLabel = SERVICE_TABS.find(t=>t.id===state.tab)?.l || '🔧 Servis';
 
   const tabBar = h('div',{className:'tab-scroll',style:{background:'#c0daf0',borderBottom:'1px solid #a8c8e4',padding:window.innerWidth<=768?'0 6px':'0 24px',overflowX:'auto'}},
@@ -11728,7 +11739,7 @@ function render() {
   else if(state.tab==='opportunities') content=renderOpportunities();
   else if(state.tab==='leads') content=renderLeads();
   else if(state.tab==='proposals') content=renderProposals();
-  else if(state.tab==='services') content=renderServices();
+  else if(state.tab==='services' || state.tab==='servisicra') content=renderServices();
   else if(state.tab==='serviceopps') content=renderServiceOpps();
   else if(state.tab==='appointments') content=renderAppointments();
   else if(state.tab==='visits') content=renderVisits();
