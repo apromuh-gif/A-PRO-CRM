@@ -2097,7 +2097,7 @@ async function saveOpp(form, isEdit) {
     await ensureOrderTasks(data);
   }
 }
-// Sipariş onay takibi + Sipariş formu hazırlama görevleri. dedupeKey sabit ('siparis_onay_<id>' / 'siparis_form_<id>') → aynı fırsat için ikinci kez oluşmaz.
+// Sipariş formu hazırlama görevi (Sipariş onay takibi artık açılmaz). dedupeKey sabit ('siparis_form_<id>') → aynı fırsat için ikinci kez oluşmaz.
 // KAZANILDI'da ve "İcraya başlat"ta çağrılır (görevler silinmişse icra başlarken yeniden açılır).
 async function ensureOrderTasks(o){
   const id = o.id;
@@ -2106,7 +2106,7 @@ async function ensureOrderTasks(o){
   // Satış türü servis/bakım ise görevler Satın Alma'ya DEĞİL Teknik Servis (işaretli kişilere) gider; diğer türlerde Proje Grubu → Satın Alma.
   const svc = (o.salesType==='servis' || o.salesType==='bakim');
   const dept = svc ? 'teknik' : 'satinalma', ctx = svc ? 'servis' : 'proje';
-  await autoCreateTask({ dedupeKey:'siparis_onay_'+id, title:'\u{1F4CB} Sipariş onay takibi — '+lbl, dept:dept, context:ctx, linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:5, priority:'yuksek' });
+  // 'Sipariş onay takibi' otomatik görevi KALDIRILDI (Sözleşme / iş emri açılışı görevinde yapılıyor). Önceden açılmış olanlar yerinde durur.
   await autoCreateTask({ dedupeKey:'siparis_form_'+id, title:'\u{1F4DD} Sipariş formu hazırlama — '+lbl, dept:dept, context:ctx, linkType:'opportunity', linkId:id, linkLabel:o.title||'', dueOffset:7, priority:'orta' });
 }
 // Kazanılan fırsatın Satış Türü'ne göre süreci başlatır (idempotent).
