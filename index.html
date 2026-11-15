@@ -11028,7 +11028,8 @@ function renderPersonelGorevler(period, isAdmin, cu){
   }
 
   // Normal kullanıcıda yalnız İÇİNDE görevi olan türlerin sekmesi gösterilir (boş sekmeler kalabalık yapmasın); yönetici hepsini görür. Seçili tür boş olsa da görünür kalır.
-  const _ctxHas = new Set(list.map(t=>t.context));
+  // Açık/Zamanlı süzgeçlerde yalnız AÇIK görevi olan türler; 'Kapalı' ve 'Hepsi' süzgecinde kapanmışlar da sayılır (kapanmış tek görev yüzünden boş sekme çıkmasın).
+  const _ctxHas = new Set(list.filter(t=>(PMOD.taskFilter==='tamam' || PMOD.taskFilter==='hepsi') ? true : !taskIsClosed(t)).map(t=>t.context));
   const ctxTabs = [{v:'hepsi',l:'👁 Tümü',c:'#0b1f45'},{v:'bana',l:'⭐ Bana Atananlar',c:'#4338ca'},
     ...TASK_CONTEXTS.filter(c=>isAdmin || _ctxHas.has(c.v) || (PMOD.taskCtx||'hepsi')===c.v).map(c=>({v:c.v,l:c.l,c:c.c}))];
   const ctx = PMOD.taskCtx||'hepsi';
