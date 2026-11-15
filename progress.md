@@ -1005,3 +1005,54 @@ Kaldırılanlar ve sebepleri:
 - **Commit'ler:** CRM `896ca58`, `fcb6e06`, `ff9c56e`; Teklif Programı `34fec39`, `a277329`, `aecc0a9`.
 - **Doğrulama:** Yönetici ve deneme modunda (Servet SAVAŞÇI olarak) Teklif Programı açılıyor, Dashboard/kâr kartları yükleniyor, Neon anahtar yenilemesinden sonra da çalışıyor.
 - **Bilinen sınırlar:** Gerçek bir normal kullanıcı hesabıyla (deneme modu dışında) tam test yapılmadı. Teklif Programı'nın `set-fiscal-year`/`backfill-salesrep` uçları belirteç sahibinin CRM yöneticisi olup olmadığını denetlemiyor (yalnız oturum açmış A-PRO kullanıcısı). Ticari `TİCARİ CRM & TEKLİF` kurulumu kendi `teklifApiKey` ayarını kullanıyor (A-PRO anahtarıyla yapılandırıldıysa belirteç yoluna geçirilmeli). Firestore'da imzalı belge oluşturma (create) herkese açık; sahte "tamam" belge oluşturma kuralla engellenmiyor.
+
+## 15–16 Kasım 2026 — Güvenlik tamamlama, Deneme modu, Servis/Görevler/Bakım düzenlemeleri
+
+### Güvenlik (15 Kasım, devam)
+- **Teklif Programı yönetici kontrolü:** `set-fiscal-year`, `backfill-salesrep`, `users` uçları yalnız **CRM yöneticisine** açık; yönetici bilgisi çağıranın kendi Firebase belirteciyle Firestore `users/{e-posta}.isAdmin`'dan doğrulanır (`isCrmAdminRequest`). Tanı ucu: `GET /api/v1/crm/whoami` → `{email, isCrmAdmin, orgId}`.
+- **Sahte "tamam" imzalı belge engeli (Firestore kuralı):** checklist / servis formu / saha raporu `tamam`'a geçerken müşteri + iki tarafın adı + imza görseli + imza tarihi + kaydeden = oturumdaki kullanıcı kontrolü kural düzeyinde zorunlu (yönetici hariç). Kural Console'da yayınlandı (19:32). **Sınır:** kötü niyetli bir çalışan imza görseli dizesi uydurabilir; yine de `_editedBy` ile izlenebilir.
+
+### Deneme modu (sandbox)
+- Kırmızı üst bar kaldırıldı → sol altta küçük **"DENEME · Ad ▲"** hapı (tıklayınca açılır).
+- **Teklif Programı çağrıları izole `demo-org` kurumuna gider** (`x-crm-org: demo-org`; yalnız CRM yöneticisi için geçerli). Gerçek A-PRO teklif/numara/karlılık verisine dokunulmaz, demo verisi her gece 03:00 sıfırlanır. Deneme modunda yalnız o oturumda demo kurumunda açılan teklifler çalışır; gerçek taslağı açma / teklif kopyalama kapalı; müşterinin yalnız adı gönderilir (telefon/e-posta değil).
+- **`demo-org` üretim veritabanında yoktu** → `POST /api/v1/crm/setup-demo` (CRM yöneticisine özel, tekrarlanabilir; `ADMIN_API_KEY` yalnız sunucuda kullanılır) ile oluşturuldu ve demo verisi yüklendi. `User.email` tüm kurumlarda tekil olduğundan demo kurumunda oturum açma **demo'ya özel takma e-posta** ile yapılır (500 hatası giderildi).
+- Deneme modunda görevler/bakım taraması yalnız **bellekte** çalışır (DB'ye yazılmaz).
+- **Commit'ler:** CRM `5a4203f`, `466dfb9`; Teklif Programı `df2d811`, `6de3a56`, `5be19d2`.
+- **Doğrulama:** Deneme modunda Teklif Talebi → Teklif oluştur → gönderildi → fırsat doğdu. Kazanıldı → servis icrası → checklist/servis formu uçtan uca **kullanıcı testi tamamlanmadı**.
+
+### Servis ↔ Teklif akışı ve Servis menüsü
+- Servis kaydından **Teklif Oluştur**; talep serviceId ile servis kaydına bağlanır, fırsat kazanılınca **mükerrer servis açılmaz** (mevcut servis güncellenir, icra başlar).
+- **Servis ▾ menüsü ayrıldı:** *Servis Talepleri* (kayıt/teklif) · *T. Servis Teklif Takip* · ***Servis İcra*** (Başlamadı / Devam eden / Bitti; checklist + servis formu orada) · *Periyodik Bakım Takip*. Servis Talepleri satırında **🚀 İcraya git**. Commit `b6886ee`.
+
+### Görevler ekranı
+- Görev kartında **kırmızı proje rozeti**; **proje süzgeci** + **arama** (Enter/Ara); varsayılan **Gruplu** görünüm (geciken projeler üstte, kırmızı çerçeveli). Liste/Gruplu/Kanban düğmeleri **kaldırıldı**: "Bugün ve Geciken" ve "Önümüzdeki 7 Gün" süzgeçleri otomatik vade sıralı düz liste, diğerleri gruplu.
+- Düğmeler koyu/kalın tek tip (renkli deneme geri alındı). Etiketler: *Bugün ve Geciken* (vadesi bugün + geçmiş), *Önümüzdeki 7 Gün* (bugünden 7 gün sonrasına, takvim haftası değil).
+- **30 günden eski kapalı görevler** Kapalı/Hepsi'nde gizli ("Daha eskileri göster"); silinmez, performans/prim hesabı etkilenmez.
+- **Normal kullanıcıda** tür sekmeleri yalnız **açık görevi olan** türler için görünür (Kapalı/Hepsi'nde kapanmışlar da); sekme yanında açık görev sayısı; boş listede "başka süzgeçte N açık görev var" ipucu. Yönetici ekranı aynı. Kullanıcılar ekranındaki **departmanlar kalır** (otomatik atama, performans/prim kriterleri, alt görev yetkileri için gerekli).
+- Commit'ler: `df78aa1`, `7bfa33d`, `2e9019e`, `54620d1`, `0ea95e4`, `eaa63b7`, `c51fe70`, `288b488`, `e1415e3`, `b59398e`.
+
+### Otomatik görevler
+- **Vadeler İŞ GÜNÜ (Pzt–Cum):** `_bizOffsetDay`; hafta sonuna düşen vade Pazartesiye çekilir. **Tahsilat takibi (30 gün) takvim günü** kalır. Resmî tatiller dikkate alınmaz. Tedarik süresi/fatura(+7)/vergi/hakediş kendi hesabını yapar. Önceden açılmış görevler yeniden hesaplanmadı. Commit `1a240db`.
+- **"Sipariş onay takibi" otomatik görevi kaldırıldı** (Sözleşme / iş emri açılışında yapılıyor); "Sipariş formu hazırlama" kalır. Önceden açılmışlar yerinde. Muhasebe "Sipariş onay/PO takibi" puanı başlığında "sipariş" geçen görevlere baktığı için etkilenmez. Commit `74abc4b`.
+- **Vergi/SGK otomatik görevleri:** üretim tanımları (`TAX_CALENDAR`) zaten boş; veritabanında kalan eski görevler elle silinir (arama kutusuyla "vergi/KDV/SGK" aranabilir).
+- **Görev silme etkisi (rapor):** silinen görev kalıcı gider, puandan düşer. Açık/vadesi gelmemiş gereksiz görevi silmek puana zarar vermez; **geciken görevi silmek puanı yapay yükseltir**. Zincir görevleri (Tedarik süresi → Sevkiyat → Fatura → Tahsilat; Check list / Devreye alma) silinirse zincir kopar. Aynı süreç yeniden tetiklenirse silinen otomatik görev geri açılabilir.
+
+### Periyodik Bakım modülü (inceleme + A–F)
+- **Ziyaret başına ayrı görev** (`auto_maint_<kayıt>_<vade>`): ziyaret tamamlanınca (Servis Hizmetini Tamamla: NFPA Checklist + imzalı Servis Formu şartı) görev **bugünün tarihiyle tamamlandı** olarak kapanır ve sonraki vade için yeni görev açılır → her ziyaretin zamanında/geç kaydı performansta kalır. Eskiden tek görev sıfırlanıyor, tamamlanan ziyaret puana yazılmıyordu.
+- **Bakım görevi elle kapatılamaz** (bakım kaydından kapanır). Vade aynıyken elle kapatılmış eski görev **yeniden açılır**.
+- **Görev vadesine 30 gün kala açılır** (`maintTaskSweep`; CRM açıkken 10 dk'da bir, mod değişince hemen) — listeler erkenden kalabalıklaşmaz.
+- **Uyarılar telafili:** vadeye ≤7 gün (vade başına bir kez), vadesi geçmiş (günde bir kez, ilk açılışta), sözleşme bitimine ≤30 gün. Eskiden yalnız 09:00–09:04 penceresinde ve CRM açıkken üretiliyordu.
+- **Fatura her bakım ziyaretinden sonra** (4 bakımlık sözleşme → 4 fatura görevi); açıklamada "sözleşme tutarı ÷ toplam ziyaret" (Tutar alanı sözleşme toplamı kabul edilir, eşit pay varsayımı).
+- Kartta **📅 Randevu Oluştur** (müşteri/vade/teknisyen/not ön dolu), **⚠ Eksik bilgi** rozeti ve kayıt uyarısı, **🗓 90 Gün Planı** sekmesi (aya göre, teknisyene göre süzülür), **🔄 Programı Yenile** (12 aylık program bitince; geçmiş korunur) ve "Yenileme gerekli" rozeti.
+- **Canlı doğrulama:** Vitra Karo Eczacıbaşı'nın eski kapalı görevi yeniden açıldı (Servet SAVAŞÇI, 03.03.2026, geciken).
+- Commit'ler: `3f3a29c`, `028a23b`, `0868b2e`, `aa24e0b`, `466dfb9`, `b08b27f`.
+
+### Açık kalanlar (16 Kasım 2026 itibarıyla)
+- **Vitra Karo Eczacıbaşı** (vade 03.03.2026, ~258 gün gecikmiş) ve **The Bodrum Edition Hotel** (müşteri/sistem/vade yok) kayıtlarının gerçek durumu netleştirilecek. Vitra görevi Servet SAVAŞÇI'nın performansında geciken sayılıyor.
+- Bakım kayıtlarında **Tutar (€) €0**: sözleşme tutarları girilmeli (fatura görevi açıklaması için).
+- Bakım programı **en fazla 12 ay** üretir; 2+ yıllık sözleşmelerde yıl sonunda *Programı Yenile* kullanılmalı.
+- **Atama izin/yokluğu dikkate almaz** (departmanda en az açık görevli kişiye gider); izin kaydı CRM'de yok. Resmî tatil günleri vade hesabında yok.
+- **Firestore kuralı** giriş yapmış herkese otomatik görev silme izni veriyor (arayüzde yalnız yönetici görür); görev **silme kaydı (kim/ne zaman)** tutulmuyor — öneri: silmeyi yöneticiye kısıtla + silme logu.
+- **T. Servis Teklif Takip** (`serviceOpps`) ve **Periyodik Bakım**'da Teklif Programı bağı yok; Potansiyeller "Teklif İste" ile talebe gider.
+- Gerçek QQ test verilerinin (teklif talebi, Teklif Programı taslağı, görevler) temizlendiği kontrol edilmeli; servis kaydı silinmiş görünüyor.
+- Sorulan ama cevaplanmayan: **TİCARİ CRM & TEKLİF** kurulumu A-PRO `default-org` anahtarını kullanıyor mu (anahtar dönüşü bozabilir)?
