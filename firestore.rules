@@ -11,7 +11,7 @@ rules_version = '2';
 // veriyordu. Bu kurallar:
 //   • İş verisi  → oturum açmış kullanıcı okur/yazar (normal kullanım korunur)
 //   • users      → herkes okur; yalnız admin başkasının rolünü değiştirir
-//   • settings   → herkes okur; yalnız admin yazar (Gemini key/hedef korunur)
+//   • settings   → config/targets herkes okur; geri kalanı (prim defteri, AI anahtarı vb.) yalnız admin; yazma yalnız admin
 // ============================================================================
 
 service cloud.firestore {
@@ -139,9 +139,10 @@ service cloud.firestore {
                         || resource.data.get('assignedBy', '') == myName() || resource.data.get('createdBy', '') == myName()
                         || resource.data.get('linkId', '') != '');
     }
-    match /evaluations/{id}   { allow read, write: if signedIn(); }
+    // Değerlendirmeler (prim/performans puanları, yönetici notları): yalnız yönetici — Personel ekranı zaten admin'e kilitli.
+    match /evaluations/{id}   { allow read, write: if isAdmin(); }
     // Prim (para tutarları): herkes okur, yalnız admin yazar (sunucu tarafı kilit)
-    match /prim/{id}          { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /prim/{id}          { allow read, write: if isAdmin(); }
 
     // --- Kullanıcı/rol dokümanları ---
     // Okuma: tüm oturum açmış kullanıcılar (atama listeleri vb.)
@@ -153,9 +154,12 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // --- Ayarlar (Gemini API key, yıllık hedefler) ---
+    // --- Ayarlar ---
+    // config (aktif mali yıl) ve targets (yıllık hedefler; dashboard herkese gösterir): oturum açmış herkes okur.
+    // Geri kalanı (primLedger = ödenen prim tutarları, evalConfig = prim parametreleri, strategy, ai = API anahtarı): yalnız yönetici.
+    // Yazma: her zaman yalnız yönetici.
     match /settings/{doc} {
-      allow read:  if signedIn();
+      allow read:  if signedIn() && (doc in ['config', 'targets'] || isAdmin());
       allow write: if isAdmin();
     }
 

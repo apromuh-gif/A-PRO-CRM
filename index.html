@@ -292,7 +292,27 @@ const TEKLIF_STAFF_SYNC_URL = TEKLIF_APP_URL + '/api/v1/crm/staff-lists';
 const TEKLIF_BACKFILL_URL   = TEKLIF_APP_URL + '/api/v1/crm/backfill-salesrep';
 const TEKLIF_APPROVE_URL    = TEKLIF_APP_URL + '/api/v1/crm/approve-quotation';
 const TEKLIF_CONVERT_URL = TEKLIF_APP_URL + '/api/v1/crm/convert-quotation';
-const TEKLIF_API_KEY  = '902df802aba56f1729246d1a75ed6fc4fff53c2b10f697e07cc45a83ef805af0';
+// Teklif Programı kimliği: sabit API anahtarı KALDIRILDI (repo public'ti). Aşağıdaki fetch sarmalayıcısı, Teklif Programı adresine giden
+// her isteğe oturum açmış kullanıcının Firebase ID token'ını (Authorization: Bearer) ekler; sunucu token'ı Google anahtarlarıyla doğrular.
+// TEKLIF_API_KEY yalnız "kimlik mevcut" işaretidir (kodun birçok yerinde !TEKLIF_API_KEY kontrolü var) — gizli değer değildir.
+const TEKLIF_API_KEY  = 'firebase-id-token';
+(function(){
+  var _origFetch = window.fetch.bind(window);
+  window.fetch = async function(input, init){
+    try {
+      var url = (typeof input === 'string') ? input : (input && input.url) || '';
+      if (url.indexOf(TEKLIF_APP_URL) === 0) {
+        init = Object.assign({}, init);
+        var h = new Headers(init.headers || {});
+        h.delete('x-crm-key');
+        var u = auth.currentUser;
+        if (u) { var tok = await u.getIdToken(); h.set('Authorization', 'Bearer ' + tok); }
+        init.headers = h;
+      }
+    } catch(e) {}
+    return _origFetch(input, init);
+  };
+})();
 
 
 
@@ -1472,16 +1492,28 @@ function _cumMarginPct(name, period){
   return (profit/revenue)*100;
 }
 
+// AI (Groq/Gemini) anahtarı: yalnız yönetici okur/yazar (settings/ai). Eski konum settings/config herkese okunabiliyordu —
+// yönetici ilk girişte anahtar buraya taşınır ve config'ten silinir.
 async function loadApiKey() {
   try {
+    const isAdm = !!(state.currentUser && state.currentUser.isAdmin);
+    if(!isAdm) return '';
+    const ai = await db.collection('settings').doc('ai').get();
+    if(ai.exists && ai.data().geminiKey) return ai.data().geminiKey;
     const snap = await db.collection('settings').doc('config').get();
-    if(snap.exists && snap.data().geminiKey) return snap.data().geminiKey;
-    return '';
+    const legacy = snap.exists ? (snap.data().geminiKey||'') : '';
+    if(legacy){
+      try {
+        await db.collection('settings').doc('ai').set({geminiKey:legacy},{merge:true});
+        await db.collection('settings').doc('config').update({geminiKey: firebase.firestore.FieldValue.delete()});
+      } catch(e){ console.warn('AI anahtarı taşınamadı', e); }
+    }
+    return legacy;
   } catch(e) { return ''; }
 }
 async function saveApiKey(key) {
   try {
-    await db.collection('settings').doc('config').set({geminiKey:key},{merge:true});
+    await db.collection('settings').doc('ai').set({geminiKey:key},{merge:true});
     state.geminiKey = key;
     showToast('✅ Gemini API Key kaydedildi!','#16a34a');
   } catch(e) { showToast('❌ Kaydedilemedi!','#dc2626'); }
