@@ -10993,7 +10993,7 @@ function renderTaskAddPanel(isAdmin, myName){
   );
 }
 
-function taskCard(t, isAdmin, myName){
+function taskCard(t, isAdmin, myName, hideProj){
   const overdue = taskIsOverdue(t);
   const closed = taskIsClosed(t);
   const canDel = isAdmin || t.createdBy===myName || t.assignedBy===myName;
@@ -11003,6 +11003,8 @@ function taskCard(t, isAdmin, myName){
   const cm = TASK_CONTEXT_META[t.context]||TASK_CONTEXT_META.genel;
   const cardEl = h('div',{style:{background:'#ffffff',border:'1px solid '+(overdue?'#fca5a5':closed?'#bbf7d0':'#d0daea'),borderRadius:'11px',padding:'12px 14px',marginBottom:'8px',cursor:'pointer'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
+      // Proje / iş adı: kırmızı belirgin rozet (hangi projeye ait olduğu bir bakışta görülsün). Gruplu görünümde başlıkta zaten yazdığı için gizlenir.
+      (!hideProj && t.linkLabel && t.linkType && t.linkType!=='none') ? h('span',{title:'Bağlı kayıt: '+t.linkLabel,style:{background:closed?'#fca5a5':'#dc2626',color:'#fff',fontSize:'12px',fontWeight:'800',padding:'3px 10px',borderRadius:'9px',maxWidth:'280px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}},'📁 '+t.linkLabel) : h('span'),
       h('span',{style:{background:cm.c+'22',color:cm.c,fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},cm.l),
       h('span',{style:{background:sm.bg,color:sm.c,fontSize:'10px',fontWeight:'700',padding:'2px 7px',borderRadius:'9px'}},sm.l),
       h('span',{style:{fontWeight:'700',fontSize:'14px',color:closed?'#94a3b8':'#0f1f35',textDecoration:closed?'line-through':'none'}},t.title),
@@ -11058,7 +11060,7 @@ function renderTaskGrouped(tasks, isAdmin, myName){
       overdueCount?h('span',{style:{background:'#fee2e2',color:'#dc2626',fontSize:'10px',fontWeight:'700',padding:'2px 8px',borderRadius:'9px'}},overdueCount+' geciken'):h('span')
     );
     const content = isOpen ? h('div',{style:{border:'1px solid '+(color+'33'),borderTop:'none',borderRadius:'0 0 11px 11px',padding:'8px',background:'#fff'}},
-      ...g.tasks.map(t=>taskCard(t,isAdmin,myName))
+      ...g.tasks.map(t=>taskCard(t,isAdmin,myName,true))
     ) : h('span');
     return h('div',{}, header, content);
   }));
