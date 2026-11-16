@@ -3304,12 +3304,15 @@ function buildMaintModal(item) {
   const _staffOpts=cur=>{var n=_staff.slice();if(cur&&n.indexOf(cur)<0)n.unshift(cur);return [{v:'',l:'-- Seçin --'},...n.map(x=>({v:x,l:x}))];};
   const fContact=sel(_staffOpts(f.serviceContact),f.serviceContact,v=>f.serviceContact=v);
   // TUTAR TL cinsinden girilir. Dashboard/hedef € üzerinden çalıştığı için "€ karşılığı" (amount) ayrıca tutulur: ₺ ÷ kur ile otomatik hesaplanır, elle de girilebilir.
-  if(f.eurRate==null || f.eurRate==='') { try{ f.eurRate = localStorage.getItem('apro_eurRate') || ''; }catch(e){ f.eurRate=''; } }
   if(Number(f.amount)>0 && !(Number(f.amountTRY)>0)) f._eurManual = true;   // yalnız € girilmiş (eski kayıt / fırsattan gelen) → elle sayılır, kendiliğinden ezilmez
   const fAmt=inp('0',f.amount,v=>{ f.amount=v; f._eurManual=true; },'number');
   const _recalcEur=()=>{ const t=Number(f.amountTRY)||0, r=Number(f.eurRate)||0; if(t>0 && r>0 && !f._eurManual){ f.amount=Math.round(t/r*100)/100; fAmt.value=f.amount; } };
   const fTry=inp('0',f.amountTRY,v=>{ f.amountTRY=v; _recalcEur(); },'number');
-  const fRate=inp('örn. 38,50',f.eurRate,v=>{ f.eurRate=v; try{ localStorage.setItem('apro_eurRate', v); }catch(e){} _recalcEur(); },'number');
+  const rateNote = h('div',{style:{fontSize:'10.5px',color:'#64748b',marginTop:'3px'}}, f.eurRate ? ('Kayıtlı kur'+(f.eurRateDate?(' ('+f.eurRateDate+')'):'')) : 'TCMB kuru alınıyor…');
+  const fRate=inp('Otomatik (TCMB)',f.eurRate,v=>{ f.eurRate=v; f.eurRateDate=''; rateNote.textContent='Elle girilen kur'; _recalcEur(); },'number');
+  const _applyRate = (r, resetManual)=>{ if(!r) return; f.eurRate=r.rate; f.eurRateDate=r.date; fRate.value=r.rate; if(resetManual) f._eurManual=false; rateNote.textContent='TCMB döviz satış · '+r.date+(r.stale?' (son bilinen; bağlantı kurulamadı)':''); _recalcEur(); };
+  if(!f.eurRate) getEurRate().then(r=>{ if(r){ _applyRate(r,false); } else { rateNote.textContent='⚠ TCMB kuruna ulaşılamadı — kuru elle girin.'; } });
+  const rateBtn = btn('↻ Güncel kuru al',()=>{ rateNote.textContent='TCMB kuru alınıyor…'; getEurRate(true).then(r=>{ if(r) _applyRate(r,true); else rateNote.textContent='⚠ TCMB kuruna ulaşılamadı.'; }); },'#eff6ff','#1d4ed8','5px 10px',{fontSize:'11px',border:'1px solid #bfdbfe',marginTop:'4px'});
   const fSt=sel(MAINT_ST,f.status,v=>f.status=v);
   const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
@@ -3346,7 +3349,7 @@ function buildMaintModal(item) {
     field('İşin Adı *',fJob),
     field('Müşteri',fCust),
     row(field('Teknik Servis İlgilisi',fContact,true),field('Tutar (₺)',fTry,true)),
-    row(field('Güncel Kur (₺ / €)',fRate,true),field('€ Karşılığı (dashboard / hedef)',fAmt,true)),
+    row(field('Kur (₺ / €) · TCMB otomatik',h('div',{},fRate,rateNote,rateBtn),true),field('€ Karşılığı (dashboard / hedef)',fAmt,true)),
     field('Satış Temsilcisi (servis hedefi için)', sel([{v:'',l:'-- Seçin --'},...usersAllActive().map(function(u){return {v:u.displayName,l:u.displayName};})], f.assignedTo||'', v=>f.assignedTo=v)),
     statusField,
     renewBtn,
@@ -3362,7 +3365,7 @@ function buildMaintModal(item) {
       mtUtilRow
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; saveMaint(_rec,!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,eurRateDate:f.eurRateDate||'',mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; saveMaint(_rec,!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -3458,6 +3461,23 @@ function maintSysSection(f){
 }
 // Bir bakım kaydına bağlı tek "kayan" görevi (varsa) senkronlar: oluştur/güncelle,
 // vade değiştiyse yeniden aç, ilgili kişi değiştiyse otomatik devret + bildir.
+// Güncel EUR/TRY kuru: TCMB döviz satış (Teklif Programı sunucusu çeker; tarayıcı TCMB'ye doğrudan erişemez). 3 saat önbellek; ulaşılamazsa son bilinen kur.
+async function getEurRate(force){
+  try{
+    const c = JSON.parse(localStorage.getItem('apro_eurRateCache')||'null');
+    if(!force && c && c.rate && (Date.now()-c.at) < 3*3600*1000) return { rate:c.rate, date:c.date, stale:false };
+  }catch(e){}
+  try{
+    const r = await fetch(TEKLIF_APP_URL + '/api/v1/crm/eur-rate');
+    const j = await r.json();
+    if(r.ok && j && j.ok && Number(j.rate)>0){
+      try{ localStorage.setItem('apro_eurRateCache', JSON.stringify({ rate:Number(j.rate), date:j.date, at:Date.now() })); }catch(e){}
+      return { rate:Number(j.rate), date:j.date, stale:false };
+    }
+  }catch(e){}
+  try{ const c = JSON.parse(localStorage.getItem('apro_eurRateCache')||'null'); if(c && c.rate) return { rate:c.rate, date:c.date, stale:true }; }catch(e){}
+  return null;
+}
 function maintTaskId(m){ return 'auto_maint_'+m.id; }
 // Fatura görevi açıklaması: kayıttaki tutar (Tutar €) sözleşmenin TOPLAMI kabul edilir; programdaki toplam ziyaret sayısına EŞİT bölünür.
 // Ziyaret sayısı = tüm sistemlerin program tarihlerinin birleşimi (aynı gün = tek ziyaret). Program (bitiş tarihi) yoksa yalnız toplam tutar yazılır.
