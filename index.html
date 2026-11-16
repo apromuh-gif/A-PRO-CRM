@@ -271,6 +271,7 @@ const TAX_CALENDAR = [
 ];
 
 const eur = v => new Intl.NumberFormat("tr-TR",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(v||0);
+const tl = v => new Intl.NumberFormat("tr-TR",{style:"currency",currency:"TRY",maximumFractionDigits:0}).format(v||0);
 // XSS koruması: kullanıcı verisi innerHTML ile yazdırılan rapor/print şablonlarına gömülmeden önce kaçışlanır.
 const escapeHtml = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // YEREL tarih (YYYY-MM-DD). toISOString() UTC verir; TR'de 00:00-03:00 arası bir gün geri
@@ -3302,7 +3303,13 @@ function buildMaintModal(item) {
   const _staff=state.users.filter(u=>u.active!==false).map(u=>u.displayName).sort((a,b)=>a.localeCompare(b,'tr'));
   const _staffOpts=cur=>{var n=_staff.slice();if(cur&&n.indexOf(cur)<0)n.unshift(cur);return [{v:'',l:'-- Seçin --'},...n.map(x=>({v:x,l:x}))];};
   const fContact=sel(_staffOpts(f.serviceContact),f.serviceContact,v=>f.serviceContact=v);
-  const fAmt=inp('0',f.amount,v=>f.amount=v,'number');
+  // TUTAR TL cinsinden girilir. Dashboard/hedef € üzerinden çalıştığı için "€ karşılığı" (amount) ayrıca tutulur: ₺ ÷ kur ile otomatik hesaplanır, elle de girilebilir.
+  if(f.eurRate==null || f.eurRate==='') { try{ f.eurRate = localStorage.getItem('apro_eurRate') || ''; }catch(e){ f.eurRate=''; } }
+  if(Number(f.amount)>0 && !(Number(f.amountTRY)>0)) f._eurManual = true;   // yalnız € girilmiş (eski kayıt / fırsattan gelen) → elle sayılır, kendiliğinden ezilmez
+  const fAmt=inp('0',f.amount,v=>{ f.amount=v; f._eurManual=true; },'number');
+  const _recalcEur=()=>{ const t=Number(f.amountTRY)||0, r=Number(f.eurRate)||0; if(t>0 && r>0 && !f._eurManual){ f.amount=Math.round(t/r*100)/100; fAmt.value=f.amount; } };
+  const fTry=inp('0',f.amountTRY,v=>{ f.amountTRY=v; _recalcEur(); },'number');
+  const fRate=inp('örn. 38,50',f.eurRate,v=>{ f.eurRate=v; try{ localStorage.setItem('apro_eurRate', v); }catch(e){} _recalcEur(); },'number');
   const fSt=sel(MAINT_ST,f.status,v=>f.status=v);
   const fNotes=h('textarea',{placeholder:'Notlar...',style:{width:'100%',padding:'9px 12px',background:G,border:`1px solid ${G4}`,borderRadius:'8px',color:T1,fontSize:'13px',minHeight:'55px',resize:'vertical',boxSizing:'border-box',fontFamily:"'DM Sans',sans-serif"}},f.notes||'');
   fNotes.addEventListener('input',e=>f.notes=e.target.value);
@@ -3338,7 +3345,8 @@ function buildMaintModal(item) {
   const content = h('div',{},
     field('İşin Adı *',fJob),
     field('Müşteri',fCust),
-    row(field('Teknik Servis İlgilisi',fContact,true),field('Tutar (€)',fAmt,true)),
+    row(field('Teknik Servis İlgilisi',fContact,true),field('Tutar (₺)',fTry,true)),
+    row(field('Güncel Kur (₺ / €)',fRate,true),field('€ Karşılığı (dashboard / hedef)',fAmt,true)),
     field('Satış Temsilcisi (servis hedefi için)', sel([{v:'',l:'-- Seçin --'},...usersAllActive().map(function(u){return {v:u.displayName,l:u.displayName};})], f.assignedTo||'', v=>f.assignedTo=v)),
     statusField,
     renewBtn,
@@ -3354,7 +3362,7 @@ function buildMaintModal(item) {
       mtUtilRow
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); saveMaint({...f,amount:Number(f.amount)||0,mtSystems:sys,mtNextDue:next},!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; saveMaint(_rec,!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -3454,14 +3462,18 @@ function maintTaskId(m){ return 'auto_maint_'+m.id; }
 // Fatura görevi açıklaması: kayıttaki tutar (Tutar €) sözleşmenin TOPLAMI kabul edilir; programdaki toplam ziyaret sayısına EŞİT bölünür.
 // Ziyaret sayısı = tüm sistemlerin program tarihlerinin birleşimi (aynı gün = tek ziyaret). Program (bitiş tarihi) yoksa yalnız toplam tutar yazılır.
 function maintInvoiceDesc(m, visitISO){
-  const amt = Number(m && m.amount) || 0;
-  if(!amt) return 'Bakım kaydında tutar girilmemiş (€0). Fatura tutarını sözleşmeden doğrulayın; ileride için bakım kaydındaki "Tutar (€)" alanına sözleşme tutarını girin.';
+  const amtTry = Number(m && m.amountTRY) || 0, amtEur = Number(m && m.amount) || 0;
+  const useTry = amtTry > 0;
+  const amt = useTry ? amtTry : amtEur;
+  const fmt = v => useTry ? tl(v) : eur(v);
+  if(!amt) return 'Bakım kaydında tutar girilmemiş. Fatura tutarını sözleşmeden doğrulayın; ileride için bakım kaydındaki "Tutar (₺)" alanına sözleşme tutarını girin.';
+  const eurNote = (useTry && amtEur>0) ? (' (≈ '+eur(amtEur)+(Number(m.eurRate)>0?(', kur '+m.eurRate):'')+')') : '';
   const set = new Set();
   (m.mtSystems||[]).forEach(s=>{ mtGenerateSchedule(m.mtBaseDate, m.mtEndDate, s.freq).forEach(d=>set.add(d)); });
   const all = [...set].sort(); const total = all.length;
-  if(!total) return 'Sözleşme tutarı: '+eur(amt)+'. (Program/bitiş tarihi girilmediği için ziyaret başına pay hesaplanamadı.) Tutarı sözleşmeden doğrulayın.';
+  if(!total) return 'Sözleşme tutarı: '+fmt(amt)+eurNote+'. (Program/bitiş tarihi girilmediği için ziyaret başına pay hesaplanamadı.) Tutarı sözleşmeden doğrulayın.';
   let idx = all.indexOf(visitISO); idx = idx>=0 ? idx+1 : 0;
-  return 'Sözleşme tutarı '+eur(amt)+' · '+total+' ziyaret'+(idx?(' · bu fatura '+idx+'. ziyaret'):'')+' → ziyaret başına ≈ '+eur(Math.round(amt/total*100)/100)+' (eşit pay varsayımıyla). Gerçek fatura tutarını sözleşmeye göre doğrulayın.';
+  return 'Sözleşme tutarı '+fmt(amt)+eurNote+' · '+total+' ziyaret'+(idx?(' · bu fatura '+idx+'. ziyaret'):'')+' → ziyaret başına ≈ '+fmt(Math.round(amt/total*100)/100)+' (eşit pay varsayımıyla). Gerçek fatura tutarını sözleşmeye göre doğrulayın.';
 }
 // Önümüzdeki N gün içindeki (ve geçmiş/yapılmamış) tüm bakım ziyaretleri: {m, date, systems[]}. Aynı gün birden çok sistem tek ziyaret sayılır.
 function maintPlanEntries(days){
@@ -8397,7 +8409,7 @@ function renderMaintenances() {
       (mf.job||mf.cust)?btn('✕ Temizle',()=>{state.maintFilters={job:'',cust:''};render();},'#fef2f2','#dc2626','7px 12px',{fontSize:'12px',alignSelf:'flex-end',border:'1px solid #fecaca',borderRadius:'8px'}):h('span')
     )
   );
-  const thead=h('thead',{},h('tr',{style:{background:'#1e2d4a'}},...["İşin Adı","Müşteri","T.Servis İlgilisi","Tutar (€)","Durum","Son Düzenleyen","İşlem"].map(t=>h('th',{style:{color:'#ffffff',padding:'11px 13px',fontSize:'12px',fontWeight:'700',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:'.05em',textAlign:'left'}},t))));
+  const thead=h('thead',{},h('tr',{style:{background:'#1e2d4a'}},...["İşin Adı","Müşteri","T.Servis İlgilisi","Tutar (₺)","Durum","Son Düzenleyen","İşlem"].map(t=>h('th',{style:{color:'#ffffff',padding:'11px 13px',fontSize:'12px',fontWeight:'700',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:'.05em',textAlign:'left'}},t))));
   const tbody=h('tbody',{});
   maintFiltered.forEach((m,i)=>{
     const c=custById(m.customerId);
@@ -8405,7 +8417,9 @@ function renderMaintenances() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',maxWidth:'160px'}},m.jobName||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'13px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'12px',color:T2}},m.serviceContact||''),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',color:'#10b981'}},eur(m.amount)),
+      h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',color:'#10b981',whiteSpace:'nowrap'}},
+        Number(m.amountTRY)>0 ? h('div',{}, tl(m.amountTRY), Number(m.amount)>0 ? h('div',{style:{fontSize:'10.5px',fontWeight:'600',color:'#64748b'}},'≈ '+eur(m.amount)+(Number(m.eurRate)>0?(' · kur '+m.eurRate):'')) : h('span'))
+          : (Number(m.amount)>0 ? h('div',{}, eur(m.amount), h('div',{style:{fontSize:'10.5px',fontWeight:'600',color:'#b45309'}},'₺ tutarı girilmemiş')) : h('span',{style:{color:T4,fontWeight:'600'}},'—'))),
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},(()=>{
         const p=maintProgressLabel(m);
         const _mm = maintMissing(m);
