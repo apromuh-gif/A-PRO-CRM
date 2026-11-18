@@ -1786,6 +1786,7 @@ function modal(title, content, onClose, maxWidth='640px') {
     padding: mob ? '0' : '16px',
     backdropFilter:'blur(3px)'
   }},box);
+  bg.setAttribute('data-apro-modal','1');
   // Boşluğa tıklayınca KAPANMAZ: pencere yalnız Kaydet / İptal / × ile kapanır (yanlışlıkla veri kaybını önler).
   return bg;
 }
@@ -3442,7 +3443,7 @@ function buildMaintModal(item) {
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
-  return modal(item?'Periyodik Bakımı Düzenle':'Yeni Periyodik Bakım Takip', content, ()=>setState({modal:null}), '660px');
+  return modal((item&&item.id)?'Periyodik Bakımı Düzenle':'Yeni Periyodik Bakım Takip', content, ()=>setState({modal:null}), '660px');
 }
 
 // Çok-sistemli periyodik bakım editörü (NFPA iç-içe zamanlama).
@@ -12944,7 +12945,31 @@ function renderPersonelSettings(){
 // ═══════════════════════════════════════════════════════
 // ANA RENDER
 // ═══════════════════════════════════════════════════════
+// Pencere (modal) açıkken yeniden çizim (sistem seç, satır ekle vb.) kaydırma konumunu başa sarıyordu: çalışılan alan kayıyor, kullanıcı aşağı inmek zorunda kalıyordu.
+// Tüm pencerelerde: yeniden çizimden önce pencere içindeki kaydırma konumları yol (child indeksi) olarak alınır, sonra geri yüklenir.
+function _modalScrollSnap(){
+  const bg=document.querySelector('#root [data-apro-modal]'); if(!bg) return null;
+  const out=[];
+  (function walk(el,path){
+    if(el.scrollTop>0 || el.scrollLeft>0) out.push({p:path.slice(), t:el.scrollTop, l:el.scrollLeft});
+    for(let i=0;i<el.children.length;i++){ path.push(i); walk(el.children[i],path); path.pop(); }
+  })(bg,[]);
+  return {key:(state.modal&&state.modal.type)||'', pos:out};
+}
+function _modalScrollRestore(snap){
+  if(!snap || !state.modal || snap.key!==state.modal.type) return;
+  const bg=document.querySelector('#root [data-apro-modal]'); if(!bg) return;
+  snap.pos.forEach(function(x){
+    let el=bg; for(let i=0;i<x.p.length && el;i++) el=el.children[x.p[i]];
+    if(el){ el.scrollTop=x.t; el.scrollLeft=x.l; }
+  });
+}
 function render() {
+  const _snap=_modalScrollSnap();
+  _renderInner();
+  _modalScrollRestore(_snap);
+}
+function _renderInner() {
   if(state.view==='login') { renderLogin(); return; }
   // PWA banner - giriş yapıldıktan sonra
   if(!window._pwaBannerShown){ window._pwaBannerShown=true; setTimeout(initPWABanner,3000); }

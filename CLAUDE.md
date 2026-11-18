@@ -115,6 +115,8 @@ Kullanıcı kararı (18 Kasım 2026): yeni yazılan her form/modal/açılır pen
 3. **Doğrulama uyarısı formu sıfırlamaz.** Uyarı için `showToast(...)` kullan (pencere açıkken yeniden çizim yapmaz). Form açıkken `setState/render()` ile yeniden çizim tetikleme; yeniden çizim gerekiyorsa taslağı `PMOD`/üst kapsamda tut ki girilen bilgiler kaybolmasın. Kaydet başarısız olursa (hata) form AÇIK ve DOLU kalır, hata kırmızı uyarıyla gösterilir.
 4. **Eksik/hatalı alan** adıyla söylenir ("… girilmelidir"); doğrulama Kaydet'e basınca yapılır, girilenler silinmez.
 5. Yazdır / PDF ekranları da aynı: yalnız ✕ Kapat ile kapanır.
+6. **Çalışılan alan kaymaz (19 Kasım 2026):** pencere açıkken yeniden çizim (`setState`/`render()`; sistem seç, satır ekle, madde işaretle…) pencerenin kaydırma konumunu başa SARMAZ. `render()` bunu otomatik korur (`_modalScrollSnap` / `_modalScrollRestore`; pencere `data-apro-modal` işaretli `modal()` ile çizilmelidir). Bu yüzden: yeni pencere daima `modal()` ile yazılır (kendi `position:fixed` overlay'ini yazma; yazarsan kendi kaydırma korumanı ekle); pencere içinden `render()` çağıran işlemler pencereyi sökmeden yeniden çizer.
+7. **Yeniden çizimde pencere durumu bozulmaz:** yeniden çizimden sonra `item` id'siz kopya olarak gelir; "yeni mi / düzenleme mi" ayrımı `item` varlığına DEĞİL `item && item.id`'ye bakar (başlık, Kaydet). Yeni form yazınca dene: alttaki bir alanda sistem seç / satır ekle → ekran yerinde kalmalı, başlık ve girilen değerler değişmemeli.
 
 
 ## DEPLOY SONRASI CANLI DOĞRULAMA (ZORUNLU)
