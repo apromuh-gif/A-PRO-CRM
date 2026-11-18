@@ -110,15 +110,13 @@ function salesTypeLabel(v){ const t=SALES_TYPES.find(x=>x.v===v); return t?t.l:'
 // Servis/Bakım fırsatları SATIŞ cirosuna, satış hedefine ve prime girmez: servis modülündeki kayıtla (servis kaydı / bakım sözleşmesi) ve servis hedefiyle ölçülür.
 function _isSalesOpp(o){ return !(o && (o.salesType==='servis' || o.salesType==='bakim')); }
 // Fırsattan açılan bakım sözleşmelerinin tutarı (servis hedefi gerçekleşmesine eklenir; repName verilirse satış temsilcisine göre).
-// Bakım sözleşmesi aktif mali yıl için servis cirosuna sayılır mı? Fırsattan açılanlar her zaman; elle açılanlar (fırsatsız) sözleşme dönemi
-// (başlangıç = mtBaseDate/oluşturma, bitiş = mtEndDate ya da +12 ay) aktif yılla kesişiyorsa. Tutar = € karşılığı (amount).
+// Bakım sözleşmesi aktif mali yıl için servis cirosuna sayılır mı? KAZANILAN İŞ = sözleşmenin kayıt (oluşturma) yılı — ziyaret takvimi
+// ileri yıllara uzansa bile tutar bir kez, kaydın yapıldığı yılda sayılır (m.fiscalYear varsa o). Tutar = € karşılığı (amount) > 0.
 function _maintCountsForYear(m){
   if(!m || !(Number(m.amount)>0)) return false;
-  if(m.opportunityId) return true;
-  const y=activeFiscalYear(), a=String(m.mtBaseDate||m.createdAt||'').slice(0,10);
-  if(!a) return false;
-  const e=String(m.mtEndDate||'').slice(0,10) || _addMonth(a,12);
-  return a<=(y+'-12-31') && e>=(y+'-01-01');
+  const y=activeFiscalYear();
+  const my=(m.fiscalYear!=null && m.fiscalYear!=='') ? Number(m.fiscalYear) : Number(String(m.createdAt||'').slice(0,4));
+  return my===y;
 }
 function _svcExtraWon(repName){ return (state.maintenances||[]).filter(function(m){ return _maintCountsForYear(m) && (!repName || m.assignedTo===repName); }).reduce(function(a,m){ return a+(Number(m.amount)||0); },0); }
 const JOB_ST = ["SON KULLANICI","ALMIŞ MÜTEAHHİT","ALMIŞ TAŞERON","MÜTEAHHİT İHALESİ","TAŞERON İHALESİ","KEŞİF","BAYİ","OEM"];
@@ -3093,6 +3091,12 @@ function usersWithTargets() {
 }
 // Satış Temsilcisi / Hazırlayan / ilgili kişi seçim listeleri: sistemdeki TÜM aktif kullanıcılar (hedefi olmayan veya başka departmandaki personel de teklif hazırlayıp satış temsilcisi olabilir).
 // usersWithTargets() yalnız hedef/prim/performans hesaplarında kalır. Aynı listeler Teklif Programı'na da (personel senkronu) bunlardan gider.
+// Satış Temsilcisi açılır menüsü: sistemdeki TÜM aktif kullanıcılar (alfabetik); kayıttaki mevcut ad pasif/silinmiş olsa da listede kalır.
+function _repSelectOpts(cur){
+  const names=usersAllActive().map(function(u){ return u.displayName; }).sort(function(a,b){ return a.localeCompare(b,'tr'); });
+  if(cur && names.indexOf(cur)<0) names.unshift(cur);
+  return [{v:'',l:'-- Seçin --'}].concat(names.map(function(n){ return {v:n,l:n}; }));
+}
 function usersAllActive() {
   return state.users.filter(u => u.active !== false && u.displayName);
 }
@@ -3331,13 +3335,15 @@ function buildServModal(item) {
     field('İşin Adı *',fJob),
     field('Müşteri',fCust),
     row(field('Hazırlayan *',fPrep,true),field('T.Servis İlgilisi',fContact,true)),
-    field('Satış Temsilcisi (servis hedefi için)', sel([{v:'',l:'-- Seçin --'},...usersAllActive().map(function(u){return {v:u.displayName,l:u.displayName};})], f.assignedTo||'', v=>f.assignedTo=v)),
+    field('Satış Temsilcisi * (servis hedefi için)', sel(_repSelectOpts(f.assignedTo), f.assignedTo||'', v=>f.assignedTo=v)),
     row(field('Tutar (€)',fAmt,true),field('Durum',fSt,true)),
     row(field('Talep Tarihi',fCreated,true),field('Dead Line',fValid,true)),
     field('Randevu Tarihi',fApp),field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
       btn('Kaydet',()=>{
-        if(!(f.jobName&&f.preparedBy)) return;
+        if(!f.jobName){ showToast('⚠ İşin adı zorunludur.','#dc2626'); return; }
+        if(!f.preparedBy){ showToast('⚠ Hazırlayan zorunludur.','#dc2626'); return; }
+        if(!f.assignedTo){ showToast('⚠ Satış Temsilcisi zorunludur — servis hedefine yazılması için seçin.','#dc2626'); return; }
         // Teklif hazırlanmadan 'Gönderildi/Revize' denemez (Teklif Talepleri ile aynı kural). Onaylandı/Randevu teklifsiz işler için serbest.
         const _linked = !!(servLinkedProposal(f) || f.opportunityId);
         if(['Gönderildi','Revize'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !_linked){
@@ -3415,7 +3421,7 @@ function buildMaintModal(item) {
     field('Müşteri',fCust),
     row(field('Teknik Servis İlgilisi',fContact,true),field('Tutar (₺)',fTry,true)),
     row(field('Kur (₺ / €) · TCMB otomatik',h('div',{},fRate,rateNote,rateBtn),true),field('€ Karşılığı (dashboard / hedef)',fAmt,true)),
-    field('Satış Temsilcisi (servis hedefi için)', sel([{v:'',l:'-- Seçin --'},...usersAllActive().map(function(u){return {v:u.displayName,l:u.displayName};})], f.assignedTo||'', v=>f.assignedTo=v)),
+    field('Satış Temsilcisi * (servis hedefi için)', sel(_repSelectOpts(f.assignedTo), f.assignedTo||'', v=>f.assignedTo=v)),
     statusField,
     renewBtn,
     mtSection,
@@ -3432,7 +3438,7 @@ function buildMaintModal(item) {
       mtUtilRow
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{ var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,eurRateDate:f.eurRateDate||'',mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; saveMaint(_rec,!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{ if(!String(f.jobName||'').trim()){ showToast('⚠ İşin adı zorunludur.','#dc2626'); return; } if(!f.assignedTo){ showToast('⚠ Satış Temsilcisi zorunludur — servis hedefine yazılması için seçin.','#dc2626'); return; } var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,eurRateDate:f.eurRateDate||'',mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; saveMaint(_rec,!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -5498,12 +5504,19 @@ function renderDashboardAdmin() {
         // Temsilci bazlı servis hedefleri
         const svcReps = (state.targets&&state.targets.serviceReps)||{};
         const activeReps2 = state.users.filter(u=>u.active!==false);
-        if(activeReps2.length && Object.keys(svcReps).some(k=>svcReps[k]>0)) {
+        const _repSvcWon = u=> S.filter(s=>s.assignedTo===u.displayName&&_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
+        if(activeReps2.length && (Object.keys(svcReps).some(k=>svcReps[k]>0) || activeReps2.some(u=>_repSvcWon(u)>0))) {
           div.appendChild(h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#1e2d4a',marginTop:'16px',marginBottom:'10px',borderTop:'1px solid #c0d8f0',paddingTop:'14px'}},'Teknik Servis Temsilcisi Bazlı Hedef'));
           activeReps2.forEach(u=>{
             const t2 = Number(svcReps[u.displayName])||0;
-            if(!t2) return;
-            const w2 = S.filter(s=>s.assignedTo===u.displayName&&_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
+            const w2 = _repSvcWon(u);
+            if(!t2 && !w2) return;
+            if(!t2){   // hedefi yok ama servis/bakım cirosu var: yine de görünsün
+              div.appendChild(h('div',{style:{marginBottom:'10px',display:'flex',justifyContent:'space-between'}},
+                h('span',{style:{fontWeight:'600',fontSize:'13px',color:'#1e2d4a'}},u.displayName),
+                h('span',{style:{fontWeight:'700',fontSize:'13px',color:'#0891b2'}},eur(w2),h('span',{style:{fontSize:'11px',color:'#4a6080',fontWeight:'400'}},' · Hedef yok'))));
+              return;
+            }
             const p3 = Math.min(100,Math.round(w2/t2*100));
             div.appendChild(h('div',{style:{marginBottom:'10px'}},
               h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'4px'}},
@@ -5522,7 +5535,7 @@ function renderDashboardAdmin() {
       card('🔧 Teknik Servis Ciro & Yıllık Hedef', (()=>{
         const svcTarget = (state.targets&&state.targets.serviceCompany)||0;
         const svcWon = S.filter(s=>_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();
-        const svcAll = S.reduce((a,s)=>a+(Number(s.amount)||0),0);
+        const svcAll = S.reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();   // servis kayıtları + bakım sözleşmeleri
         const svcPct = svcTarget>0?Math.min(100,Math.round(svcWon/svcTarget*100)):0;
         const div = h('div',{});
         if(!svcTarget) {
@@ -8502,7 +8515,7 @@ function renderMaintenances() {
       (mf.job||mf.cust)?btn('✕ Temizle',()=>{state.maintFilters={job:'',cust:''};render();},'#fef2f2','#dc2626','7px 12px',{fontSize:'12px',alignSelf:'flex-end',border:'1px solid #fecaca',borderRadius:'8px'}):h('span')
     )
   );
-  const thead=h('thead',{},h('tr',{style:{background:'#1e2d4a'}},...["İşin Adı","Müşteri","T.Servis İlgilisi","Tutar (₺)","Durum","Son Düzenleyen","İşlem"].map(t=>h('th',{style:{color:'#ffffff',padding:'11px 13px',fontSize:'12px',fontWeight:'700',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:'.05em',textAlign:'left'}},t))));
+  const thead=h('thead',{},h('tr',{style:{background:'#1e2d4a'}},...["İşin Adı","Müşteri","T.Servis İlgilisi","Satış Temsilcisi","Tutar (₺)","Durum","Son Düzenleyen","İşlem"].map(t=>h('th',{style:{color:'#ffffff',padding:'11px 13px',fontSize:'12px',fontWeight:'700',whiteSpace:'nowrap',textTransform:'uppercase',letterSpacing:'.05em',textAlign:'left'}},t))));
   const tbody=h('tbody',{});
   maintFiltered.forEach((m,i)=>{
     const c=custById(m.customerId);
@@ -8510,6 +8523,7 @@ function renderMaintenances() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',maxWidth:'160px'}},m.jobName||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'13px',color:T3,whiteSpace:'nowrap'}},c?.firmName||'-'),
       h('td',{style:{padding:'10px 11px',fontSize:'12px',color:T2}},m.serviceContact||''),
+      h('td',{style:{padding:'10px 11px',fontSize:'12px',color:T2}},m.assignedTo?m.assignedTo:h('span',{title:'Satış temsilcisi seçilmezse tutar toplam servis cirosuna girer ama temsilci bazlı servis hedefine yansımaz',style:{color:'#dc2626',fontWeight:'700',fontSize:'11px'}},'⚠ seçilmedi')),
       h('td',{style:{padding:'10px 11px',fontSize:'13px',fontWeight:'700',color:'#10b981',whiteSpace:'nowrap'}},
         Number(m.amountTRY)>0 ? h('div',{}, tl(m.amountTRY), Number(m.amount)>0 ? h('div',{style:{fontSize:'10.5px',fontWeight:'600',color:'#64748b'}},'≈ '+eur(m.amount)+(Number(m.eurRate)>0?(' · kur '+m.eurRate):'')) : h('span'))
           : (Number(m.amount)>0 ? h('div',{}, eur(m.amount), h('div',{style:{fontSize:'10.5px',fontWeight:'600',color:'#b45309'}},'₺ tutarı girilmemiş')) : h('span',{style:{color:T4,fontWeight:'600'}},'—'))),
@@ -8603,7 +8617,7 @@ function renderMaintenances() {
         );
       }) : [h('div',{style:{padding:'32px',textAlign:'center',color:T4,background:G2,borderRadius:'12px'}},'Filtre sonucu yok.')]
     ) :
-    makeScrollTable(thead, tbody, [160,150,130,110,110,130,130,130,110], !maintFiltered.length, 'Henüz periyodik bakım kaydı yok.')
+    makeScrollTable(thead, tbody, [160,150,130,130,110,110,130,130,130,110], !maintFiltered.length, 'Henüz periyodik bakım kaydı yok.')
   );
 }
 
