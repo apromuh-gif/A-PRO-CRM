@@ -9536,6 +9536,7 @@ function sandboxEnter(){
   if(!confirm('DENEME MODU açılsın mı?\n\n• Yaptığınız hiçbir işlem veritabanına kaydedilmez.\n• Teklif Programı\'na yazılmaz (teklif oluşturma/kopyalama çalışmaz), e-posta gönderilmez.\n• Çıkışta veya sayfa yenilenince tüm deneme kayıtları kaybolur.\n\nDevam edilsin mi?')) return;
   state._sbxUser = state.currentUser; state.sandbox = true; state.testMode = true; state._sbxOpen = true;
   sandboxBar(); showToast('🧪 Deneme modu açık — hiçbir şey kaydedilmez','#7f1d1d'); render();
+  try{ projectScheduleSync(); }catch(e){}   // iş programı görevleri deneme verisinde de (yalnız bellekte) açılsın
 }
 async function sandboxExit(){
   state.sandbox = false; state.testMode = false; state._sbxQuoteIds = null;
@@ -11598,7 +11599,7 @@ function ipNextDue(o){
 function ipTaskKey(oppId, n){ return 'is_programi_'+oppId+'_'+n; }
 // Görev senkronu (telafili; CRM açıldığında/60 sn'de): ilk program hemen, revizyonlar vadesine 3 gün kala açılır.
 async function projectScheduleSync(){
-  if(!state.currentUser || state.testMode) return;
+  if(!state.currentUser) return;   // Deneme/test modunda da çalışır (görevler yalnız bellekte açılır, veritabanına yazılmaz)
   (state.opportunities||[]).filter(ipApplies).forEach(async function(o){
     const n=ipList(o).length, due=ipNextDue(o), key=ipTaskKey(o.id,n);
     if(n>0 && _diffDays(due) > IP_ONCE_ACILIS_GUN) return;
@@ -12129,6 +12130,14 @@ function projListRow(o, isAdmin){
     ),
     h('span',{style:{background:meta.color+'18',color:meta.color,border:'1px solid '+meta.color+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},meta.icon+' '+meta.l),
     (!o.execClosedAt && !hkDay(o))?h('span',{style:{background:'#dc2626',color:'#fff',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800'}},'⚠ Hakediş günü yok'):h('span'),
+    ipApplies(o) ? (function(){
+      const l=ipList(o), due=ipNextDue(o), late=_diffDays(due)<0;
+      const chip=h('span',{style:{background:late?'#fee2e2':'#ccfbf1',color:late?'#b91c1c':'#0f766e',border:'1px solid '+(late?'#fca5a5':'#5eead4'),borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800',whiteSpace:'nowrap'}},
+        '📆 '+(l.length ? (ipLabel(l[l.length-1].no)+' · sonraki '+ipFmtShort(due)) : 'İlk program bekleniyor')+(late?' (gecikti)':''));
+      const bt=btn('📆 İş Programı',function(){ setState({modal:{type:'isprogrami', oppId:o.id}}); },'linear-gradient(135deg,#14b8a6,#0f766e)','#fff','6px 12px',{fontSize:'12px'});
+      bt.addEventListener('click',function(e){ e.stopPropagation(); });   // satırın "proje aç" tıklamasını tetiklemesin
+      return h('span',{style:{display:'inline-flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},chip,bt);
+    })() : h('span'),
     open?h('span',{style:{background:'#fef2f2',color:'#dc2626',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},open+' açık görev'):h('span',{style:{color:'#16a34a',fontSize:'12px',fontWeight:'700'}},'✓ temiz')
   );
 }
