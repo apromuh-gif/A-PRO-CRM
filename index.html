@@ -11646,7 +11646,7 @@ const TR_DINI_TATIL = {
 };
 const TR_SABIT_TATIL = [['01-01','Yılbaşı'],['04-23','Ulusal Egemenlik ve Çocuk Bayramı'],['05-01','Emek ve Dayanışma Günü'],['05-19',"Atatürk'ü Anma, Gençlik ve Spor Bayramı"],['07-15','Demokrasi ve Millî Birlik Günü'],['08-30','Zafer Bayramı'],['10-28','Cumhuriyet Bayramı arifesi (yarım gün)',1],['10-29','Cumhuriyet Bayramı']];
 const IP_MAX_HAFTA = 104;
-function ipNewRow(){ return { id:genId(), phase:'A', name:'', start:'', end:'', pct:0, ms:false }; }
+function ipNewRow(){ return { id:genId(), phase:'A', name:'', sel:[], pct:0, ms:false }; }   // sel = boyanan hafta numaraları (0 tabanlı)
 function ipNormPlan(o){
   const p = o && o.isProgramiPlan ? JSON.parse(JSON.stringify(o.isProgramiPlan)) : {};
   p.start = p.start || String((o&&o.execStartedAt)||today()).slice(0,10);
@@ -11686,16 +11686,17 @@ function ipWeekIndex(weeks, iso){
   for(let i=0;i<weeks.length;i++){ if(d>=weeks[i].a && d<=weeks[i].b) return i; }
   return weeks.length-1;
 }
-function ipRowSpan(plan, weeks, r){
-  if(!r.start || !r.end) return null;
-  let f=ipWeekIndex(weeks, r.start), t=ipWeekIndex(weeks, r.end);
-  if(f<0||t<0) return null; if(t<f) t=f;
-  return {from:f, to:t};
+// Bir işin boyalı haftaları (sıralı, geçerli). Eski kayıtlar (başlangıç/bitiş tarihli) haftalara çevrilir.
+function ipRowWeeks(plan, weeks, r){
+  const W=weeks.length; let sel=Array.isArray(r.sel)?r.sel.slice():[];
+  if(!sel.length && r.start && r.end){ const f=ipWeekIndex(weeks,r.start), t=ipWeekIndex(weeks,r.end); if(f>=0 && t>=f) for(let i=f;i<=t;i++) sel.push(i); }
+  return sel.filter(function(i,k,a){ return Number.isInteger(i) && i>=0 && i<W && a.indexOf(i)===k; }).sort(function(a,b){ return a-b; });
 }
+function ipRowSpan(plan, weeks, r){ const w=ipRowWeeks(plan,weeks,r); return w.length ? {from:w[0], to:w[w.length-1]} : null; }
 // Genel ilerleme: işlerin süresine (hafta) göre ağırlıklı ortalama.
 function ipProgress(plan){
   const weeks=ipWeeks(plan); let sum=0, tot=0;
-  (plan.rows||[]).forEach(function(r){ const sp=ipRowSpan(plan,weeks,r); if(!sp) return; const len=sp.to-sp.from+1; sum+=(Number(r.pct)||0)*len; tot+=len; });
+  (plan.rows||[]).forEach(function(r){ const len=ipRowWeeks(plan,weeks,r).length; if(!len) return; sum+=(Number(r.pct)||0)*len; tot+=len; });
   return tot ? Math.round(sum/tot) : 0;
 }
 function ipFmt(iso){ const d=String(iso||'').slice(0,10); return d.length===10 ? (d.slice(8,10)+'.'+d.slice(5,7)+'.'+d.slice(0,4)) : ''; }
@@ -11778,23 +11779,24 @@ function ipBuildPages(o, plan, revLabel, prevPlan){
   const rowHTML=function(it){
     if(it.band){ const ph=IP_PH[it.phase]||['',''+'#475569']; const c=ph[1]||'#475569';
       return '<tr><td colspan="'+NC+'" class="ph" style="background:'+c+'1a;color:'+c+';border-left:5px solid '+c+'">'+_ipEsc(ph[0]||'DİĞER')+'</td></tr>'; }
-    const r=it.row, c=(IP_PH[r.phase]||[0,'#475569'])[1], sp=ipRowSpan(plan,weeks,r);
-    const pr=prevMap[r.id], psp=pr?ipRowSpan(plan,weeks,pr):null;
-    const ghostOn = psp && sp && (psp.from!==sp.from || psp.to!==sp.to);
-    let cells='', j=0;
+    const r=it.row, c=(IP_PH[r.phase]||[0,'#475569'])[1];
+    const sel=ipRowWeeks(plan,weeks,r), selSet={}; sel.forEach(function(i){ selSet[i]=1; });
+    const pr=prevMap[r.id], psel=(pr && prevPlan && prevPlan.start===plan.start) ? ipRowWeeks(plan,weeks,pr) : [], pset={};
+    if(psel.join()!==sel.join()) psel.forEach(function(i){ pset[i]=1; });
+    const done=Math.round(Math.max(0,Math.min(100,Number(r.pct)||0))/100*sel.length);
+    let cells='', j=0, cnt=0;
     while(j<W){
-      if(sp && j===sp.from){
-        const L=sp.to-sp.from+1;
-        if(r.ms){ cells+='<td class="wk'+(j===todayW?' td':'')+'" style="text-align:center"><span style="color:'+c+';font-size:15px;line-height:20px">◆</span></td>'; j++; continue; }
-        const p=Math.max(0,Math.min(100,Number(r.pct)||0));
-        cells+='<td colspan="'+L+'" class="wk"><div class="ipg-bar" style="border-color:'+c+'99;background:'+c+'33"><i style="width:'+p+'%;background:'+c+'"></i></div></td>';
+      if(selSet[j]){
+        if(r.ms){ cells+='<td class="wk'+(j===todayW?' td':'')+'" style="text-align:center"><span style="color:'+c+';font-size:15px;line-height:20px">◆</span></td>'; j++; cnt++; continue; }
+        let L=0; while(j+L<W && selSet[j+L]) L++;
+        const dark=Math.max(0,Math.min(L,done-cnt)); cnt+=L;
+        cells+='<td colspan="'+L+'" class="wk"><div class="ipg-bar" style="border-color:'+c+'99;background:'+c+'33"><i style="width:'+Math.round(dark/L*100)+'%;background:'+c+'"></i></div></td>';
         j+=L; continue;
       }
-      const inGhost = ghostOn && j>=psp.from && j<=psp.to;
-      cells+='<td class="wk'+(inGhost?' gh':(wkHol[j]?' hl':''))+(j===todayW?' td':'')+'"></td>'; j++;
+      cells+='<td class="wk'+(pset[j]?' gh':(wkHol[j]?' hl':''))+(j===todayW?' td':'')+'"></td>'; j++;
     }
-    const s0=sp?ipFmtShort(_ipIso(weeks[sp.from].a)):'', e0=sp?ipFmtShort(_ipIso(weeks[sp.to].b)):'';
-    return '<tr><td class="no">'+it.no+'</td><td class="nm" title="'+_ipEsc(r.name)+'">'+_ipEsc(r.name)+'</td><td class="dt">'+(r.start?ipFmtShort(r.start):s0)+'</td><td class="dt">'+(r.end?ipFmtShort(r.end):e0)+'</td><td class="pc" style="color:'+c+'">%'+(Number(r.pct)||0)+'</td>'+cells+'</tr>';
+    const s0=sel.length?ipFmtShort(_ipIso(weeks[sel[0]].a)):'', e0=sel.length?ipFmtShort(_ipIso(weeks[sel[sel.length-1]].b)):'';
+    return '<tr><td class="no">'+it.no+'</td><td class="nm" title="'+_ipEsc(r.name)+'">'+_ipEsc(r.name)+'</td><td class="dt">'+s0+'</td><td class="dt">'+e0+'</td><td class="pc" style="color:'+c+'">%'+(Number(r.pct)||0)+'</td>'+cells+'</tr>';
   };
   const logoHdr='<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00 | info@a-pro.com.tr | www.a-pro.com.tr</div></div>';
   const lead=o.execSiteLead||'';
@@ -11840,8 +11842,9 @@ function ipValidatePlan(plan){
   if(Math.ceil((e-s)/86400000/7) > IP_MAX_HAFTA){ showToast('⚠️ Program en fazla '+IP_MAX_HAFTA+' hafta (2 yıl) olabilir.','#dc2626'); return false; }
   const named=(plan.rows||[]).filter(function(r){ return String(r.name||'').trim(); });
   if(!named.length){ showToast('⚠️ En az bir iş adı girilmelidir.','#dc2626'); return false; }
-  const bad=named.find(function(r){ return !r.start || !r.end || r.end<r.start; });
-  if(bad){ showToast('⚠️ "'+bad.name+'" için başlangıç ve bitiş tarihi (bitiş ≥ başlangıç) girilmelidir.','#dc2626'); return false; }
+  const _wk=ipWeeks(plan);
+  const bad=named.find(function(r){ return !ipRowWeeks(plan,_wk,r).length; });
+  if(bad){ showToast('⚠️ "'+bad.name+'" için takvimde en az bir hafta boyayın.','#dc2626'); return false; }
   return true;
 }
 // Yazdır / PDF ekranı: tüm sayfalar üst üste; ✕ Kapat, 🖨️ Yazdır, ⬇️ PDF indir.
@@ -11916,33 +11919,59 @@ function buildIsProgramiPanel(oppId){
     h('div',{},lbl('Proje bitiş *'),inp('',plan.end,function(v){ plan.end=v; rerender(); },'date',{},'change')),
     h('div',{},lbl('Şantiye / saha sorumlusu'),ro(o.execSiteLead)),
     h('div',{},lbl('Hazırlayan (formda)'),inp(o.execSiteLead||'Ad Soyad',plan.preparedBy,function(v){ plan.preparedBy=v; })));
-  // iş satırları
-  const phOpts=IP_PH_KEYS.map(function(k){ return {v:k,l:IP_PH[k][0]}; });
-  const mv=function(i,d){ const a=plan.rows; const j=i+d; if(j<0||j>=a.length) return; const t=a[i]; a[i]=a[j]; a[j]=t; rerender(); };
-  const th=function(t,w){ return h('th',{style:{background:'#1e2d4a',color:'#fff',fontSize:'11px',padding:'7px 6px',textAlign:'left',width:w||'auto'}},t); };
-  const cellS={padding:'4px 5px',borderBottom:'1px solid #e2e8f0',verticalAlign:'middle'};
+  // İŞ SATIRLARI = takvim ızgarası: işi yazın, o işin yapılacağı haftaları tıklayarak ya da sürükleyerek boyayın (tekrar tıklayınca silinir).
   const small=function(el,w){ el.style.padding='6px 8px'; el.style.fontSize='13px'; if(w) el.style.width=w; return el; };
+  const phOpts=IP_PH_KEYS.map(function(k){ return {v:k,l:IP_PH[k][0]}; });
+  const gw=ipWeeks(plan), GW=gw.length, gHol=ipHolidays(plan), gHolTxt=[], gWork=[];
+  gw.forEach(function(w,i){ const a1=_ipIso(w.a), b1=_ipIso(w.b); const hs=gHol.filter(function(x){ return x.date>=a1 && x.date<=b1; }); gHolTxt[i]=hs.map(function(x){ return ipFmtShort(x.date)+' '+x.name; }).join(', '); gWork[i]=!!(hs.length && hs.every(function(x){ return plan.workHol&&plan.workHol[x.date]; })); });
+  const mv=function(i,d){ const a=plan.rows; const j=i+d; if(j<0||j>=a.length) return; const t=a[i]; a[i]=a[j]; a[j]=t; rerender(); };
+  const thS={background:'#1e2d4a',color:'#fff',fontSize:'11px',padding:'5px 4px',textAlign:'center',border:'1px solid #334155',fontWeight:'700'};
+  const tdS={padding:'3px 4px',borderBottom:'1px solid #e2e8f0',verticalAlign:'middle'};
+  const hdr1=[h('th',{rowSpan:'2',style:Object.assign({},thS,{width:'34px'})},'No'),h('th',{rowSpan:'2',style:Object.assign({},thS,{width:'150px'})},'Faz (renk)'),h('th',{rowSpan:'2',style:Object.assign({},thS,{width:'230px'})},'Yapılacak iş'),h('th',{rowSpan:'2',style:Object.assign({},thS,{width:'58px'})},'Gerç. %'),h('th',{rowSpan:'2',style:Object.assign({},thS,{width:'26px'}),title:'Kilometre taşı'},'◆')];
+  { let i=0; while(i<GW){ const m=gw[i].a.getMonth(), y=gw[i].a.getFullYear(); let c=0; while(i+c<GW && gw[i+c].a.getMonth()===m) c++; hdr1.push(h('th',{colSpan:String(c),style:thS},IP_MONTHS[m]+' '+y)); i+=c; } }
+  hdr1.push(h('th',{rowSpan:'2',style:Object.assign({},thS,{width:'96px'})},''));
+  const hdr2=gw.map(function(w,i){ return h('th',{title:ipFmtShort(_ipIso(w.a))+' – '+ipFmtShort(_ipIso(w.b))+(gHolTxt[i]?(' · Resmî tatil: '+gHolTxt[i]):''),style:Object.assign({},thS,{minWidth:'26px',fontSize:'10px',background:gWork[i]?'#d97706':(gHolTxt[i]?'#b91c1c':'#1e2d4a')})},String(w.a.getDate())+(gHolTxt[i]?(gWork[i]?'⚒':'●'):'')); });
+  const paint={ on:false, mode:true };
+  const endPaint=function(){ if(!paint.on) return; paint.on=false; rerender(); };
   const trs=plan.rows.map(function(r,i){
-    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!r.ms; cb.title='Kilometre taşı (tek günlük teslim noktası ◆)'; cb.onchange=function(){ r.ms=cb.checked; rerender(); };
+    if(!Array.isArray(r.sel)) r.sel=ipRowWeeks(plan,gw,r);
+    const col=(IP_PH[r.phase]||[0,'#475569'])[1];
+    const cellOn=function(wi){ return r.sel.indexOf(wi)>=0; };
+    const style0=function(td,wi){ td.style.background=cellOn(wi)?col:(gHolTxt[wi]?'#fef2f2':'#fff'); };
+    const apply=function(td,wi){ const on=cellOn(wi); if(paint.mode && !on) r.sel.push(wi); else if(!paint.mode && on) r.sel.splice(r.sel.indexOf(wi),1); r.sel.sort(function(a,b){ return a-b; }); style0(td,wi); };
+    const cells=gw.map(function(w,wi){
+      const td=h('td',{title:ipFmtShort(_ipIso(w.a))+' – '+ipFmtShort(_ipIso(w.b)),style:{border:'1px solid #e2e8f0',height:'30px',cursor:'pointer',padding:'0',userSelect:'none'}});
+      style0(td,wi);
+      td._paint=function(){ apply(td,wi); };
+      td.addEventListener('mousedown',function(e){ e.preventDefault(); paint.on=true; paint.mode=!cellOn(wi); apply(td,wi); window.addEventListener('mouseup',endPaint,{once:true}); });
+      td.addEventListener('mouseenter',function(){ if(paint.on) apply(td,wi); });
+      td.addEventListener('touchstart',function(e){ e.preventDefault(); paint.on=true; paint.mode=!cellOn(wi); apply(td,wi); },{passive:false});
+      td.addEventListener('touchmove',function(e){ e.preventDefault(); const t=e.touches[0]; const el=document.elementFromPoint(t.clientX,t.clientY); if(el && el._paint) el._paint(); },{passive:false});
+      td.addEventListener('touchend',endPaint);
+      return td;
+    });
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!r.ms; cb.title='Kilometre taşı (◆)'; cb.onchange=function(){ r.ms=cb.checked; rerender(); };
+    const nm=small(inp('İş / faaliyet adı (Enter = yeni satır)',r.name,function(v){ r.name=v; })); nm.className='ip-name-input';
+    nm.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); const n=ipNewRow(); n.phase=r.phase; plan.rows.splice(i+1,0,n); PMOD.ipFocusRow=i+1; rerender(); } });
     return h('tr',{},
-      h('td',{style:Object.assign({},cellS,{textAlign:'center',fontWeight:'800'})},String(i+1)),
-      h('td',{style:cellS}, small(sel(phOpts,r.phase,function(v){ r.phase=v; rerender(); }))),
-      h('td',{style:cellS}, small(inp('İş / faaliyet adı',r.name,function(v){ r.name=v; }))),
-      h('td',{style:cellS}, small(inp('',r.start,function(v){ r.start=v; if(r.ms) r.end=v; rerender(); },'date',{},'change'))),
-      h('td',{style:cellS}, small(inp('',r.end,function(v){ r.end=v; rerender(); },'date',{},'change'))),
-      h('td',{style:cellS}, small(inp('%',r.pct,function(v){ r.pct=Math.max(0,Math.min(100,Number(v)||0)); rerender(); },'number',{},'change'),'70px')),
-      h('td',{style:Object.assign({},cellS,{textAlign:'center'})}, cb),
-      h('td',{style:Object.assign({},cellS,{whiteSpace:'nowrap'})},
+      h('td',{style:Object.assign({},tdS,{textAlign:'center',fontWeight:'800'})},String(i+1)),
+      h('td',{style:tdS}, small(sel(phOpts,r.phase,function(v){ r.phase=v; rerender(); }))),
+      h('td',{style:tdS}, nm),
+      h('td',{style:tdS}, small(inp('%',r.pct,function(v){ r.pct=Math.max(0,Math.min(100,Number(v)||0)); rerender(); },'number',{},'change'),'54px')),
+      h('td',{style:Object.assign({},tdS,{textAlign:'center'})}, cb),
+      ...cells,
+      h('td',{style:Object.assign({},tdS,{whiteSpace:'nowrap'})},
         btn('↑',function(){ mv(i,-1); },'#e8eef7','#2a5080','4px 8px',{fontSize:'12px'}), btn('↓',function(){ mv(i,1); },'#e8eef7','#2a5080','4px 8px',{fontSize:'12px'}),
         btn('🗑',function(){ plan.rows.splice(i,1); if(!plan.rows.length) plan.rows.push(ipNewRow()); rerender(); },'#fef2f2','#dc2626','4px 8px',{fontSize:'12px'})));
   });
-  const rowsTbl=h('div',{style:{overflowX:'auto',marginBottom:'8px'}},
-    h('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'860px'}},
-      h('thead',{},h('tr',{}, th('No','36px'), th('Faz (renk)','190px'), th('Yapılacak iş'), th('Başlangıç','130px'), th('Bitiş','130px'), th('Gerçekleşen %','90px'), th('◆','30px'), th('','110px'))),
-      h('tbody',{},...trs)));
-  const rowBtns=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'12px'}},
-    btn('+ İş ekle',function(){ const last=plan.rows[plan.rows.length-1]; const n=ipNewRow(); if(last) n.phase=last.phase; plan.rows.push(n); rerender(); },'#ccfbf1','#0f766e','7px 14px',{fontSize:'13px',border:'1px solid #5eead4'}),
-    btn('↕ Faza ve başlangıç tarihine göre sırala',function(){ plan.rows.sort(function(a,b){ return (IP_PH_KEYS.indexOf(a.phase)-IP_PH_KEYS.indexOf(b.phase)) || String(a.start||'9').localeCompare(String(b.start||'9')); }); rerender(); },'#e8eef7','#2a5080','7px 14px',{fontSize:'13px'}));
+  const rowsTbl=h('div',{style:{overflowX:'auto',marginBottom:'8px',border:'1px solid #cbd5e1',borderRadius:'8px'}},
+    GW ? h('table',{style:{borderCollapse:'collapse',minWidth:'100%'}}, h('thead',{},h('tr',{},...hdr1),h('tr',{},...hdr2)), h('tbody',{},...trs))
+       : h('div',{style:{padding:'18px',textAlign:'center',color:'#475569',fontSize:'13px'}},'Önce yukarıdan proje başlangıç ve bitiş tarihlerini girin — haftalık takvim otomatik oluşur.'));
+  const rowBtns=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center',marginBottom:'12px'}},
+    btn('+ İş ekle',function(){ const last=plan.rows[plan.rows.length-1]; const n=ipNewRow(); if(last) n.phase=last.phase; plan.rows.push(n); PMOD.ipFocusRow=plan.rows.length-1; rerender(); },'#ccfbf1','#0f766e','7px 14px',{fontSize:'13px',border:'1px solid #5eead4'}),
+    btn('↕ Faza göre sırala',function(){ plan.rows.sort(function(a,b){ const fa=ipRowWeeks(plan,gw,a), fb=ipRowWeeks(plan,gw,b); return (IP_PH_KEYS.indexOf(a.phase)-IP_PH_KEYS.indexOf(b.phase)) || ((fa[0]==null?999:fa[0])-(fb[0]==null?999:fb[0])); }); rerender(); },'#e8eef7','#2a5080','7px 14px',{fontSize:'13px'}),
+    h('span',{style:{fontSize:'12px',color:'#475569'}},'💡 İşi yazın → haftaları tıklayın ya da fare basılı sürükleyerek boyayın. Boyalı haftaya tekrar tıklayınca silinir.'));
+  if(PMOD.ipFocusRow!=null){ const fi=PMOD.ipFocusRow; PMOD.ipFocusRow=null; setTimeout(function(){ const els=document.querySelectorAll('.ip-name-input'); if(els[fi]) els[fi].focus(); },30); }
   // tatiller
   const hol=ipHolidays(plan);
   const holRows=hol.map(function(x){

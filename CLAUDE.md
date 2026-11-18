@@ -115,3 +115,11 @@ Kullanıcı kararı (18 Kasım 2026): yeni yazılan her form/modal/açılır pen
 3. **Doğrulama uyarısı formu sıfırlamaz.** Uyarı için `showToast(...)` kullan (pencere açıkken yeniden çizim yapmaz). Form açıkken `setState/render()` ile yeniden çizim tetikleme; yeniden çizim gerekiyorsa taslağı `PMOD`/üst kapsamda tut ki girilen bilgiler kaybolmasın. Kaydet başarısız olursa (hata) form AÇIK ve DOLU kalır, hata kırmızı uyarıyla gösterilir.
 4. **Eksik/hatalı alan** adıyla söylenir ("… girilmelidir"); doğrulama Kaydet'e basınca yapılır, girilenler silinmez.
 5. Yazdır / PDF ekranları da aynı: yalnız ✕ Kapat ile kapanır.
+
+
+## DEPLOY SONRASI CANLI DOĞRULAMA (ZORUNLU)
+Kullanıcı kararı (18 Kasım 2026): her `git push` sonrası değişikliğin **canlıya geçtiği kontrol edilir** ve geçince kullanıcıya haber verilir ("canlıya geçti" demeden önce doğrula).
+- Canlı adres: `https://apromuh-gif.github.io/A-PRO-CRM/` (GitHub Pages; yayın ~1–3 dk).
+- Doğrulama: değişikliğe özgü bir ifadeyi (yeni fonksiyon/etiket adı) canlı sayfada ara: `curl -s "https://apromuh-gif.github.io/A-PRO-CRM/?cb=$RANDOM" | grep -q "<ifade>"` döngüsüyle 20 sn arayla (en fazla ~20 dk) arka planda (`run_in_background`) bekle; bulununca haber ver. Zaman aşımında "doğrulanamadı" de.
+- Kullanıcıya hatırlat: sayfayı sert yenile (Cmd+Shift+R) ve neyi kontrol edeceğini kısaca söyle.
+- Teklif Programı değişikliği de varsa ayrıca doğrulanır (bkz. Teklif Programı `CLAUDE.md`).
