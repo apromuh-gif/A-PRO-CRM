@@ -3250,11 +3250,12 @@ function buildPropModal(item) {
     h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'“Gönderildi” durumu elle seçilemez: teklif Teklif Programı’nda gönderilince otomatik atanır ve fırsat otomatik açılır.'),
     field('Fırsat bağlantısı (ops.)',fOpp),
     h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'Boş bırakırsan teklif “Gönderildi” olduğunda fırsat otomatik açılır (satış temsilcisi ve tutar buradan alınır). Mevcut bir fırsata bağlamak için seç.'),
-    row(field('Talep Tarihi',fCreated,true),field('Dead Line *',fValid,true)),
+    row(field('Talep Tarihi',fCreated,true),field('Son Gönderim Tarihi *',fValid,true)),
+    h('div',{style:{fontSize:'11px',color:T4,margin:'-8px 0 10px'}},'Son Gönderim Tarihi: teklifin müşteriye gönderilmesi gereken son gün. Hazırlanıp gönderilmezse hazırlayana (ve gecikirse yöneticiye) uyarı gider.'),
     field('Gönderilme Tarihi (otomatik)',fSentDate),
     field('Notlar',fNotes),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!f.customerId && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Müşteri zorunlu — müşteri seçin.','#dc2626');return;}if(!_dupGate(f,item)) return;if(!f.salesType && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Satış Türü zorunlu — Ürün-Malzeme / Sistem / Anahtar Teslim seçin.','#dc2626');return;}if(!f.validUntil && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Dead Line zorunlu — teklifin hazırlanıp gönderilmesi gereken tarihi girin.','#dc2626');return;}if(['Gönderildi','Revize','Onaylandı'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !(f.quotationId && !f.quotationDeleted)){showToast('⚠ Teklif hazırlanmadan "'+f.status+'" yapılamaz. Önce listeden "Teklif Oluştur" veya "Teklifi Kopyala" ile teklifi hazırlayın.','#dc2626');return;}if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{if(f.title&&f.preparedBy){if(!f.customerId && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Müşteri zorunlu — müşteri seçin.','#dc2626');return;}if(!_dupGate(f,item)) return;if(!f.salesType && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Satış Türü zorunlu — Ürün-Malzeme / Sistem / Anahtar Teslim seçin.','#dc2626');return;}if(!f.validUntil && (!item || f.status==='Hazırlanıyor' || f.status==='Revize')){showToast('⚠ Son Gönderim Tarihi zorunlu — teklifin müşteriye gönderilmesi gereken son tarihi girin.','#dc2626');return;}if(['Gönderildi','Revize','Onaylandı'].indexOf(f.status)>=0 && (!item || item.status!==f.status) && !(f.quotationId && !f.quotationDeleted)){showToast('⚠ Teklif hazırlanmadan "'+f.status+'" yapılamaz. Önce listeden "Teklif Oluştur" veya "Teklifi Kopyala" ile teklifi hazırlayın.','#dc2626');return;}if(!f.salesRep && (!item || (f.status==='Gönderildi' && !f.opportunityId))){showToast('⚠ Satış Temsilcisi seçin.','#dc2626');return;}if(f.status==='Gönderildi'&&!f.sentDate)f.sentDate=today();saveProp({...f,amount:Number(f.amount)||0},!!item);}},'linear-gradient(135deg,#3b82f6,#6366f1)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -4638,7 +4639,7 @@ function buildPropListModal(title, props) {
       h('div',{style:{flex:'1',minWidth:'0'}},
         h('div',{style:{fontWeight:'700',fontSize:'13px',color:'#0f1f35',marginBottom:'3px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},p.title||'(Başlıksız)'),
         h('div',{style:{fontSize:'12px',color:'#4a6080',marginBottom:'2px'}},'🏢 '+custName),
-        p.validUntil?h('div',{style:{fontSize:'11px',color:dlColor,fontWeight:isOverdue?'700':'400'}},(isOverdue?'⚠️ Süresi geçti: ':'⏰ Dead Line: ')+_toTR(p.validUntil)):h('span')
+        p.validUntil?h('div',{style:{fontSize:'11px',color:dlColor,fontWeight:isOverdue?'700':'400'}},(isOverdue?'⚠️ Süresi geçti: ':'⏰ Son gönderim: ')+_toTR(p.validUntil)):h('span')
       ),
       h('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'5px',flexShrink:'0'}},
         h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#1e3a6e'}},p.amount?(Number(p.amount).toLocaleString('tr-TR',{minimumFractionDigits:0}))+' €':'—'),
@@ -6699,7 +6700,7 @@ function renderProposals() {
   const _propThSticky={..._propThSt,position:'sticky',left:'0',zIndex:'2',background:'#1e2d4a',boxShadow:'3px 0 8px rgba(0,0,0,.35)'};
   const thead=h('thead',{},h('tr',{style:{background:'#1e2d4a'}},
     h('th',{style:_propThSticky},'Fırsat'),
-    ...["Müşteri","Hazırlayan","Durum","Talep Tarihi","Dead Line","Gönderilme Tarihi","Son Düzenleyen","İşlem"].map(t=>h('th',{style:_propThSt},t))
+    ...["Müşteri","Hazırlayan","Durum","Talep Tarihi","Son Gönderim Tarihi","Gönderilme Tarihi","Son Düzenleyen","İşlem"].map(t=>h('th',{style:_propThSt},t))
   ));
   const tbody=h('tbody',{});
   propFiltered.forEach((p,i)=>{
@@ -6741,7 +6742,7 @@ function renderProposals() {
             c2?h('span',{style:{background:'#eff6ff',color:'#2563eb',padding:'3px 8px',borderRadius:'12px',fontSize:'11px',fontWeight:'600'}},c2.firmName):h('span'),
             p.preparedBy?h('span',{style:{background:'#faf5ff',color:'#7c3aed',padding:'3px 8px',borderRadius:'12px',fontSize:'11px'}},'👤 '+p.preparedBy):h('span')
           ),
-          p.validUntil?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'⏰ Dead Line: '+_toTR(p.validUntil)):h('span'),
+          p.validUntil?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'⏰ Son gönderim: '+_toTR(p.validUntil)):h('span'),
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             btn('✏️ Düzenle',()=>setState({modal:{type:'proposal',item:p}}),'#eff6ff','#1d4ed8','7px 14px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px',flex:'1'}),
             ...propTeklifBtns(p,'7px 12px'),
@@ -12678,16 +12679,7 @@ function checkAllNotifications() {
     if(p.status==='Onaylandı'||p.status==='Reddedildi') return;
     if(!_propDeadlineEligible(p)) return;       // yalnız henüz GÖNDERİLMEMİŞ taslaklar (vadesinde gönderilip yanıt beklenen teklif "süresi geçti" sayılmaz)
     if(!p.validUntil) return;
-    const diff=_diffDays(_toISO(p.validUntil));
-    // 1 gün önce 08:00
-    if(diff===1 && now>=480 && now<=484) {
-      showNotification('prop_dl1_'+p.id,'⏰ Teklif Dead Line Yarın!',(p.title||'Teklif')+' · '+cn+' · '+p.validUntil,'urgent',p.preparedBy);
-    }
-    // Süresi geçti - her gün 09:00
-    if(diff<0 && now>=540 && now<=544) {
-      showNotification('prop_over_'+p.id+'_'+today(),'🚨 Teklif Süresi Geçti!',(p.title||'Teklif')+' · '+cn+' · '+Math.abs(diff)+' gün','urgent',p.preparedBy);
-      showNotification('prop_over_adm_'+p.id+'_'+today(),'🚨 Teklif Süresi Geçti',(p.title||'Teklif')+' · '+cn,'urgent','admin');
-    }
+    // Son Gönderim Tarihi (3 gün / 1 gün / gecikme) ve Taslak/Hazırlandı uyarıları: proposalAlertSweep() (telafili, bkz. aşağıda).
   });
 
   // ── TEKNİK SERVİS ──────────────────────────────────
@@ -12775,6 +12767,7 @@ function checkAllNotifications() {
   taxCalendarSync();
   proposalOppSweep();
   proposalStaleSweep();
+  proposalAlertSweep();
   leadStaleSweep();
   trashAutoPurge();
   monthlyAccountingSync();
@@ -12787,6 +12780,73 @@ const _TR_AYLAR = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','A
 // Dead Line bildirimi/gecikme için uygun mu: yeni akış talebi, henüz gönderilmemiş (Hazırlanıyor/Revize). Gönderilmiş ve eski akış kayıtlar hariç.
 function _propDeadlineEligible(p){
   return !!p && p.source!=='opportunity' && (p.status==='Hazırlanıyor' || p.status==='Revize') && !p.sentDate;
+}
+// TEKLİF TALEBİ UYARILARI (yalnız bildirim; görev açmaz → performans puanı etkilenmez). Her uyarı kişi başına BİR kez (gecikmede günde bir).
+//   B1 Taslak: Teklif Programı'nda "Hazırla"ya basılmamış → 3. gün hazırlayana, 7. gün hazırlayana + yöneticiye.
+//   B2 Hazırlandı ama gönderilmedi ("Gönderildi olarak işaretle" yapılmamış) → 2. gün hazırlayana, 5. gün hazırlayana + yöneticiye.
+//   C  Son Gönderim Tarihi: 3 gün / 1 gün kala hazırlayana; geçince her gün hazırlayana + yöneticiye; 2 gün geçince yöneticiye görev.
+// Teklifi hiç oluşturulmamış talepler proposalStaleSweep'te (7/15 gün). Potansiyeller kapsam dışı.
+// B1/B2 yalnız bu tarih ve sonrasında açılan talepler için (geriye dönük bildirim yağmasın). Teklif hiç oluşturulmamış kuralı (QUOTELESS_CUTOFF) ayrıdır.
+const ALERT_B_CUTOFF = '2026-11-18';
+function _alertOnceKey(){ const cu=state.currentUser; return 'apro_alert_once_'+((cu&&cu.email)||(cu&&cu.displayName)||'u'); }
+function _alertOnce(key){
+  try{
+    const k=_alertOnceKey(); const m=JSON.parse(localStorage.getItem(k)||'{}'); const now=Date.now();
+    if(m[key]) return false;
+    m[key]=now;
+    Object.keys(m).forEach(function(x){ if(now-m[x] > 60*86400000) delete m[x]; });   // 60 günden eski kayıtlar silinir
+    localStorage.setItem(k, JSON.stringify(m));
+    return true;
+  }catch(e){ return true; }
+}
+function proposalAlertSweep(){
+  if(!state.currentUser || state.testMode) return;
+  const cu=state.currentUser, me=cu.displayName, isAdm=!!cu.isAdmin;
+  const t0=_toDate(today());
+  const age=function(iso){ return Math.floor((t0-_toDate(String(iso).slice(0,10)))/86400000); };
+  (state.proposals||[]).forEach(function(p){
+    if(!_propDeadlineEligible(p)) return;
+    const prep=p.preparedBy, cn=_custName(p.customerId), lbl=(p.title||'Teklif')+' · '+cn;
+    const toPrep=function(key,title,body,type){ if(prep && (!isAdm || me===prep) && _alertOnce(key)) showNotification(key,title,body,type,prep); };
+    const toAdm=function(key,title,body,type){ if(isAdm && _alertOnce(key)) showNotification(key,title,body,type,'admin'); };
+    // B1 / B2 — teklif Teklif Programı'nda oluşturulmuş ama ilerlememiş
+    if(p.source==='request' && p.quotationId && !p.quotationDeleted){
+      const created=String(p.createdAt||'').slice(0,10);
+      if(created && created>=ALERT_B_CUTOFF){
+        if(p.quotationStatus==='DRAFT'){
+          const a=age(created);
+          if(a>=3) toPrep('prop_b1a_'+p.id,'📝 Teklif hâlâ Taslak',lbl+' · '+a+' gündür taslakta. Hazırsa Teklif Programı\'nda "Hazırla"ya basın.','warning');
+          if(a>=7){ toPrep('prop_b1b_'+p.id,'🚨 Teklif '+a+' gündür Taslak',lbl+' · Hazırlanıp gönderilmesi gerekiyor.','urgent');
+                    toAdm('prop_b1b_adm_'+p.id,'🚨 Taslakta bekleyen teklif',lbl+' · '+(prep||'-')+' · '+a+' gün','urgent'); }
+        } else if(p.quotationStatus==='PREPARED'){
+          const a=age(p.quotationStatusAt||p.updatedAt||created);
+          if(a>=2) toPrep('prop_b2a_'+p.id,'📤 Teklif hazır ama gönderilmedi',lbl+' · Müşteriye gönderdiyseniz Teklif Programı\'nda "Gönderildi olarak işaretle" yapın.','warning');
+          if(a>=5){ toPrep('prop_b2b_'+p.id,'🚨 Hazırlanan teklif '+a+' gündür gönderilmedi',lbl,'urgent');
+                    toAdm('prop_b2b_adm_'+p.id,'🚨 Hazırlanıp gönderilmeyen teklif',lbl+' · '+(prep||'-')+' · '+a+' gün','urgent'); }
+        }
+      }
+    }
+    // C — Son Gönderim Tarihi
+    if(p.validUntil){
+      const diff=_diffDays(_toISO(p.validUntil));
+      if(diff===3 || diff===2) toPrep('prop_c3_'+p.id,'⏰ Teklifin son gönderim tarihine '+diff+' gün',lbl+' · '+_toTR(p.validUntil),'warning');
+      if(diff===1 || diff===0) toPrep('prop_c1_'+p.id,'⏰ Teklifin son gönderim tarihi '+(diff===0?'BUGÜN':'yarın')+'!',lbl+' · '+_toTR(p.validUntil),'urgent');
+      if(diff<0){
+        const day=today();
+        toPrep('prop_cov_'+p.id+'_'+day,'🚨 Son gönderim tarihi geçti',lbl+' · '+Math.abs(diff)+' gün gecikti','urgent');
+        toAdm('prop_cov_adm_'+p.id+'_'+day,'🚨 Teklifin son gönderim tarihi geçti',lbl+' · '+(prep||'-')+' · '+Math.abs(diff)+' gün','urgent');
+        if(diff<=-2){
+          (state.users||[]).filter(function(u){ return u.isAdmin && u.active!==false && u.displayName; }).forEach(function(u){
+            const k='prop_late2_'+p.id+'_'+u.displayName;
+            if(!(state.tasks||[]).some(function(t){return t.dedupeKey===k;}))
+              autoCreateTask({ id:k, dedupeKey:k, title:'\u{1F6A8} Teklif son gönderim tarihi geçti — '+(p.title||'Talep')+' ('+(prep||'-')+')',
+                desc:'Teklifin son gönderim tarihi ('+_toTR(p.validUntil)+') 2+ gün önce geçti ve teklif hâlâ gönderilmedi. Hazırlayanla görüşün.',
+                dept:'proje', assignedTo:u.displayName, context:'genel', dueOffset:1, priority:'yuksek' });
+          });
+        }
+      }
+    }
+  });
 }
 // Süresiz taslak kontrolü: teklifi hiç oluşturulmamış taslak — 7 gün: hazırlayana görev; 15 gün: yöneticiye görev.
 // Yalnız 10.11.2026 ve sonrasında açılan, yeni akış (source 'request') talepler için (eski kayıtlar gürültü üretmesin).
@@ -13159,7 +13219,7 @@ async function syncQuotationRefs() {
           changed = true;
           continue;
         }
-        const pupd = { ...p, quotationStatus: d.status, ...syncStamp(lastEditor, lastEditedAt) };
+        const pupd = { ...p, quotationStatus: d.status, quotationStatusAt: today(), ...syncStamp(lastEditor, lastEditedAt) };
         await saveDoc('proposals', p.id, pupd);
         updatedProps = updatedProps.map(x => x.id === p.id ? pupd : x);
         changed = true;
