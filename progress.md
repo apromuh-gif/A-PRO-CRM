@@ -1086,3 +1086,35 @@ Kaldırılanlar ve sebepleri:
 - **Proje icra penceresi sekmeli (18 Kasım):** Başlık, aşama şeridi ve işlem düğmeleri üstte sabit; sekmeler **✅ Görevler | 📆 İş Programı | 📑 Hakediş | 📋 Formlar** (`buildProjeModal(oppId, tab)`, `state.modal.tab`). İş programı formu artık ayrı pencere değil, **İş Programı sekmesinin içinde** (`buildIsProgramiPanel`) + altında revizyon takibi; pencere o sekmede 1180px. Proje listesinde ayrı düğme kalktı: rozetler tıklanınca ilgili sekme açılır (📆 → İş Programı, ⚠ Hakediş günü yok → Hakediş). **Zaten icradaki projelerde ilk program vadesi özelliğin devreye girdiği günden (18.11.2026) +7 gün** (`IP_OZELLIK_TARIHI`); özellikten önce açılmış eski vadeli ilk program görevi sync'te yeni vadeye çekilir.
 - **Kalıcı kural:** "FORM / PENCERE KURALLARI" bölümü CRM ve Teklif Programı `CLAUDE.md` dosyalarına eklendi (boşluğa tıklayınca/Esc ile kapanmama, uyarı formu sıfırlamaz, hata olursa form dolu kalır; yeni pencere için `modal()` / `Modal`). CRM CLAUDE.md'deki sözdizimi testi ana (en büyük) script'i denetleyecek şekilde düzeltildi.
 - **İş programı editörü takvim ızgarasına çevrildi (18 Kasım):** İş başına başlangıç/bitiş tarihi girişi KALDIRILDI. Yalnız **proje başlangıç + bitiş** girilir; haftalık takvim (ay başlığı + hafta başlangıç günü, resmî tatil haftaları kırmızı ●/turuncu ⚒) otomatik gelir. Her iş satırında işi yazıp **haftaları tıklayarak / fare basılı sürükleyerek boyarsınız** (tekrar tıklayınca silinir; dokunmatikte de çalışır; kesintili haftalar olabilir). Enter = alttaki yeni iş satırı. Veri: satırda `sel` (0 tabanlı boyalı hafta dizisi); eski start/end'li kayıtlar otomatik haftaya çevrilir (`ipRowWeeks`). Basılı/PDF çıktıda kesintili işler parçalı çubuk, BAŞL./BİTİŞ sütunları boyalı ilk/son haftadan; doğrulama "en az bir hafta boyayın".
+
+## 18 Kasım 2026 — GÜN ÖZETİ (ilerleme durumu)
+
+### Tamamlanan ve canlıya alınan (CRM, `main`)
+| Konu | Özet | Commit |
+|---|---|---|
+| İcra kuralları | Aşama kapısı (görevler kapanmadan sonraki aşamaya/kapanışa geçilmez); sipariş formu / mobilizasyon / İSG görevleri kaldırıldı; servis-bakım-Teknik Servis görevleri her zaman yönetici onayına düşer | `5973844` |
+| Pencere/form | Boşluğa tıklayınca ve Esc ile kapanmaz; uyarı formu sıfırlamaz; kayıt hatası formu açık bırakır | `5973844`, `c518192` |
+| Periyodik bakım | Kayıt hatası artık görünür (Servet Savaşçı sorunu çözüldü, kullanıcı doğruladı); canlı senkron; **İcrayı başlat** akışı (Planlı → Randevulu → İcrada → Tamamlandı) | `5973844`, `c518192` |
+| Aylık hakediş | Hakediş kayıtları (dönem, tutar, kümülatif, durum akışı), fatura → tahsilat zinciri, **proje başına zorunlu hakediş günü** | `5973844` |
+| Teklif talebi | "Dead Line" → **Son Gönderim Tarihi**; Taslak / Hazırlandı-gönderilmedi / son tarih uyarıları (yalnız bildirim); servis talepleri tablosunda **Teklif** sütunu | `f5ab477`, `f4afb2a` |
+| Servis | Durumlar Kazanıldı / Kaçtı; **İcrayı başlat** adı; ilk aşama "İcra Başlangıcı"; Checklist/Servis Formu yetkili ve servis personeli açılır menü | `c518192`, `3932934` |
+| Deneme modu | Bildirimler gerçek geçmişe karışmaz (çıkışta/girişte temizlenir) | `642593f` |
+| **İş programı** | Saha sorumlusuna "İş programı hazırla" görevi, 15 günde bir revizyon görevi; proje icra penceresi **sekmeli** (Görevler / İş Programı / Hakediş / Formlar); **takvim ızgarası editörü** (proje başlangıç–bitiş, haftalık takvim otomatik, haftaları tıkla/sürükle boya, faz renkleri, ilerleme dolgusu, resmî tatil + "tatilde çalışılacak", önceki revizyon izi, Bugün çizgisi); A4 yatay antetli **Yazdır / PDF indir**, Hazırlayan–Kontrol–Onay kutuları, **Revizyon olarak kaydet** (anlık görüntü); ilk program vadesi 18.11.2026'dan +7 gün | `ee1e4ad`, `d5e6dcd`, `a0cf23e`, `83329e2`, `60d8946` |
+
+### Teklif Programı (`apro-platform`)
+- Stok pencereleri boşluğa tıklayınca / Esc ile kapanmaz (`061e5db`, Vercel `success`).
+- `CLAUDE.md`: form/pencere kuralları (`322c5e3`) ve deploy sonrası canlı doğrulama (`c4505fb`); **yöntem `gh` ile güncellendi, commit bekliyor**.
+
+### Kalıcı çalışma kuralları (CLAUDE.md'ye yazıldı)
+- Form/pencere kuralları (CRM + Teklif Programı).
+- Her push sonrası canlı doğrulama: CRM = canlı sayfada özgün ifade aranır; Teklif Programı = `gh api …/commits/<sha>/status` → `success`. Doğrulanmadan "canlıya geçti" denmez.
+- Sözdizimi testi ana (en büyük) `<script>`'i denetler (eski örnek yanlış betiği denetliyordu).
+
+### Açık kalanlar / dikkat
+- **Her aktif projede hakediş günü seçilmeli** (seçilmeden aşama geçişi ve aylık hakediş görevi kapalı).
+- Canlıda **PDF indirme** (html2canvas + jsPDF, cdnjs) henüz gerçek tarayıcıda denenmedi; başarısız olursa Yazdır → "PDF olarak kaydet".
+- Dinî bayram tarihleri **2026–2027** tanımlı; 2028+ için "özel tatil ekle" kullanılır.
+- Eski projelerde elle silinecek/kapatılacak görevler: Sipariş formu, Mobilizasyon, İSG (aşama kapısını kilitlemez).
+- "İcra bekleyen" projelerde (Henkel, Limak) iş programı **İcraya başlat** ile açılır; bekleme döneminde hazırlanabilsin isteniyorsa ayrı iş.
+- Önceki açıklar sürüyor: Vitra Karo Eczacıbaşı / The Bodrum Edition bakım kayıtları, bakım tutarları, 12 ay üst sınırı, izin/yokluk bilgisi yok, görev silme logu yok, TİCARİ CRM anahtar sorusu.
+- Teklif Programı'na `/api/version` ucu eklenmesi önerildi, onaylanmadı (artık `gh` ile doğrulanıyor, gerekmeyebilir).
