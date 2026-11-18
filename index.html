@@ -7180,6 +7180,7 @@ async function clSave(c){
   if(!(c.staffSign && c.staffSign.dataURL)) missing.push('A-Pro Yetkilisi imzası');
   if(!(c.custSign && c.custSign.name)) missing.push('Müşteri İlgilisi adı');
   if(!(c.custSign && c.custSign.dataURL)) missing.push('Müşteri İlgilisi imzası');
+  if(c.formType==='bakim' && !c.foyDelivered) missing.push('Müşteri Kontrol Föyü müşteriye teslim edildi onayı');
   if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
   c.status = 'tamam';
   c.completedAt = today();          // Y2: imza tarihi — tazelik kontrolü bunu okur, createdAt'ı değil
@@ -7902,7 +7903,7 @@ function clSystemCard(c, sys, idx){
     (meta.subs && meta.subs.length) ? h('div',{style:{flex:'0 0 150px'}}, _clSelect(
       [{v:'',l:'Alt-tip seçin…'}].concat(meta.subs), sys.subType, function(v){ sys.subType=v; clLoadItems(c,sys); _clRerender(); })) : '',
     (c.formType==='bakim') ? h('div',{style:{flex:'0 0 140px'}}, _clSelect(
-      [{v:'',l:'Ziyaret frekansı…'},{v:'haftalik',l:'Haftalık'},{v:'aylik',l:'Aylık'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'},{v:'3yillik',l:'3 Yıllık (kapsamlı)'},{v:'5yillik',l:'5 Yıllık (kapsamlı)'},{v:'10yillik',l:'10 Yıllık (kapsamlı)'}],
+      [{v:'',l:'Ziyaret frekansı…'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'},{v:'3yillik',l:'3 Yıllık (kapsamlı)'},{v:'5yillik',l:'5 Yıllık (kapsamlı)'},{v:'10yillik',l:'10 Yıllık (kapsamlı)'}],
       sys.visitFreq, function(v){ sys.visitFreq=v; clLoadItems(c,sys); _clRerender(); })) : '',
     btn('✓ Tümü uygun', function(){ (sys.items||[]).forEach(function(it){ if(!it.result) it.result='uygun'; }); _clRerender(); }, '#16a34a', '#fff', '7px 12px', {fontSize:'12px'}),
     btn('↻ Maddeler', function(){ clLoadItems(c,sys); _clRerender(); }, '#0891b2', '#fff', '7px 12px', {fontSize:'12px'}),
@@ -7969,6 +7970,9 @@ function buildChecklistModal(c){
       h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginTop:'8px'}},
         h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Müşteri ilgilisi telefon'),
           h('input',{value:c.custPhone||'', placeholder:'Telefon', oninput:function(e){ c.custPhone=e.target.value; }, style:_clInputStyle()})))) : h('span');
+  var foyBox = (c.formType==='bakim') ? h('label',{style:{display:'flex',gap:'10px',alignItems:'center',marginTop:'12px',padding:'10px 12px',background:'#fef2f2',border:'1px solid #fecaca',borderLeft:'4px solid #c00000',borderRadius:'8px',fontSize:'13px',fontWeight:'700',color:'#7f1d1d',cursor:'pointer'}},
+      h('input',Object.assign({type:'checkbox'}, c.foyDelivered?{checked:'checked'}:{}, {onchange:function(e){ c.foyDelivered=!!e.target.checked; c.foyDeliveredAt=e.target.checked?today():''; }, style:{accentColor:'#c00000',width:'18px',height:'18px',flexShrink:'0'}})),
+      h('span',{}, 'Müşteri Kontrol Föyü (haftalık / aylık kontroller) çıktısı alınıp müşteri ilgilisine teslim edildi — rapor kaydı için zorunlu')) : h('span');
   var signs = h('div',{style:{marginTop:'14px',paddingTop:'14px',borderTop:'2px solid #e2e8f0'}},
     h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}}, 'İmzalar (dijital + ıslak)'),
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
@@ -7983,10 +7987,10 @@ function buildChecklistModal(c){
     btn('Kapat', function(){ setState({modal:null}); }, '#64748b'));
   var tools = (c.formType==='bakim') ? h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'12px'}},
       btn('📖 NFPA 25 (açık erişim)', function(){ window.open(NFPA25_URL,'_blank','noopener'); }, '#7c3aed','#fff','7px 12px',{fontSize:'12px'}),
-      h('span'),
-      h('span',{style:{fontSize:'11px',color:'#64748b',alignSelf:'center'}},'Teknik servis ilgilisi maddeleri işaretler (Uygun / Uygun Değil / N/A), yapılan işlemi yazar ve imzalar; müşteri imzalar. Rapor PDF/yazdır ile müşteriye teslim edilir (ayrı Servis Formu gerekmez).'))
+      btn('📄 Müşteri Kontrol Föyü', function(){ clOwnerFoyOpen(c); }, '#c00000','#fff','7px 12px',{fontSize:'12px'}),
+      h('span',{style:{fontSize:'11px',color:'#64748b',alignSelf:'center'}},'Teknik servis ilgilisi maddeleri işaretler (Uygun / Uygun Değil / N/A), yapılan işlemi yazar ve imzalar; müşteri imzalar. Rapor PDF/yazdır ile müşteriye teslim edilir (ayrı Servis Formu gerekmez). Haftalık / aylık kontroller müşteriye ait olduğundan bu raporda yoktur; Müşteri Kontrol Föyü her bakımda müşteriye teslim edilir.'))
     : h('span');
-  var body = h('div',{}, tools, header, ...systems, addBtn, workBox, signs, footer);
+  var body = h('div',{}, tools, header, ...systems, addBtn, workBox, foyBox, signs, footer);
   return modal(FORMTYPE_META[c.formType]||'Servis Checklist', body, function(){ setState({modal:null}); }, '900px');
 }
 // ── PDF ──
@@ -10563,9 +10567,15 @@ function clItems(formType, sysKey, subType){
 }
 // Frekans sırası (sık→seyrek). Ziyaret frekansı F seçilince rank(item) <= rank(F) gösterilir.
 function clFreqRank(f){ return ({haftalik:0, aylik:1, '3aylik':2, '6aylik':3, yillik:4, '3yillik':5, '5yillik':6, '10yillik':7})[f]; }
+// Haftalık / aylık kontroller sistem sahibinin (müşterinin) sorumluluğundadır; periyodik bakım raporunda yer almaz,
+// ayrı "Müşteri Kontrol Föyü" olarak teslim edilir. İstisna: sözleşmesi haftalık/aylık ziyaretli ise A-PRO yapar.
+function clOwnerItems(system){
+  return clItems('bakim', system.sysKey, system.subType || '').filter(function(i){ return i.freq==='haftalik' || i.freq==='aylik'; });
+}
 function clVisitItems(system){
   var items = clItems('bakim', system.sysKey, system.subType || '');
-  var vf = system.visitFreq; if(vf === undefined || vf === '') return items;
+  var vf = system.visitFreq;
+  if(vf !== 'haftalik' && vf !== 'aylik') items = items.filter(function(i){ return i.freq!=='haftalik' && i.freq!=='aylik'; }); if(vf === undefined || vf === '') return items;
   var vr = clFreqRank(vf); if(vr === undefined) return items;
   return items.filter(function(i){ var r = clFreqRank(i.freq); return r !== undefined && r <= vr; });
 }
@@ -12122,7 +12132,7 @@ function rpBuildPages(c){
       +((sign&&sign.dataURL)?'<img alt="" src="'+sign.dataURL+'" style="position:absolute;right:12px;top:4px;height:56px;max-width:55%">':'')+'<div class="sg">İmza</div></div></div>';
   };
   const workBoxHtml=(c.workDesc && String(c.workDesc).trim()) ? '<div class="rpg-box"><h5>YAPILAN İŞLEMLER</h5><div style="padding:3px 8px;font-size:9px;line-height:1.4;white-space:pre-wrap">'+_ipEsc(String(c.workDesc).trim())+'</div></div>' : '';
-  const tail='<div class="rpg-sum"><b>ÖZET</b> · Toplam madde: '+(stats.uygun+stats.uygundegil+stats.na+stats.bos)+' · <span style="color:#15803d">Uygun: '+stats.uygun+'</span> · <span style="color:#b91c1c">Uygun değil: '+stats.uygundegil+'</span> · N/A: '+stats.na+(stats.bos?(' · <span style="color:#b45309">İşaretlenmemiş: '+stats.bos+'</span>'):'')+'</div>'
+  const tail='<div class="rpg-sum"><b>ÖZET</b> · Toplam madde: '+(stats.uygun+stats.uygundegil+stats.na+stats.bos)+' · <span style="color:#15803d">Uygun: '+stats.uygun+'</span> · <span style="color:#b91c1c">Uygun değil: '+stats.uygundegil+'</span> · N/A: '+stats.na+(stats.bos?(' · <span style="color:#b45309">İşaretlenmemiş: '+stats.bos+'</span>'):'')+(isBakim&&c.foyDelivered?(' · Müşteri Kontrol Föyü teslim edildi'+(c.foyDeliveredAt?(' ('+ipFmt(c.foyDeliveredAt)+')'):'')):'')+'</div>'
     +'<div class="rpg-box"><h5>TESPİT EDİLEN EKSİKLİKLER / UYGUN OLMAYAN MADDELER</h5>'+(findings.length?('<ol>'+findings.slice(0,10).map(function(f){ return '<li><b>'+_ipEsc(f.sys)+':</b> '+_ipEsc(f.label)+(f.note?(' — <i>'+_ipEsc(f.note)+'</i>'):'')+'</li>'; }).join('')+(findings.length>10?('<li>… ve '+(findings.length-10)+' madde daha (tabloya bakınız)</li>'):'')+'</ol>'):'<div style="padding:3px 8px;font-size:9px;color:#15803d">Uygun olmayan madde tespit edilmemiştir.</div>')+'</div>'
     +workBoxHtml
     +(notes.length?('<div class="rpg-box"><h5>EK NOTLAR</h5><div style="padding:3px 8px;font-size:9px;line-height:1.4">'+notes.map(_ipEsc).join('<br>')+'</div></div>'):'')
@@ -12137,6 +12147,39 @@ function rpBuildPages(c){
       +(isLast?tail:'')
       +'<div class="ipg-ft"><span>A-PRO Mühendislik Ltd. Şti. — '+_ipEsc(RP_TITLE.charAt(0)+RP_TITLE.slice(1).toLowerCase())+' · '+_ipEsc(c.siteName||'')+'</span><span>www.a-pro.com.tr</span><span>Sayfa '+(pi+1)+' / '+total+'</span></div></div>';
   });
+}
+
+// ── MÜŞTERİ KONTROL FÖYÜ: sistem sahibinin yapması gereken haftalık / aylık kontroller (her bakımda müşteriye teslim edilir) ──
+function clOwnerFoyOpen(c){
+  c = normChecklist(c);
+  const systems=(c.systems||[]).filter(function(x){ return x.sysKey; });
+  if(!systems.length){ showToast('⚠️ Önce en az bir sistem ekleyin.','#dc2626'); return; }
+  const cust=(state.customers||[]).find(function(x){ return x.id===c.customerId; });
+  const tech=(c.staffSign&&c.staffSign.name)||'';
+  const stds=[]; systems.forEach(function(x){ const m=SYS_META[x.sysKey]; if(m&&m.std&&stds.indexOf(m.std)<0) stds.push(m.std); });
+  const blocks=[
+    {k:'html', html:'<div class="ipg-title">MÜŞTERİ KONTROL FÖYÜ</div><div class="ipg-sub">Sistem sahibi / işletmeci tarafından yapılması gereken haftalık ve aylık kontroller</div>'},
+    {k:'html', html:docInfoTable([
+      ['İşveren','<b>'+_ipEsc(cust?cust.firmName:'—')+'</b>','Teslim tarihi',ipFmt(c.createdAt||today())],
+      ['Proje / iş adı',_ipEsc(c.siteName||'—'),'Teslim eden (A-PRO)','<b>'+_ipEsc(tech||'—')+'</b>'],
+      ['Uygulanan standart',_ipEsc(stds.join(' · ')||'NFPA 25')] ])},
+    {k:'html', html:'<div class="dc-p">Yangın koruma sistemlerinin haftalık ve aylık muayene / kontrolleri, ilgili standartlar gereği sistem sahibinin (işletmecinin) sorumluluğundadır. A-PRO periyodik bakım ziyareti bu kontrolleri kapsamaz; aşağıdaki liste sistem bazında, sizin tarafınızdan yapılacak kontrolleri gösterir. Her kontrolün tarihini, yapan kişiyi ve sonucunu kaydedin; kayıtlar bir sonraki bakım ziyaretine kadar saklanmalıdır. Uygun olmayan bir durumda vakit kaybetmeden A-PRO Teknik Servis ile iletişime geçin: Tel: +90 (312) 481 25 00.</div>'}
+  ];
+  systems.forEach(function(sys){
+    const m=SYS_META[sys.sysKey]||{l:sys.sysKey,std:''};
+    const sl=rpSubLabel(sys);
+    const items=clOwnerItems(sys);
+    blocks.push({k:'sec', title:_ipEsc(m.l)+(sl?(' · '+_ipEsc(sl)):'')+' — '+_ipEsc(m.std||'')});
+    if(!items.length){ blocks.push({k:'html', html:'<div class="dc-p" style="color:#666">Bu sistem için tanımlı haftalık / aylık müşteri kontrolü yok.</div>'}); return; }
+    const rows=items.map(function(it,i){
+      return '<tr><td style="text-align:center">'+(i+1)+'</td><td>'+_ipEsc(it.label)+'</td><td style="text-align:center">'+_ipEsc(FREQ_META[it.freq]||it.freq)+'</td><td></td><td></td><td style="text-align:center">☐ Uygun<br>☐ Uygun değil</td></tr>';
+    });
+    blocks.push({k:'table', cols:[26,0,50,56,56,86], head:['No','KONTROL MADDESİ','PERİYOT','TARİH','YAPAN','SONUÇ'], rows:rows, keepWith:true});
+  });
+  blocks.push({k:'sec', title:'Teslim'});
+  blocks.push({k:'html', html:docSignBoxes({title:'Teslim eden — A-PRO servis personeli',name:tech,unvan:'Teknik Servis',sign:c.staffSign},{title:'Teslim alan — Müşteri ilgilisi',name:c.custSign&&c.custSign.name,unvan:'İşveren Yetkilisi',sign:c.custSign})+'<div class="rpg-std">Bu föy, '+_ipEsc(rpStdSources(stds))+' standartlarındaki sistem sahibi muayene sorumluluklarına göre hazırlanmıştır. Periyodik bakım raporuyla birlikte müşteriye teslim edilir.</div>'});
+  const pages=docPaginate(blocks, 'Müşteri Kontrol Föyü · '+(c.siteName||''));
+  docShowOverlay(pages, '📄 Müşteri Kontrol Föyü', 'Musteri-Kontrol-Foyu_'+ipSlug(c.siteName||'bakim')+'_'+(c.createdAt||today()));
 }
 function rpOpenPrint(c, autoPdf){
   const pages=rpBuildPages(c);
