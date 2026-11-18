@@ -3438,7 +3438,7 @@ function buildMaintModal(item) {
       mtUtilRow
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{ if(!String(f.jobName||'').trim()){ showToast('⚠ İşin adı zorunludur.','#dc2626'); return; } if(!f.assignedTo){ showToast('⚠ Satış Temsilcisi zorunludur — servis hedefine yazılması için seçin.','#dc2626'); return; } var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,eurRateDate:f.eurRateDate||'',mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; saveMaint(_rec,!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{ if(!String(f.jobName||'').trim()){ showToast('⚠ İşin adı zorunludur.','#dc2626'); return; } if(!f.assignedTo){ showToast('⚠ Satış Temsilcisi zorunludur — servis hedefine yazılması için seçin.','#dc2626'); return; } var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); if(sys.length && !_isSaneISODate(f.mtEndDate)){ showToast('⚠ Bitiş tarihi girilmelidir — ziyaret programı ve yıllık testlerin hangi bakımda yapılacağı buna göre hesaplanır.','#dc2626'); return; } var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,eurRateDate:f.eurRateDate||'',mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; saveMaint(_rec,!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -3446,7 +3446,8 @@ function buildMaintModal(item) {
 }
 
 // Çok-sistemli periyodik bakım editörü (NFPA iç-içe zamanlama).
-const MT_FREQ_OPTS = [{v:'',l:'-- Periyot --'},{v:'aylik',l:'Aylık'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'}];
+// Sözleşme periyodu = YILLIK BAKIM SAYISI (3 aylık = yılda 4, 6 aylık = yılda 2, yıllık = yılda 1). Aylık seçenek kaldırıldı (yalnız eski aylık kayıtta görünür).
+const MT_FREQ_OPTS = [{v:'',l:'-- Yıllık bakım sayısı --'},{v:'3aylik',l:'Yılda 4 bakım (3 aylık)'},{v:'6aylik',l:'Yılda 2 bakım (6 aylık)'},{v:'yillik',l:'Yılda 1 bakım (yıllık)'}];
 function maintHasSystems(m){ return !!(m && Array.isArray(m.mtSystems) && m.mtSystems.length); }
 // Tarayıcı tarih alanı yazarken ara-değer (ör. yıl "0020") üretebilir; bu, ISO formatı
 // geçerli görünse de mantıksız yıllarla (1920 vb.) devasa/anlamsız program listeleri
@@ -3472,13 +3473,16 @@ function maintSysSection(f){
   if(!Array.isArray(f.mtSystems)) f.mtSystems=[];
   const base = f.mtBaseDate || f.appointmentStart || f.createdAt || today();
   f.mtBaseDate = base;
-  const endDate = f.mtEndDate || f.appointmentEnd || '';
+  let endDate = f.mtEndDate || f.appointmentEnd || '';
+  if(!endDate && _isSaneISODate(base)) endDate = _addMonth(base, 12);   // bitiş tarihi boşsa baz + 12 ay otomatik (elle değiştirilebilir)
   f.mtEndDate = endDate;
   const rerender = ()=>setState({modal:{type:'maintenance',item:JSON.parse(JSON.stringify(f))}});
   const sysOpts = [{v:'',l:'-- Sistem --'}, ...Object.keys(SYS_META).map(k=>({v:k,l:SYS_META[k].l}))];
   const fBase = inp('', base, v=>{
     if(v && !_isSaneISODate(v)){ showToast('⚠️ Geçersiz tarih. Yıl 4 haneli olmalı (ör. 28.02.2027).','#d97706'); return; }
+    const _oldAutoEnd = _isSaneISODate(f.mtBaseDate) ? _addMonth(f.mtBaseDate, 12) : '';
     f.mtBaseDate=v;
+    if(v && (!f.mtEndDate || f.mtEndDate===_oldAutoEnd)) f.mtEndDate = _addMonth(v, 12);   // otomatik doldurulmuş bitiş tarihi baz tarihle birlikte kayar; elle girilmişse korunur
     f.mtSystems = f.mtSystems.map(s=> s.freq ? Object.assign({}, s, {due: mtSysFirstDue(v, s.freq), lastDone:'', doneCount:0}) : s);
     rerender();
   }, 'date', {}, 'change');
@@ -3488,7 +3492,7 @@ function maintSysSection(f){
   }, 'date', {}, 'change');
   const rows = f.mtSystems.map((s,i)=>{
     const selSys = sel(sysOpts, s.sysKey||'', v=>{ f.mtSystems[i].sysKey=v; rerender(); });
-    const selFreq = sel(MT_FREQ_OPTS, s.freq||'', v=>{ f.mtSystems[i].freq=v; f.mtSystems[i].due=mtSysFirstDue(f.mtBaseDate, v); f.mtSystems[i].lastDone=''; f.mtSystems[i].doneCount=0; rerender(); });
+    const selFreq = sel(s.freq==='aylik' ? MT_FREQ_OPTS.concat([{v:'aylik',l:'Aylık (eski kayıt)'}]) : MT_FREQ_OPTS, s.freq||'', v=>{ f.mtSystems[i].freq=v; f.mtSystems[i].due=mtSysFirstDue(f.mtBaseDate, v); f.mtSystems[i].lastDone=''; f.mtSystems[i].doneCount=0; rerender(); });
     const dueInp = inp('', s.due||'', v=>{
       if(v && !_isSaneISODate(v)){ showToast('⚠️ Geçersiz tarih. Yıl 4 haneli olmalı (ör. 28.02.2027).','#d97706'); return; }
       f.mtSystems[i].due=v; rerender();
@@ -3524,8 +3528,8 @@ function maintSysSection(f){
   f.mtNextDue = recordDue;
   return h('div',{style:{background:'#f0fdf4',border:'1px solid #bbf7d0',borderRadius:'10px',padding:'14px',marginBottom:'11px'}},
     lbl('🔁 Periyodik Bakım Takibi (Çok Sistemli)'),
-    row(field('Sözleşme / Baz Tarihi', fBase, true), field('Bitiş Tarihi', fEndDate, true)),
-    h('div',{style:{fontSize:'11px',color:'#15803d',marginBottom:'8px'}},'ℹ️ Her sistem kendi periyodunda takip edilir. Kayıt vadesi = en erken sistem vadesi. Bitiş tarihi girilirse tüm planlanan ziyaret tarihleri (kaç kez yapılacağı dahil) otomatik hesaplanır — program en fazla 1 yıl ileriyi kapsar (aylık en fazla 12, 3 aylık en fazla 4, 6 aylık en fazla 2, yıllık en fazla 1 bakım). Vade tarihini devam eden işler için elle de değiştirebilirsiniz.'),
+    row(field('Sözleşme / Baz Tarihi', fBase, true), field('Bitiş Tarihi * (baz + 12 ay otomatik)', fEndDate, true)),
+    h('div',{style:{fontSize:'11px',color:'#15803d',marginBottom:'8px'}},'ℹ️ Her sistem kendi periyodunda takip edilir. Kayıt vadesi = en erken sistem vadesi. Bitiş tarihi girilirse tüm planlanan ziyaret tarihleri (kaç kez yapılacağı dahil) otomatik hesaplanır — program en fazla 1 yıl ileriyi kapsar (yılda 4 bakım: 4, yılda 2 bakım: 2, yılda 1 bakım: 1 ziyaret). Yıllık testler 4 bakımlıda 4., 2 bakımlıda 2. bakımda yapılır. Vade tarihini devam eden işler için elle de değiştirebilirsiniz.'),
     rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px'}},'Henüz sistem eklenmedi.'),
     btn('+ Sistem Ekle',()=>{ f.mtSystems.push({sysKey:'',freq:'',due:'',lastDone:'',doneCount:0}); rerender(); },'#dcfce7','#15803d','8px 12px',{fontSize:'12px',marginBottom:'8px'}),
     recordDue ? h('div',{style:{marginTop:'8px',paddingTop:'8px',borderTop:'1px dashed #bbf7d0'}},
@@ -7903,7 +7907,7 @@ function clSystemCard(c, sys, idx){
     (meta.subs && meta.subs.length) ? h('div',{style:{flex:'0 0 150px'}}, _clSelect(
       [{v:'',l:'Alt-tip seçin…'}].concat(meta.subs), sys.subType, function(v){ sys.subType=v; clLoadItems(c,sys); _clRerender(); })) : '',
     (c.formType==='bakim') ? h('div',{style:{flex:'0 0 140px'}}, _clSelect(
-      [{v:'',l:'Ziyaret frekansı…'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'},{v:'3yillik',l:'3 Yıllık (kapsamlı)'},{v:'5yillik',l:'5 Yıllık (kapsamlı)'},{v:'10yillik',l:'10 Yıllık (kapsamlı)'}],
+      (sys.contractFreq ? [{v:'',l:'Ziyaret frekansı…'},{v:sys.contractFreq,l:(FREQ_META[sys.contractFreq]||sys.contractFreq)+(sys.visitNo?(' · '+sys.visitNo+'. bakım'):'')}] : [{v:'',l:'Ziyaret frekansı…'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'}]).concat([{v:'3yillik',l:'3 Yıllık (kapsamlı)'},{v:'5yillik',l:'5 Yıllık (kapsamlı)'},{v:'10yillik',l:'10 Yıllık (kapsamlı)'}]),
       sys.visitFreq, function(v){ sys.visitFreq=v; clLoadItems(c,sys); _clRerender(); })) : '',
     btn('✓ Tümü uygun', function(){ (sys.items||[]).forEach(function(it){ if(!it.result) it.result='uygun'; }); _clRerender(); }, '#16a34a', '#fff', '7px 12px', {fontSize:'12px'}),
     btn('↻ Maddeler', function(){ clLoadItems(c,sys); _clRerender(); }, '#0891b2', '#fff', '7px 12px', {fontSize:'12px'}),
@@ -8365,7 +8369,7 @@ function renderMaintenances() {
     const dl=maintDaysLeft(m), cust=custById(m.customerId);
     return h('div',{style:{background:'#fff',border:'1px solid '+(stt==='geciken'?'#fca5a5':'#d0daea'),borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'}},
       h('div',{style:{flex:'1',minWidth:'160px'}},
-        h('div',{style:{fontWeight:'700',color:'#0f2040'}},(stt==='geciken'?'🔴 ':'')+(m.jobName||'(başlıksız)')+' ',maintIcraChip(m)),
+        h('div',{style:{fontWeight:'700',color:'#0f2040'}},(stt==='geciken'?'🔴 ':'')+(m.jobName||'(başlıksız)')+' ',maintIcraChip(m),maintYearlyChip(m)),
         cust?h('div',{style:{fontSize:'12px',color:T3}},'👤 '+(cust.firmName||'')):h('span'),
         h('div',{style:{fontSize:'11px',color:T4}},'Vade: '+(maintNextDue(m)?_toTR(maintNextDue(m)):'-')+' · '+(maintHasSystems(m)?(m.mtSystems.length+' sistem'):maintPeriodLabel(maintPeriod(m))))
       ),
@@ -8444,7 +8448,7 @@ function renderMaintenances() {
           h('div',{style:{fontWeight:'700',color:'#0f2040'}},e.m.jobName||'(başlıksız)'),
           h('div',{style:{fontSize:'11px',color:T4}},(cust?('👤 '+(cust.firmName||'')+' · '):'')+'🔧 '+(e.m.serviceContact||'Atanmamış')+(e.systems.length?(' · '+e.systems.join(', ')):''))),
         h('span',{style:{background:c+'18',color:c,border:'1px solid '+c+'55',borderRadius:'20px',padding:'3px 10px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},late?Math.abs(dl)+' gün gecikti':(dl===0?'Bugün':dl+' gün kaldı')),
-        (String(e.date).slice(0,10)===String(maintNextDue(e.m)).slice(0,10)) ? maintIcraChip(e.m) : h('span'),
+        (String(e.date).slice(0,10)===String(maintNextDue(e.m)).slice(0,10)) ? h('span',{},maintIcraChip(e.m),maintYearlyChip(e.m)) : h('span'),
         (String(e.date).slice(0,10)===String(maintNextDue(e.m)).slice(0,10) && !maintIcraActive(e.m)) ? maintPrimaryBtn(e.m,'6px 11px') : h('span'),
         btn('📅 Randevu',()=>maintNewAppt(e.m, late?'':e.date),'#f5f3ff','#6d28d9','6px 11px',{fontSize:'12px',border:'1px solid #c4b5fd'}),
         btn('Düzenle',()=>setState({modal:{type:'maintenance',item:e.m}}),'#eff6ff','#1d4ed8','6px 11px',{fontSize:'12px',border:'1px solid #bfdbfe'}));
@@ -8490,7 +8494,7 @@ function renderMaintenances() {
             m.preparedBy?h('span',{style:{background:'#f0fdf4',color:'#16a34a',padding:'3px 8px',borderRadius:'12px',fontSize:'11px'}},'👤 '+m.preparedBy):h('span')
           ),
           m.appointmentDate?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'📅 Bakım: '+_toTR(m.appointmentDate)):h('span'),
-          maintIcraActive(m)?h('div',{style:{marginBottom:'8px'}},maintIcraChip(m)):h('span'),
+          (maintIcraActive(m)||maintYearlyVisit(m))?h('div',{style:{marginBottom:'8px'}},maintIcraChip(m),maintYearlyChip(m)):h('span'),
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             maintPrimaryBtn(m,'8px 12px'),
             maintReportsBtn(m,'8px 12px'),
@@ -10073,6 +10077,20 @@ async function maintStartIcra(m){
   maintOpenVisitReport(m);
   showToast('🚀 İcra başlatıldı — NFPA maddelerini işaretleyin, raporu imzalayın; sonra ziyareti tamamlayın.');
 }
+// Bu ziyarette yıllık testler var mı: yılda 4 bakımda (3 aylık) 4. bakım, yılda 2 bakımda (6 aylık) 2. bakım, yılda 1 bakımda (yıllık) tek bakım.
+function maintYearlyVisit(m){
+  if(!maintHasSystems(m)) return false;
+  const due=mtRecordNextDue(m.mtSystems); if(!due) return false;
+  return mtSystemsDueOn(m.mtSystems, due).some(function(s){
+    if(!mtGenerateSchedule(m.mtBaseDate, m.mtEndDate, s.freq).length) return false;
+    const vn=(s.doneCount||0)+1;
+    return (s.freq==='3aylik' && vn===4) || (s.freq==='6aylik' && vn===2) || (s.freq==='yillik' && vn===1);
+  });
+}
+function maintYearlyChip(m){
+  if(!maintYearlyVisit(m)) return h('span');
+  return h('span',{title:'Bu ziyarette yıllık testler yapılacak (ana drenaj, trip testi vb.)', style:{background:'#fef2f2',color:'#b91c1c',border:'1px solid #fecaca',borderRadius:'20px',padding:'3px 9px',fontSize:'11px',fontWeight:'800',whiteSpace:'nowrap',marginLeft:'4px'}},'📅 Bu ziyarette yıllık testler var');
+}
 function maintIcraChip(m){
   if(!maintIcraActive(m)) return h('span');
   return h('span',{title:(m.mtIcra.by||'')+' · '+_toTR(m.mtIcra.at||''), style:{background:'#ede9fe',color:'#6d28d9',border:'1px solid #c4b5fd',borderRadius:'20px',padding:'3px 9px',fontSize:'11px',fontWeight:'800',whiteSpace:'nowrap'}},'🚀 İcrada');
@@ -10572,12 +10590,32 @@ function clFreqRank(f){ return ({haftalik:0, aylik:1, '3aylik':2, '6aylik':3, yi
 function clOwnerItems(system){
   return clItems('bakim', system.sysKey, system.subType || '').filter(function(i){ return i.freq==='haftalik' || i.freq==='aylik'; });
 }
+// Etkin ziyaret frekansı: sözleşmeden gelen (ziyaret no'lu) kayıtta sözleşme frekansı esas alınır; yalnız 3/5/10 yıllık
+// "kapsamlı" ziyaret elle seçilebilir. Yıllık testler yalnız yılda 1 bakım sözleşmesinde HER ziyarette, 3 aylık sözleşmede 4., 6 aylık sözleşmede 2. bakımda çıkar.
+function clVisitFreqEff(system){
+  var vf = system.visitFreq;
+  if(system.contractFreq && system.visitNo && vf!=='3yillik' && vf!=='5yillik' && vf!=='10yillik') return system.contractFreq;
+  return vf;
+}
+function clItemDueInVisit(item, system){
+  var vf = clVisitFreqEff(system);
+  var ir = clFreqRank(item.freq), vr = clFreqRank(vf);
+  if(ir === undefined || vr === undefined) return false;
+  if(ir <= vr) return true;
+  var vn = parseInt(system.visitNo, 10) || 0;
+  if(!vn) return false;
+  var per = ({'3aylik':4, '6aylik':2})[vf]; if(!per) return false;
+  if(item.freq === 'yillik') return vn === per;                         // yıl sonu ziyareti: 3 aylıkta 4., 6 aylıkta 2. bakım
+  if(item.freq === '6aylik' && vf === '3aylik') return vn % 2 === 0;    // 6 aylık maddeler 3 aylık sözleşmede 2. ve 4. bakımda
+  return false;
+}
 function clVisitItems(system){
   var items = clItems('bakim', system.sysKey, system.subType || '');
-  var vf = system.visitFreq;
-  if(vf !== 'haftalik' && vf !== 'aylik') items = items.filter(function(i){ return i.freq!=='haftalik' && i.freq!=='aylik'; }); if(vf === undefined || vf === '') return items;
-  var vr = clFreqRank(vf); if(vr === undefined) return items;
-  return items.filter(function(i){ var r = clFreqRank(i.freq); return r !== undefined && r <= vr; });
+  var vf = clVisitFreqEff(system);
+  if(vf !== 'haftalik' && vf !== 'aylik') items = items.filter(function(i){ return i.freq!=='haftalik' && i.freq!=='aylik'; });
+  if(vf === undefined || vf === '') return items;
+  if(clFreqRank(vf) === undefined) return items;
+  return items.filter(function(i){ return clItemDueInVisit(i, system); });
 }
 // Sonraki bakım vadesi (Faz 3b _addMonth/_addDay desenleri; timezone-safe).
 function clComputeNextDue(baseISO, visitFreq){
@@ -12121,7 +12159,7 @@ function rpBuildPages(c){
   const rowHTML=function(x){
     if(x.t==='band'){
       const s=x.sys, m=x.meta, sl=rpSubLabel(s);
-      return '<div class="rpg-band">'+_ipEsc(m.l)+(sl?(' · '+_ipEsc(sl)):'')+(s.visitFreq?(' · '+_ipEsc(FREQ_META[s.visitFreq]||s.visitFreq)+' bakım'):'')+'<i>'+_ipEsc(m.std||'')+(x.cont?' · (devam)':'')+'</i></div>';
+      return '<div class="rpg-band">'+_ipEsc(m.l)+(sl?(' · '+_ipEsc(sl)):'')+(s.visitFreq?(' · '+_ipEsc(FREQ_META[s.visitFreq]||s.visitFreq)+' bakım'+(s.visitNo?(' · '+s.visitNo+'. bakım'):'')):'')+'<i>'+_ipEsc(m.std||'')+(x.cont?' · (devam)':'')+'</i></div>';
     }
     if(x.t==='thead') return '<div class="rpg-r rpg-h"><span class="c1">No</span><span class="c2">KONTROL / TEST MADDESİ</span><span class="c3">PERİYOT</span><span class="c4">UYGUN</span><span class="c4">UYGUN DEĞİL</span><span class="c4">N/A</span><span class="c5">NOT</span></div>';
     const it=x.it, r=it.result||'';
@@ -12203,6 +12241,8 @@ function maintOpenVisitReport(m){
     visitLabel:(maintOccurrenceLabel(m)||''), staffSign:{name:m.serviceContact||'', dataURL:'', at:''}, systems:[] });
   dueSys.forEach(function(s){
     const sys={ sysKey:s.sysKey, subType:s.subType||'', visitFreq:s.freq||'', items:[], extraNotes:'', nextDue:'' };
+    const _sch=mtGenerateSchedule(m.mtBaseDate, m.mtEndDate, s.freq);
+    if(_sch.length){ sys.visitNo=(s.doneCount||0)+1; sys.contractFreq=s.freq; }   // sözleşmeli kayıt: kaçıncı bakım → yıllık testler 4. / 2. bakımda
     clLoadItems(c, sys); c.systems.push(sys);
   });
   setState({modal:{type:'checklist', item:c}});
