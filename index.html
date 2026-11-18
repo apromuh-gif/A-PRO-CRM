@@ -9918,7 +9918,7 @@ async function suggestTasksFor(ctx, linkType, linkId, linkLabel){
 // Kaldırılan eski otomatik görevler (sipariş formu, mobilizasyon, İSG/izin) önceden açılmış olsa bile kapıyı kilitlemez.
 function _retiredStageTask(t){
   const k=t.dedupeKey||'';
-  if(/^(siparis_form_|mobilizasyon_)/.test(k) || String(t.title||'').indexOf('İSG / izin dosyası')>=0) return true;
+  if(/^(siparis_form_|mobilizasyon_|is_programi_)/.test(k) || String(t.title||'').indexOf('İSG / izin dosyası')>=0) return true;   // is_programi_: 15 günlük döngü görevi aşama/kapanış kapısını kilitlemez
   // Hakediş fatura / tahsilat takibi (tahsilat 30 gün sonra) proje kapanışını beklemez.
   return t.execStage==='hakedis' && (/^fatura_hakedis_/.test(k) || /^chain_fatura_/.test(k));
 }
@@ -10010,6 +10010,7 @@ async function projStart(o){
   await personelSaveDoc('opportunities', upd);
   await suggestStageTasks(upd, 'teknik', {silent:true});
   // (Proje icrasında 'Sipariş formu hazırlama' ve 'Mobilizasyon ve saha giriş işlemleri' görevleri artık açılmaz.)
+  try{ await projectScheduleSync(); }catch(e){}   // proje sorumlusuna 'İş programı hazırla' görevi (servis/bakımda yok)
 }
 // Projenin saha sorumlusu (yoksa saha departmanında en az yüklü kişi seçilip projeye kaydedilir).
 async function ensureSiteLead(o){
@@ -10887,6 +10888,8 @@ function _taskFormGate(t){
       return 'Bakım görevi elle kapatılamaz: Periyodik Bakım → ilgili kayıt → "Servis Hizmetini Tamamla" (Checklist + imzalı Servis Formu gerekir). Bakım tamamlanınca bu görev otomatik kapanır.';
   }
   if(!t || t.linkType!=='opportunity' || !t.linkId) return '';
+  { const _m=/^is_programi_(.+)_(\d+)$/.exec(k);
+    if(_m){ const _o=(state.opportunities||[]).find(function(x){ return x.id===t.linkId; }); if(_o && ipList(_o).length <= Number(_m[2])) return 'İş programı görevi kapatılmadan önce projedeki "📆 İş Programı" bölümünden revizyonu (tarih, fiziksel ilerleme %) kaydedin; kayıt görevi kendiliğinden tamamlar.'; } }
   if(k.indexOf('checklist_')===0 && !clHasFreshCompleted('project', t.linkId, '')) return 'Check list görevi kapatılmadan önce Checklist doldurulup personel + müşteri imzasıyla tamamlanmalı (görev penceresinin altından açılır).';
   if(k.indexOf('devreye_alma_')===0 && !sfHasFreshCompleted('project', t.linkId, '')) return 'Devreye alma görevi kapatılmadan önce Devreye Alma Servis Formu doldurulup personel + müşteri imzasıyla tamamlanmalı (görev penceresinin altından açılır).';
   return '';
@@ -11577,6 +11580,427 @@ function hkSummary(o){
   const l=hkList(o), sum=f=>l.filter(f).reduce((a,r)=>a+(Number(r.amount)||0),0);
   return { count:l.length, total:sum(()=>true), paid:sum(r=>r.status==='tahsil'), pending:sum(r=>r.status!=='tahsil') };
 }
+// ═══ PROJE İŞ PROGRAMI (yalnız proje icrası; teknik servis ve periyodik bakımda İŞ PROGRAMI YAPILMAZ) ═══
+// İcraya geçen projede proje sorumlusuna (saha sorumlusu) "İş programı hazırla" görevi açılır; program her 15 günde bir şantiye ilerleyişine göre
+// revize edilir. Revizyonlar fırsat belgesinde `isProgramiRevs` dizisinde (Rev 0 = ilk program). Revizyon kaydedilmeden görev kapanmaz.
+const IP_REVIZYON_GUN = 15, IP_ONCE_ACILIS_GUN = 3, IP_ILK_PROGRAM_GUN = 7;
+function ipApplies(o){ return !!o && projIsActive(o) && o.salesType!=='servis' && o.salesType!=='bakim'; }
+function ipList(o){ return (Array.isArray(o&&o.isProgramiRevs)?o.isProgramiRevs:[]).slice().sort(function(a,b){ return (a.no||0)-(b.no||0); }); }
+function ipLabel(n){ return n===0 ? 'İlk program' : ('Rev '+n); }
+// Sıradaki revizyonun vadesi: son revizyon + 15 gün (ilk program yoksa icra başlangıcı + 7 gün).
+function ipNextDue(o){
+  const l=ipList(o);
+  if(!l.length) return _addDays(String(o.execStartedAt||today()).slice(0,10), IP_ILK_PROGRAM_GUN);
+  return _addDays(String(l[l.length-1].date).slice(0,10), IP_REVIZYON_GUN);
+}
+function ipTaskKey(oppId, n){ return 'is_programi_'+oppId+'_'+n; }
+// Görev senkronu (telafili; CRM açıldığında/60 sn'de): ilk program hemen, revizyonlar vadesine 3 gün kala açılır.
+async function projectScheduleSync(){
+  if(!state.currentUser || state.testMode) return;
+  (state.opportunities||[]).filter(ipApplies).forEach(async function(o){
+    const n=ipList(o).length, due=ipNextDue(o), key=ipTaskKey(o.id,n);
+    if(n>0 && _diffDays(due) > IP_ONCE_ACILIS_GUN) return;
+    if((state.tasks||[]).some(function(t){ return t.dedupeKey===key; })) return;
+    const lead=await ensureSiteLead(o); const cn=_custName(o.customerId);
+    const bizDue=_ymd(_taxBizDay(_toDate(due)));
+    autoCreateTask({ id:key, dedupeKey:key,
+      title:'\u{1F4C6} İş programı '+(n===0?'hazırla':('revizyonu ('+ipLabel(n)+')'))+' — '+(o.title||'Proje')+(cn?' — '+cn:''),
+      desc:(n===0?'Projenin iş programını hazırlayın.':'Şantiye ilerleyişine göre iş programını revize edin.')+' Projeler → proje → "İş Programı" bölümünden revizyonu kaydedin (tarih, fiziksel ilerleme %, planlanan bitiş, program bağlantısı). Program her '+IP_REVIZYON_GUN+' günde bir revize edilir.',
+      dept:'saha', assignedTo:lead||undefined, context:'proje', linkType:'opportunity', linkId:o.id, linkLabel:o.title||'Proje', dueDate:bizDue, priority:'yuksek' });
+  });
+}
+async function ipSaveRevision(oppId, d){
+  const o=_hkCur(oppId); if(!o) return false;
+  const l=ipList(o), n=l.length;
+  const date=String(d.date||'').slice(0,10), prog=Number(String(d.progress).replace(',','.'));
+  if(!_isSaneISODate(date)){ showToast('⚠️ Revizyon tarihi geçerli olmalı.','#dc2626'); return false; }
+  if(!(prog>=0 && prog<=100) || String(d.progress).trim()===''){ showToast('⚠️ Fiziksel ilerleme % (0–100) girilmelidir.','#dc2626'); return false; }
+  if(d.planEnd && String(d.planEnd)<date){ showToast('⚠️ Planlanan bitiş tarihi revizyon tarihinden önce olamaz.','#dc2626'); return false; }
+  const rec={ no:n, date:date, progress:prog, planEnd:d.planEnd||'', link:String(d.link||'').trim(), note:String(d.note||'').trim(), by:(state.currentUser&&state.currentUser.displayName)||'', at:today() };
+  if(d.plan) rec.plan=d.plan;   // form anlık görüntüsü (PDF yeniden alınabilir; sonraki revizyonda önceki konum gri iz olarak gösterilir)
+  await _oppPatch(o, Object.assign({ isProgramiRevs:JSON.parse(JSON.stringify(l.concat([rec]))) }, stamp()));
+  // Bu döngünün açık görevi kendiliğinden TAMAMLANDI olur (yönetici onayına düşer).
+  const t=(state.tasks||[]).map(normTask).find(function(x){ return x.dedupeKey===ipTaskKey(oppId,n) && x.status!=='tamamlandi' && x.status!=='onaylandi'; });
+  if(t) await personelSaveDoc('tasks', Object.assign({}, t, { status:'tamamlandi', completedAt:today(), needsApproval:true, ...stamp() }));
+  return true;
+}
+// ═══ İŞ PROGRAMI FORMU (proje bazlı haftalık program; A4 yatay; yazdır / PDF) ═══
+// Plan fırsat belgesinde `isProgramiPlan` = {start,end,rows:[{id,phase,name,start,end,pct,ms}],workHol:{tarih:true},extraHol:[{date,name}],preparedBy}.
+// Haftalar proje başlangıcından başlayan 7 günlük dilimlerdir (son dilim proje bitişinde biter). Resmî tatil içeren haftalar başlıkta işaretlenir;
+// tatilde çalışılacaksa "çalışılacak" işaretlenir (turuncu). Renk = FAZ (iş grubu), koyu kısım gerçekleşen ilerleme.
+const APRO_LOGO_B64 = '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';
+const IP_PH = { A:['PROJE / OFİS HAZIRLIK','#4338ca'], B:['TEDARİK (SATIN ALMA)','#b45309'], C:['SAHA MONTAJ','#047857'], D:['TEST VE DEVREYE ALMA','#7c3aed'], E:['KABUL VE TESLİM','#475569'] };
+const IP_PH_KEYS = ['A','B','C','D','E'];
+const TR_DINI_TATIL = {
+  2026:[['03-19','Ramazan Bayramı arifesi (yarım gün)',1],['03-20','Ramazan Bayramı'],['03-21','Ramazan Bayramı'],['03-22','Ramazan Bayramı'],['05-26','Kurban Bayramı arifesi (yarım gün)',1],['05-27','Kurban Bayramı'],['05-28','Kurban Bayramı'],['05-29','Kurban Bayramı'],['05-30','Kurban Bayramı']],
+  2027:[['03-08','Ramazan Bayramı arifesi (yarım gün)',1],['03-09','Ramazan Bayramı'],['03-10','Ramazan Bayramı'],['03-11','Ramazan Bayramı'],['05-15','Kurban Bayramı arifesi (yarım gün)',1],['05-16','Kurban Bayramı'],['05-17','Kurban Bayramı'],['05-18','Kurban Bayramı'],['05-19','Kurban Bayramı']]
+};
+const TR_SABIT_TATIL = [['01-01','Yılbaşı'],['04-23','Ulusal Egemenlik ve Çocuk Bayramı'],['05-01','Emek ve Dayanışma Günü'],['05-19',"Atatürk'ü Anma, Gençlik ve Spor Bayramı"],['07-15','Demokrasi ve Millî Birlik Günü'],['08-30','Zafer Bayramı'],['10-28','Cumhuriyet Bayramı arifesi (yarım gün)',1],['10-29','Cumhuriyet Bayramı']];
+const IP_MAX_HAFTA = 104;
+function ipNewRow(){ return { id:genId(), phase:'A', name:'', start:'', end:'', pct:0, ms:false }; }
+function ipNormPlan(o){
+  const p = o && o.isProgramiPlan ? JSON.parse(JSON.stringify(o.isProgramiPlan)) : {};
+  p.start = p.start || String((o&&o.execStartedAt)||today()).slice(0,10);
+  p.end = p.end || _addDays(p.start, 84);
+  p.rows = (Array.isArray(p.rows) && p.rows.length) ? p.rows : [ipNewRow()];
+  p.workHol = p.workHol || {}; p.extraHol = Array.isArray(p.extraHol) ? p.extraHol : [];
+  p.preparedBy = p.preparedBy || '';
+  return p;
+}
+function ipWeeks(plan){
+  const s=_toDate(plan.start), e=_toDate(plan.end), out=[];
+  if(!s || !e || e<s) return out;
+  let a=new Date(s);
+  while(a<=e && out.length<IP_MAX_HAFTA){
+    let b=new Date(a); b.setDate(b.getDate()+6); if(b>e) b=new Date(e);
+    out.push({a:new Date(a), b:b});
+    a=new Date(a); a.setDate(a.getDate()+7);
+  }
+  return out;
+}
+function _ipIso(d){ return _ymd(d); }
+function ipHolidays(plan){
+  const s=String(plan.start||'').slice(0,10), e=String(plan.end||'').slice(0,10);
+  if(!s || !e) return [];
+  const out=[], y0=Number(s.slice(0,4)), y1=Number(e.slice(0,4));
+  for(let y=y0; y<=y1 && y<y0+4; y++){
+    TR_SABIT_TATIL.forEach(function(x){ out.push({date:y+'-'+x[0], name:x[1], half:!!x[2]}); });
+    (TR_DINI_TATIL[y]||[]).forEach(function(x){ out.push({date:y+'-'+x[0], name:x[1], half:!!x[2]}); });
+  }
+  (plan.extraHol||[]).forEach(function(x){ if(x && x.date) out.push({date:String(x.date).slice(0,10), name:x.name||'Özel tatil / kapalı gün', extra:true}); });
+  return out.filter(function(h){ return h.date>=s && h.date<=e; }).sort(function(a,b){ return a.date.localeCompare(b.date); });
+}
+function ipWeekIndex(weeks, iso){
+  if(!weeks.length || !iso) return -1;
+  const d=_toDate(String(iso).slice(0,10)); if(!d) return -1;
+  if(d<weeks[0].a) return 0;
+  for(let i=0;i<weeks.length;i++){ if(d>=weeks[i].a && d<=weeks[i].b) return i; }
+  return weeks.length-1;
+}
+function ipRowSpan(plan, weeks, r){
+  if(!r.start || !r.end) return null;
+  let f=ipWeekIndex(weeks, r.start), t=ipWeekIndex(weeks, r.end);
+  if(f<0||t<0) return null; if(t<f) t=f;
+  return {from:f, to:t};
+}
+// Genel ilerleme: işlerin süresine (hafta) göre ağırlıklı ortalama.
+function ipProgress(plan){
+  const weeks=ipWeeks(plan); let sum=0, tot=0;
+  (plan.rows||[]).forEach(function(r){ const sp=ipRowSpan(plan,weeks,r); if(!sp) return; const len=sp.to-sp.from+1; sum+=(Number(r.pct)||0)*len; tot+=len; });
+  return tot ? Math.round(sum/tot) : 0;
+}
+function ipFmt(iso){ const d=String(iso||'').slice(0,10); return d.length===10 ? (d.slice(8,10)+'.'+d.slice(5,7)+'.'+d.slice(0,4)) : ''; }
+function ipFmtShort(iso){ const d=String(iso||'').slice(0,10); return d.length===10 ? (d.slice(8,10)+'.'+d.slice(5,7)) : ''; }
+function _ipEsc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+const IP_MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+function ipEnsureStyle(){
+  if(document.getElementById('ip-style')) return;
+  const st=document.createElement('style'); st.id='ip-style';
+  st.textContent = [
+    '.ipg-page{width:1123px;height:793px;background:#fff;padding:24px 30px 0;position:relative;box-sizing:border-box;overflow:hidden;font-family:Inter,Arial,Helvetica,sans-serif;color:#111;margin:0 auto 14px;box-shadow:0 2px 12px rgba(0,0,0,.25)}',
+    '.ipg-page *{box-sizing:border-box}',
+    '.ipg-hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #c00000;padding-bottom:7px}.ipg-hd img{height:44px}',
+    '.ipg-addr{text-align:right;font-size:8.5px;color:#555;line-height:1.55}.ipg-addr b{display:block;font-size:10px;color:#111}',
+    '.ipg-title{margin:9px 0 1px;font-size:17px;font-weight:800;letter-spacing:.06em;color:#0f1f35}.ipg-sub{font-size:10px;color:#64748b;margin-bottom:7px}',
+    '.ipg-info{display:flex;border:1.5px solid #1e2d4a;margin-bottom:8px}.ipg-info>div{border-right:1px solid #1e2d4a;min-width:0}.ipg-info>div:last-child{border-right:0}',
+    '.ipg-info span{display:block;background:#1e2d4a;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;padding:4px 8px}',
+    '.ipg-info b{display:block;font-size:12px;color:#0f1f35;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.ipg-t{border-collapse:collapse;width:100%;table-layout:fixed;font-size:9px}.ipg-t th,.ipg-t td{border:1px solid #cbd5e1;padding:0;height:22px;overflow:hidden}',
+    '.ipg-t th{background:#1e2d4a;color:#fff;font-size:8px;font-weight:700;height:16px;text-align:center}',
+    '.ipg-t th.hol{background:#b91c1c}.ipg-t th.work{background:#d97706}',
+    '.ipg-t td.no{text-align:center;font-weight:800;color:#0f1f35}.ipg-t td.nm{padding:0 6px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}',
+    '.ipg-t td.dt{text-align:center;font-size:8px;color:#475569}.ipg-t td.pc{text-align:center;font-weight:800}',
+    '.ipg-t td.ph{height:17px;font-size:8.5px;font-weight:800;letter-spacing:.08em;padding:0 8px}',
+    '.ipg-t td.wk{padding:0}.ipg-t td.hl{background:#fef2f2}.ipg-t td.gh{background:#e5e7eb;border:1px dashed #9ca3af}.ipg-t td.td{border-left:2px solid #dc2626}',
+    '.ipg-bar{height:14px;margin:3px 0;display:flex;overflow:hidden;border:1px solid}.ipg-bar i{display:block;height:100%}',
+    '.ipg-lg{display:flex;gap:12px;margin-top:6px;font-size:8.5px;color:#334155;align-items:center;flex-wrap:wrap}.ipg-lg i{display:inline-block;width:13px;height:9px;vertical-align:middle;margin-right:4px;border:1px solid #cbd5e1}',
+    '.ipg-hl{margin-top:6px;font-size:8.5px;color:#b91c1c;font-weight:600;line-height:1.45}',
+    '.ipg-sign{display:flex;gap:22px;margin-top:22px}.ipg-sb{flex:1;border:1.5px solid #1e2d4a}',
+    '.ipg-sb h4{margin:0;background:#1e2d4a;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.08em;padding:5px 10px;text-transform:uppercase}',
+    '.ipg-sb .bd{height:72px;padding:6px 10px;font-size:9px;color:#475569;position:relative}.ipg-sb .bd p{margin:0 0 3px}',
+    '.ipg-sb .sg{position:absolute;left:10px;right:10px;bottom:6px;border-top:1px solid #94a3b8;padding-top:2px;font-size:8px;color:#94a3b8}',
+    '.ipg-ft{position:absolute;left:30px;right:30px;bottom:12px;display:flex;justify-content:space-between;border-top:1.5px solid #c00000;padding-top:4px;font-size:8px;color:#999}',
+    '@media print{body.ip-printing>*:not(#ip-print-overlay){display:none!important}#ip-print-overlay{position:static!important;background:#fff!important;overflow:visible!important}',
+    '#ip-print-overlay .ip-tb{display:none!important}#ip-print-overlay .ip-wrap{zoom:1!important;padding:0!important}',
+    '#ip-print-overlay .ipg-page{margin:0!important;box-shadow:none!important;page-break-after:always;break-after:page}#ip-print-overlay .ipg-page:last-child{page-break-after:auto;break-after:auto}',
+    '@page{size:A4 landscape;margin:0}}'
+  ].join('\n');
+  document.head.appendChild(st);
+}
+// Sayfalara bölme: ilk/orta sayfa ~21 birim, imza + lejant bulunan SON sayfa ~13 birim (iş satırı=1, faz bandı=0.8).
+function ipPaginate(items){
+  const CAP=21, LAST=13, pages=[]; let cur=[], u=0;
+  items.forEach(function(it){ const w=it.band?0.8:1; if(u+w>CAP+0.001){ pages.push(cur); cur=[]; u=0; } cur.push(it); u+=w; });
+  pages.push(cur);
+  const units=function(a){ return a.reduce(function(s,x){ return s+(x.band?0.8:1); },0); };
+  if(units(pages[pages.length-1])>LAST+0.001) pages.push([]);   // son sayfa yalnız lejant + imza
+  return pages;
+}
+function ipPrevMap(prevPlan){ const m={}; ((prevPlan&&prevPlan.rows)||[]).forEach(function(r){ m[r.id]=r; }); return m; }
+function ipBuildPages(o, plan, revLabel, prevPlan){
+  const weeks=ipWeeks(plan), W=weeks.length;
+  if(!W) return [];
+  const cust=(state.customers||[]).find(function(c){ return c.id===o.customerId; });
+  const hol=ipHolidays(plan), wkHol=[], wkWork=[], todayIso=today(); let todayW=-1;
+  for(let i=0;i<W;i++){
+    const a=_ipIso(weeks[i].a), b=_ipIso(weeks[i].b);
+    const hs=hol.filter(function(h){ return h.date>=a && h.date<=b; });
+    wkHol[i]=hs.length?1:0; wkWork[i]=(hs.length && hs.every(function(h){ return plan.workHol&&plan.workHol[h.date]; }))?1:0;
+    if(todayIso>=a && todayIso<=b) todayW=i;
+  }
+  const prevMap=ipPrevMap(prevPlan);
+  const rows=(plan.rows||[]).filter(function(r){ return String(r.name||'').trim(); });
+  const items=[]; let lastPh='', n=0;
+  rows.forEach(function(r){
+    if(r.phase!==lastPh){ lastPh=r.phase; items.push({band:true, phase:r.phase}); }
+    n++; items.push({row:r, no:n});
+  });
+  const total=ipPaginate(items);
+  const colW=[26,196,42,42,34];
+  const fixed=colW.reduce(function(a,b){ return a+b; },0), wkPx=Math.floor((1063-fixed)/W);
+  const colgroup='<colgroup>'+colW.map(function(w){ return '<col style="width:'+w+'px">'; }).join('')+weeks.map(function(){ return '<col style="width:'+wkPx+'px">'; }).join('')+'</colgroup>';
+  // başlık satırları
+  let head='<tr><th rowspan="3">No</th><th rowspan="3">YAPILACAK İŞ</th><th rowspan="3">BAŞL.</th><th rowspan="3">BİTİŞ</th><th rowspan="3">%</th>';
+  { let i=0; while(i<W){ const m=weeks[i].a.getMonth(), y=weeks[i].a.getFullYear(); let c=0; while(i+c<W && weeks[i+c].a.getMonth()===m) c++; head+='<th colspan="'+c+'">'+IP_MONTHS[m]+' '+y+'</th>'; i+=c; } }
+  head+='</tr><tr>'; for(let i=0;i<W;i++) head+='<th class="'+(wkWork[i]?'work':wkHol[i]?'hol':'')+'">H'+(i+1)+'</th>';
+  head+='</tr><tr>'; for(let i=0;i<W;i++) head+='<th class="'+(wkWork[i]?'work':wkHol[i]?'hol':'')+'" style="font-weight:600">'+weeks[i].a.getDate()+(wkHol[i]?(wkWork[i]?' ⚒':' ●'):'')+'</th>';
+  head+='</tr>';
+  const NC=5+W;
+  const rowHTML=function(it){
+    if(it.band){ const ph=IP_PH[it.phase]||['',''+'#475569']; const c=ph[1]||'#475569';
+      return '<tr><td colspan="'+NC+'" class="ph" style="background:'+c+'1a;color:'+c+';border-left:5px solid '+c+'">'+_ipEsc(ph[0]||'DİĞER')+'</td></tr>'; }
+    const r=it.row, c=(IP_PH[r.phase]||[0,'#475569'])[1], sp=ipRowSpan(plan,weeks,r);
+    const pr=prevMap[r.id], psp=pr?ipRowSpan(plan,weeks,pr):null;
+    const ghostOn = psp && sp && (psp.from!==sp.from || psp.to!==sp.to);
+    let cells='', j=0;
+    while(j<W){
+      if(sp && j===sp.from){
+        const L=sp.to-sp.from+1;
+        if(r.ms){ cells+='<td class="wk'+(j===todayW?' td':'')+'" style="text-align:center"><span style="color:'+c+';font-size:15px;line-height:20px">◆</span></td>'; j++; continue; }
+        const p=Math.max(0,Math.min(100,Number(r.pct)||0));
+        cells+='<td colspan="'+L+'" class="wk"><div class="ipg-bar" style="border-color:'+c+'99;background:'+c+'33"><i style="width:'+p+'%;background:'+c+'"></i></div></td>';
+        j+=L; continue;
+      }
+      const inGhost = ghostOn && j>=psp.from && j<=psp.to;
+      cells+='<td class="wk'+(inGhost?' gh':(wkHol[j]?' hl':''))+(j===todayW?' td':'')+'"></td>'; j++;
+    }
+    const s0=sp?ipFmtShort(_ipIso(weeks[sp.from].a)):'', e0=sp?ipFmtShort(_ipIso(weeks[sp.to].b)):'';
+    return '<tr><td class="no">'+it.no+'</td><td class="nm" title="'+_ipEsc(r.name)+'">'+_ipEsc(r.name)+'</td><td class="dt">'+(r.start?ipFmtShort(r.start):s0)+'</td><td class="dt">'+(r.end?ipFmtShort(r.end):e0)+'</td><td class="pc" style="color:'+c+'">%'+(Number(r.pct)||0)+'</td>'+cells+'</tr>';
+  };
+  const logoHdr='<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00 | info@a-pro.com.tr | www.a-pro.com.tr</div></div>';
+  const lead=o.execSiteLead||'';
+  const info='<div class="ipg-info"><div style="flex:1.5"><span>Proje adı</span><b>'+_ipEsc(o.title||'')+'</b></div><div style="flex:1"><span>İşveren</span><b>'+_ipEsc(cust?cust.firmName:'')+'</b></div><div style="flex:1.1"><span>Proje başlangıç – bitiş</span><b>'+ipFmt(plan.start)+' — '+ipFmt(plan.end)+'</b></div><div style="flex:1"><span>Şantiye / saha sorumlusu</span><b>'+_ipEsc(lead)+'</b></div></div>';
+  const used={}; rows.forEach(function(r){ used[r.phase]=1; });
+  const legend='<div class="ipg-lg">'+IP_PH_KEYS.filter(function(k){ return used[k]; }).map(function(k){ return '<span><i style="background:'+IP_PH[k][1]+'"></i>'+IP_PH[k][0]+'</span>'; }).join('')+'</div>'
+    +'<div class="ipg-lg" style="margin-top:3px"><span><i style="background:#334155"></i>Koyu = gerçekleşen</span><span><i style="background:#33415533;border-color:#33415599"></i>Açık = planlanan (kalan)</span><span><i style="background:#e5e7eb;border:1px dashed #9ca3af"></i>Önceki revizyondaki konum</span><span>◆ Kilometre taşı</span><span><i style="background:#b91c1c"></i>Resmî tatil haftası ●</span><span><i style="background:#d97706"></i>Tatilde çalışılacak ⚒</span>'+(todayW>=0?'<span style="color:#dc2626"><b>|</b> Bugün</span>':'')+'</div>';
+  const holTxt = hol.length ? ('Resmî tatiller: '+hol.map(function(h){ return ipFmtShort(h.date)+' '+_ipEsc(h.name)+((plan.workHol&&plan.workHol[h.date])?' (çalışılacak)':''); }).join(' · ')) : 'Program aralığında resmî tatil yoktur.';
+  const prep=plan.preparedBy||lead||(state.currentUser&&state.currentUser.displayName)||'';
+  const sign='<div class="ipg-hl">'+holTxt+'</div><div class="ipg-sign">'
+    +'<div class="ipg-sb"><h4>Hazırlayan</h4><div class="bd"><p><b>Ad Soyad:</b> '+_ipEsc(prep)+'</p><p><b>Ünvan:</b> Şantiye / Saha Sorumlusu</p><p><b>Tarih:</b> '+ipFmt(today())+'</p><div class="sg">İmza</div></div></div>'
+    +'<div class="ipg-sb"><h4>Kontrol</h4><div class="bd"><p><b>Ad Soyad:</b></p><p><b>Ünvan:</b></p><p><b>Tarih:</b></p><div class="sg">İmza</div></div></div>'
+    +'<div class="ipg-sb"><h4>Onay</h4><div class="bd"><p><b>Ad Soyad:</b></p><p><b>Ünvan:</b></p><p><b>Tarih:</b></p><div class="sg">İmza</div></div></div></div>';
+  const np=total.length, pages=[];
+  total.forEach(function(chunk, pi){
+    const isLast=pi===np-1;
+    let body=chunk.slice();
+    if(body.length && !body[0].band){ const r=body[0].row; body.unshift({band:true, phase:r.phase, cont:true}); }
+    const tbl = chunk.length ? '<table class="ipg-t">'+colgroup+head+body.map(rowHTML).join('')+'</table>' : '';
+    pages.push('<div class="ipg-page">'+logoHdr
+      +'<div class="ipg-title">İŞ PROGRAMI</div><div class="ipg-sub">'+_ipEsc(revLabel||'Taslak')+' · Hazırlanma tarihi: '+ipFmt(today())+' · Genel ilerleme %'+ipProgress(plan)+' · Şantiye ilerleyişine göre 15 günde bir revize edilir</div>'
+      +(pi===0 ? info : '')+tbl+(isLast ? legend+sign : '')
+      +'<div class="ipg-ft"><span>A-PRO Mühendislik Ltd. Şti. — İş Programı · '+_ipEsc(o.title||'')+' · '+_ipEsc(revLabel||'Taslak')+'</span><span>www.a-pro.com.tr</span><span>Sayfa '+(pi+1)+' / '+np+'</span></div></div>');
+  });
+  return pages;
+}
+
+function ipSlug(s){ const m={ç:'c',ğ:'g',ı:'i',ö:'o',ş:'s',ü:'u',Ç:'C',Ğ:'G',İ:'I',Ö:'O',Ş:'S',Ü:'U'}; return String(s||'').replace(/[çğıöşüÇĞİÖŞÜ]/g,function(c){ return m[c]; }).replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40)||'proje'; }
+function ipLastRevWithPlan(o, beforeNo){
+  const l=ipList(o).filter(function(r){ return r.plan && (beforeNo==null || r.no<beforeNo); });
+  return l.length ? l[l.length-1] : null;
+}
+async function ipSavePlan(oppId, plan){
+  const o=_hkCur(oppId); if(!o) return false;
+  const clean=JSON.parse(JSON.stringify(plan)); delete clean.oppId;
+  await _oppPatch(o, Object.assign({ isProgramiPlan:clean }, stamp()));
+  return true;
+}
+function ipValidatePlan(plan){
+  const s=_toDate(plan.start), e=_toDate(plan.end);
+  if(!_isSaneISODate(plan.start) || !_isSaneISODate(plan.end)){ showToast('⚠️ Proje başlangıç ve bitiş tarihleri girilmelidir.','#dc2626'); return false; }
+  if(e<=s){ showToast('⚠️ Proje bitiş tarihi başlangıçtan sonra olmalıdır.','#dc2626'); return false; }
+  if(Math.ceil((e-s)/86400000/7) > IP_MAX_HAFTA){ showToast('⚠️ Program en fazla '+IP_MAX_HAFTA+' hafta (2 yıl) olabilir.','#dc2626'); return false; }
+  const named=(plan.rows||[]).filter(function(r){ return String(r.name||'').trim(); });
+  if(!named.length){ showToast('⚠️ En az bir iş adı girilmelidir.','#dc2626'); return false; }
+  const bad=named.find(function(r){ return !r.start || !r.end || r.end<r.start; });
+  if(bad){ showToast('⚠️ "'+bad.name+'" için başlangıç ve bitiş tarihi (bitiş ≥ başlangıç) girilmelidir.','#dc2626'); return false; }
+  return true;
+}
+// Yazdır / PDF ekranı: tüm sayfalar üst üste; ✕ Kapat, 🖨️ Yazdır, ⬇️ PDF indir.
+function ipOpenPrint(o, plan, revLabel, prevPlan, autoPdf){
+  const pages=ipBuildPages(o, plan, revLabel, prevPlan);
+  if(!pages.length){ showToast('⚠️ Önce proje başlangıç ve bitiş tarihlerini girin.','#dc2626'); return; }
+  ipEnsureStyle();
+  const old=document.getElementById('ip-print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='ip-print-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:#cbd5e1;display:flex;flex-direction:column;';
+  const tb=document.createElement('div'); tb.className='ip-tb';
+  tb.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 18px;background:#1e2d4a;color:#fff;flex-shrink:0;flex-wrap:wrap;';
+  tb.innerHTML='<div style="font-weight:800;font-size:15px">📋 İş Programı — '+_ipEsc(o.title||'')+' · '+_ipEsc(revLabel||'Taslak')+' ('+pages.length+' sayfa)</div>';
+  const bw=document.createElement('div'); bw.style.cssText='display:flex;gap:8px;';
+  const mk=function(txt,bg,fn){ const b=document.createElement('button'); b.textContent=txt; b.style.cssText='padding:8px 16px;background:'+bg+';color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer'; b.onclick=fn; return b; };
+  const wrap=document.createElement('div'); wrap.className='ip-wrap'; wrap.style.cssText='flex:1;overflow:auto;padding:14px 0;';
+  const fit=function(){ wrap.style.zoom=String(Math.min(1,(window.innerWidth-24)/1123)); };
+  const doPdf=function(){ wrap.style.zoom='1'; ipExportPDF(o, revLabel, wrap).then(fit,fit); };
+  bw.appendChild(mk('🖨️ Yazdır','linear-gradient(135deg,#2563eb,#1d4ed8)',function(){ document.body.classList.add('ip-printing'); setTimeout(function(){ window.print(); },50); }));
+  bw.appendChild(mk('⬇️ PDF indir','linear-gradient(135deg,#16a34a,#15803d)',doPdf));
+  bw.appendChild(mk('✕ Kapat','#dc2626',function(){ ov.remove(); document.body.classList.remove('ip-printing'); }));
+  tb.appendChild(bw); ov.appendChild(tb);
+  wrap.innerHTML=pages.join('');
+  ov.appendChild(wrap); document.body.appendChild(ov); fit();
+  window.addEventListener('afterprint', function(){ document.body.classList.remove('ip-printing'); }, {once:true});
+  if(autoPdf) setTimeout(doPdf, 300);
+}
+async function ipExportPDF(o, revLabel, wrap){
+  try{
+    showToast('PDF hazırlanıyor…','#0284c7');
+    await window._loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    await window._loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    const pages=wrap.querySelectorAll('.ipg-page');
+    const pdf=new window.jspdf.jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+    for(let i=0;i<pages.length;i++){
+      const cv=await window.html2canvas(pages[i], {scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false});
+      if(i>0) pdf.addPage('a4','landscape');
+      pdf.addImage(cv.toDataURL('image/jpeg',0.95), 'JPEG', 0, 0, 297, 210);
+    }
+    pdf.save('Is-Programi_'+ipSlug(o.title)+'_'+ipSlug(revLabel||'taslak')+'_'+today()+'.pdf');
+    showToast('✅ PDF indirildi.');
+  }catch(e){
+    console.error('[ipExportPDF]', e);
+    showToast('⚠️ PDF oluşturulamadı ('+((e&&e.message)||'bağlantı')+'). "🖨️ Yazdır" ile "PDF olarak kaydet" seçeneğini kullanın.','#dc2626');
+  }
+}
+async function ipSaveRevisionFromPlan(oppId){
+  const o=_hkCur(oppId); if(!o || !PMOD.ipPlanDraft) return;
+  const plan=PMOD.ipPlanDraft.plan;
+  if(!ipValidatePlan(plan)) return;
+  const note=prompt('Revizyon notu (ilerleme / revize nedeni):','');
+  if(note===null) return;
+  await ipSavePlan(oppId, plan);
+  const ok=await ipSaveRevision(oppId, { date:today(), progress:String(ipProgress(plan)), planEnd:plan.end, link:'', note:note, plan:JSON.parse(JSON.stringify(Object.assign({}, plan, {oppId:undefined}))) });
+  if(ok){ showToast('✅ '+ipLabel(ipList(_hkCur(oppId)).length-1)+' kaydedildi (genel ilerleme %'+ipProgress(plan)+').'); render(); }
+}
+function buildIsProgramiModal(oppId){
+  const o=_hkCur(oppId);
+  const back=function(){ setState({modal:{type:'proje', oppId:oppId}}); };
+  if(!o) return modal('İş Programı', h('div',{},'Proje bulunamadı.'), back, '900px');
+  if(!PMOD.ipPlanDraft || PMOD.ipPlanDraft.oppId!==oppId) PMOD.ipPlanDraft={ oppId:oppId, plan:ipNormPlan(o) };
+  const plan=PMOD.ipPlanDraft.plan, closed=!!o.execClosedAt;
+  const cust=(state.customers||[]).find(function(c){ return c.id===o.customerId; });
+  const saved=JSON.stringify(ipNormPlan(o)), dirty=JSON.stringify(plan)!==saved;
+  const rerender=function(){ setState({modal:{type:'isprogrami', oppId:oppId}}); };
+  const lastRev=ipLastRevWithPlan(o), prevPlan=lastRev?lastRev.plan:null;
+  const lbl=function(t){ return h('div',{style:{fontSize:'11px',fontWeight:'800',color:'#1e2d4a',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'3px'}},t); };
+  const ro=function(v){ return h('div',{style:{padding:'9px 12px',background:'#e2e8f0',borderRadius:'8px',fontSize:'14px',fontWeight:'700',color:'#0f1f35'}},v||'—'); };
+  const infoRow=h('div',{style:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:'10px',marginBottom:'12px'}},
+    h('div',{},lbl('Proje adı'),ro(o.title)),
+    h('div',{},lbl('İşveren'),ro(cust&&cust.firmName)),
+    h('div',{},lbl('Proje başlangıç *'),inp('',plan.start,function(v){ plan.start=v; rerender(); },'date',{},'change')),
+    h('div',{},lbl('Proje bitiş *'),inp('',plan.end,function(v){ plan.end=v; rerender(); },'date',{},'change')),
+    h('div',{},lbl('Şantiye / saha sorumlusu'),ro(o.execSiteLead)),
+    h('div',{},lbl('Hazırlayan (formda)'),inp(o.execSiteLead||'Ad Soyad',plan.preparedBy,function(v){ plan.preparedBy=v; })));
+  // iş satırları
+  const phOpts=IP_PH_KEYS.map(function(k){ return {v:k,l:IP_PH[k][0]}; });
+  const mv=function(i,d){ const a=plan.rows; const j=i+d; if(j<0||j>=a.length) return; const t=a[i]; a[i]=a[j]; a[j]=t; rerender(); };
+  const th=function(t,w){ return h('th',{style:{background:'#1e2d4a',color:'#fff',fontSize:'11px',padding:'7px 6px',textAlign:'left',width:w||'auto'}},t); };
+  const cellS={padding:'4px 5px',borderBottom:'1px solid #e2e8f0',verticalAlign:'middle'};
+  const small=function(el,w){ el.style.padding='6px 8px'; el.style.fontSize='13px'; if(w) el.style.width=w; return el; };
+  const trs=plan.rows.map(function(r,i){
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!r.ms; cb.title='Kilometre taşı (tek günlük teslim noktası ◆)'; cb.onchange=function(){ r.ms=cb.checked; rerender(); };
+    return h('tr',{},
+      h('td',{style:Object.assign({},cellS,{textAlign:'center',fontWeight:'800'})},String(i+1)),
+      h('td',{style:cellS}, small(sel(phOpts,r.phase,function(v){ r.phase=v; rerender(); }))),
+      h('td',{style:cellS}, small(inp('İş / faaliyet adı',r.name,function(v){ r.name=v; }))),
+      h('td',{style:cellS}, small(inp('',r.start,function(v){ r.start=v; if(r.ms) r.end=v; rerender(); },'date',{},'change'))),
+      h('td',{style:cellS}, small(inp('',r.end,function(v){ r.end=v; rerender(); },'date',{},'change'))),
+      h('td',{style:cellS}, small(inp('%',r.pct,function(v){ r.pct=Math.max(0,Math.min(100,Number(v)||0)); rerender(); },'number',{},'change'),'70px')),
+      h('td',{style:Object.assign({},cellS,{textAlign:'center'})}, cb),
+      h('td',{style:Object.assign({},cellS,{whiteSpace:'nowrap'})},
+        btn('↑',function(){ mv(i,-1); },'#e8eef7','#2a5080','4px 8px',{fontSize:'12px'}), btn('↓',function(){ mv(i,1); },'#e8eef7','#2a5080','4px 8px',{fontSize:'12px'}),
+        btn('🗑',function(){ plan.rows.splice(i,1); if(!plan.rows.length) plan.rows.push(ipNewRow()); rerender(); },'#fef2f2','#dc2626','4px 8px',{fontSize:'12px'})));
+  });
+  const rowsTbl=h('div',{style:{overflowX:'auto',marginBottom:'8px'}},
+    h('table',{style:{width:'100%',borderCollapse:'collapse',minWidth:'860px'}},
+      h('thead',{},h('tr',{}, th('No','36px'), th('Faz (renk)','190px'), th('Yapılacak iş'), th('Başlangıç','130px'), th('Bitiş','130px'), th('Gerçekleşen %','90px'), th('◆','30px'), th('','110px'))),
+      h('tbody',{},...trs)));
+  const rowBtns=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'12px'}},
+    btn('+ İş ekle',function(){ const last=plan.rows[plan.rows.length-1]; const n=ipNewRow(); if(last) n.phase=last.phase; plan.rows.push(n); rerender(); },'#ccfbf1','#0f766e','7px 14px',{fontSize:'13px',border:'1px solid #5eead4'}),
+    btn('↕ Faza ve başlangıç tarihine göre sırala',function(){ plan.rows.sort(function(a,b){ return (IP_PH_KEYS.indexOf(a.phase)-IP_PH_KEYS.indexOf(b.phase)) || String(a.start||'9').localeCompare(String(b.start||'9')); }); rerender(); },'#e8eef7','#2a5080','7px 14px',{fontSize:'13px'}));
+  // tatiller
+  const hol=ipHolidays(plan);
+  const holRows=hol.map(function(x){
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!(plan.workHol&&plan.workHol[x.date]);
+    cb.onchange=function(){ plan.workHol=plan.workHol||{}; if(cb.checked) plan.workHol[x.date]=true; else delete plan.workHol[x.date]; rerender(); };
+    const del = x.extra ? h('a',{href:'#',style:{color:'#dc2626',fontSize:'12px',marginLeft:'8px'},onclick:function(e){ e.preventDefault(); plan.extraHol=(plan.extraHol||[]).filter(function(y){ return !(y.date===x.date && (y.name||'')===x.name); }); rerender(); }},'🗑 sil') : h('span');
+    return h('label',{style:{display:'flex',alignItems:'center',gap:'8px',fontSize:'13px',padding:'3px 0'}}, cb, h('span',{style:{fontWeight:'700',color:'#b91c1c'}},ipFmt(x.date)), h('span',{},x.name+(x.half?'':'')), h('span',{style:{color:'#d97706',fontWeight:'700',fontSize:'12px'}},(plan.workHol&&plan.workHol[x.date])?'⚒ çalışılacak':''), del);
+  });
+  const ex={ date:'', name:'' };
+  const holBox=h('div',{style:{background:'#fef2f2',border:'1px solid #fecaca',borderRadius:'10px',padding:'10px 12px',marginBottom:'12px'}},
+    h('div',{style:{fontWeight:'800',fontSize:'13px',color:'#b91c1c',marginBottom:'4px'}},'🔴 Resmî tatiller (program aralığı) — tatilde çalışılacaksa işaretleyin'),
+    hol.length ? h('div',{},...holRows) : h('div',{style:{fontSize:'12px',color:T4}},'Program aralığında resmî tatil yok (tanımlı yıllar: sabit tatiller + 2026–2027 dinî bayramlar).'),
+    h('div',{style:{display:'flex',gap:'8px',alignItems:'flex-end',flexWrap:'wrap',marginTop:'8px'}},
+      h('div',{},lbl('Özel tatil / kapalı gün ekle'),small(inp('',ex.date,function(v){ ex.date=v; },'date',{},'change'),'150px')),
+      h('div',{style:{flex:'1',minWidth:'160px'}},lbl('Adı'),small(inp('Örn. dinî bayram, şirket izni',ex.name,function(v){ ex.name=v; }))),
+      btn('+ Ekle',function(){ if(!ex.date){ showToast('⚠️ Tatil tarihi seçin.','#dc2626'); return; } plan.extraHol=(plan.extraHol||[]).concat([{date:ex.date,name:ex.name||'Özel tatil / kapalı gün'}]); rerender(); },'#fee2e2','#b91c1c','8px 14px',{fontSize:'13px',border:'1px solid #fecaca'})));
+  // önizleme
+  ipEnsureStyle();
+  const pages=ipBuildPages(o, plan, 'Taslak', prevPlan);
+  const prev=h('div',{style:{overflow:'auto',background:'#cbd5e1',borderRadius:'10px',padding:'10px',maxHeight:'560px'}});
+  prev.innerHTML=pages.length ? ('<div style="zoom:.88">'+pages.join('')+'</div>') : '<div style="padding:20px;text-align:center;color:#475569">Önizleme için başlangıç/bitiş tarihlerini ve en az bir işi (adı + tarihleri) girin.</div>';
+  const acts=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',alignItems:'center',margin:'12px 0'}},
+    btn('💾 Kaydet',async function(){ if(!ipValidatePlan(plan)) return; await ipSavePlan(oppId, plan); showToast('✅ İş programı kaydedildi.'); rerender(); },'linear-gradient(135deg,#14b8a6,#0f766e)','#fff','10px 18px',{fontSize:'14px'}),
+    btn('📌 Revizyon olarak kaydet',function(){ ipSaveRevisionFromPlan(oppId); },'linear-gradient(135deg,#7c3aed,#6d28d9)','#fff','10px 18px',{fontSize:'14px'}),
+    btn('🖨️ Yazdır',function(){ if(!ipValidatePlan(plan)) return; ipOpenPrint(o, plan, 'Taslak', prevPlan, false); },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','10px 18px',{fontSize:'14px'}),
+    btn('⬇️ PDF indir',function(){ if(!ipValidatePlan(plan)) return; ipOpenPrint(o, plan, 'Taslak', prevPlan, true); },'linear-gradient(135deg,#16a34a,#15803d)','#fff','10px 18px',{fontSize:'14px'}),
+    btn('Kapat',back,'#e8eef7','#2a5080','10px 18px',{fontSize:'14px'}),
+    dirty ? h('span',{style:{background:'#fef3c7',color:'#b45309',borderRadius:'20px',padding:'4px 12px',fontSize:'12px',fontWeight:'800'}},'⚠ Kaydedilmemiş değişiklik') : h('span',{style:{color:'#16a34a',fontSize:'12px',fontWeight:'700'}},'✓ kaydedildi'),
+    h('span',{style:{marginLeft:'auto',fontSize:'12px',fontWeight:'700',color:'#0f1f35'}},'Genel ilerleme: %'+ipProgress(plan)));
+  const content=h('div',{}, infoRow, rowsTbl, rowBtns, holBox, acts, prev,
+    h('div',{style:{fontSize:'11px',color:T4,marginTop:'8px'}},'Haftalar proje başlangıcından 7\'şer günlük dilimlerdir. Renk = faz; koyu kısım gerçekleşen ilerleme. Resmî tatil haftaları başlıkta kırmızı (●), tatilde çalışılacak haftalar turuncu (⚒). Her revizyon kaydı, önceki revizyondaki konumu gri izle gösterir.'));
+  return modal('📋 İş Programı Formu — '+(o.title||'Proje'), content, back, '1180px');
+}
+
+function buildIsProgramiBlock(o, isAdmin, closed){
+  if(!ipApplies(o) && !closed) return h('span');
+  const l=ipList(o), last=l[l.length-1], due=ipNextDue(o), late=!closed && _diffDays(due)<0;
+  if(!PMOD.ipDraft || PMOD.ipDraft.oppId!==o.id) PMOD.ipDraft={ oppId:o.id, open:false, date:today(), progress:'', planEnd:'', link:'', note:'' };   // taslak proje bazlı
+  const d=PMOD.ipDraft;
+  const head=h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap',marginBottom:'8px'}},
+    h('span',{style:{fontWeight:'800',fontSize:'14px',color:'#0f766e'}},'📆 İş Programı'),
+    h('span',{style:{fontSize:'12px',color:late?'#dc2626':T3,fontWeight:late?'800':'600'}},
+      closed ? 'Proje kapandı' : (l.length ? ('Sonraki revizyon: '+_toTR(due)+(late?(' — '+Math.abs(_diffDays(due))+' gün gecikti'):'')) : ('İlk program vadesi: '+_toTR(due)+(late?' — gecikti':'')))),
+    btn('📋 İş Programı Formu (düzenle / PDF)', function(){ setState({modal:{type:'isprogrami', oppId:o.id}}); }, 'linear-gradient(135deg,#14b8a6,#0f766e)','#fff','5px 12px',{fontSize:'12px'}),
+    closed ? h('span') : btn(d.open?'✕ Vazgeç':('+ '+(l.length?('Revizyon ekle ('+ipLabel(l.length)+')'):'İlk programı kaydet')), function(){ d.open=!d.open; if(d.open){ d.date=today(); } render(); }, '#ccfbf1','#0f766e','5px 11px',{fontSize:'12px',border:'1px solid #5eead4'}));
+  const rows=l.map(function(r){
+    return h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'10px',padding:'8px 11px',marginBottom:'6px'}},
+      h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
+        h('span',{style:{fontWeight:'800',color:'#0f2040',fontSize:'13px'}},ipLabel(r.no)+' · '+_toTR(r.date)),
+        h('span',{style:{background:'#ccfbf1',color:'#0f766e',borderRadius:'20px',padding:'2px 9px',fontSize:'11px',fontWeight:'800'}},'İlerleme %'+r.progress),
+        r.planEnd?h('span',{style:{fontSize:'11px',color:T3}},'Planlanan bitiş: '+_toTR(r.planEnd)):h('span'),
+        r.link?h('a',{href:/^https?:/i.test(r.link)?r.link:'#',target:'_blank',style:{fontSize:'12px',color:'#2563eb',fontWeight:'700',textDecoration:'none'}},'📎 Program'):h('span'),
+        r.plan?h('a',{href:'#',style:{fontSize:'12px',color:'#0f766e',fontWeight:'800',textDecoration:'none'},onclick:function(e){ e.preventDefault(); const pv=ipLastRevWithPlan(o,r.no); ipOpenPrint(o, r.plan, ipLabel(r.no), pv?pv.plan:null, false); }},'📄 Formu aç / PDF'):h('span'),
+        h('span',{style:{marginLeft:'auto',fontSize:'11px',color:T4}},r.by||'')),
+      r.note?h('div',{style:{fontSize:'12px',color:T3,marginTop:'4px'}},r.note):h('span'));
+  });
+  const form = (!closed && d.open) ? h('div',{style:{background:'#f0fdfa',border:'1px solid #99f6e4',borderRadius:'10px',padding:'10px 12px',marginBottom:'8px'}},
+    row(field('Revizyon tarihi *',inp('',d.date,function(v){ d.date=v; },'date',{},'change'),true), field('Fiziksel ilerleme % *',inp('0–100',d.progress,function(v){ d.progress=v; },'number'),true)),
+    row(field('Planlanan bitiş',inp('',d.planEnd,function(v){ d.planEnd=v; },'date',{},'change'),true), field('Program bağlantısı (Drive / OneDrive vb.)',inp('https://…',d.link,function(v){ d.link=v; }),true)),
+    field('Not (ilerleme / revize nedeni)',inp('Örn. boru montajı %60, panolar gecikti — bitiş 2 hafta ötelendi',d.note,function(v){ d.note=v; })),
+    btn('💾 Kaydet',async function(){ const ok=await ipSaveRevision(o.id,d); if(ok){ PMOD.ipDraft=null; showToast('✅ '+ipLabel(l.length)+' kaydedildi.'); render(); } },'linear-gradient(135deg,#14b8a6,#0f766e)','#fff','9px 18px',{fontSize:'13px'})) : h('span');
+  return h('div',{style:{borderTop:'1px solid #e2e8f0',marginTop:'14px',paddingTop:'12px'}},
+    head, form,
+    l.length ? h('div',{}, ...rows.reverse()) : h('div',{style:{fontSize:'12px',color:T4}},'Henüz iş programı kaydı yok. Saha sorumlusuna "İş programı hazırla" görevi açıldı; hazırlanınca buraya kaydedilir.'),
+    last ? h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#0f1f35',marginTop:'4px'}},'Son durum: '+ipLabel(last.no)+' · İlerleme %'+last.progress+(last.planEnd?(' · Planlanan bitiş '+_toTR(last.planEnd)):'')) : h('span'));
+}
 function buildHakedisGunBar(o, closed){
   const d=hkDay(o);
   const dayOpts=[{v:'',l:'— Gün seçin —'}]; for(let i=1; i<=28; i++) dayOpts.push({v:String(i), l:'Her ayın '+i+'\'i'});
@@ -11679,6 +12103,7 @@ function buildProjeModal(oppId){
     h('div',{style:{borderTop:'1px solid #e2e8f0',paddingTop:'12px'}}, tasksBox)
   );
   content.appendChild(buildHakedisBlock(o, isAdmin, closed));
+  content.appendChild(buildIsProgramiBlock(o, isAdmin, closed));
   content.appendChild(clListBlock({ linkType:'project', linkId:o.id, newOpts:{ formType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
   content.appendChild(sfListBlock({ linkType:'project', linkId:o.id, newOpts:{ docType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
   content.appendChild(frListBlock({ linkType:'project', linkId:o.id, newOpts:{ customerId:o.customerId||'', projectId:o.id, linkType:'project', linkId:o.id } }));
@@ -12297,6 +12722,7 @@ function render() {
     if(type==='customer') m=buildCustomerModal(item);
     else if(type==='supplier') m=buildSupplierModal(item);
     else if(type==='proje') m=buildProjeModal(state.modal.oppId);
+    else if(type==='isprogrami') m=buildIsProgramiModal(state.modal.oppId);
     else if(type==='taskcheck') m=buildTaskCheckModal();
     else if(type==='ariza') m=buildArizaModal(state.modal.serviceId);
     else if(type==='bakim') m=buildBakimModal(state.modal.maintId);
@@ -12849,6 +13275,7 @@ function checkAllNotifications() {
   trashAutoPurge();
   monthlyAccountingSync();
   projectMonthlySync();
+  projectScheduleSync();
   frAutoCleanup();
 }
 
