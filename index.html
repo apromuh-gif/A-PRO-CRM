@@ -110,7 +110,17 @@ function salesTypeLabel(v){ const t=SALES_TYPES.find(x=>x.v===v); return t?t.l:'
 // Servis/Bakım fırsatları SATIŞ cirosuna, satış hedefine ve prime girmez: servis modülündeki kayıtla (servis kaydı / bakım sözleşmesi) ve servis hedefiyle ölçülür.
 function _isSalesOpp(o){ return !(o && (o.salesType==='servis' || o.salesType==='bakim')); }
 // Fırsattan açılan bakım sözleşmelerinin tutarı (servis hedefi gerçekleşmesine eklenir; repName verilirse satış temsilcisine göre).
-function _svcExtraWon(repName){ return (state.maintenances||[]).filter(function(m){ return m.opportunityId && (!repName || m.assignedTo===repName); }).reduce(function(a,m){ return a+(Number(m.amount)||0); },0); }
+// Bakım sözleşmesi aktif mali yıl için servis cirosuna sayılır mı? Fırsattan açılanlar her zaman; elle açılanlar (fırsatsız) sözleşme dönemi
+// (başlangıç = mtBaseDate/oluşturma, bitiş = mtEndDate ya da +12 ay) aktif yılla kesişiyorsa. Tutar = € karşılığı (amount).
+function _maintCountsForYear(m){
+  if(!m || !(Number(m.amount)>0)) return false;
+  if(m.opportunityId) return true;
+  const y=activeFiscalYear(), a=String(m.mtBaseDate||m.createdAt||'').slice(0,10);
+  if(!a) return false;
+  const e=String(m.mtEndDate||'').slice(0,10) || _addMonth(a,12);
+  return a<=(y+'-12-31') && e>=(y+'-01-01');
+}
+function _svcExtraWon(repName){ return (state.maintenances||[]).filter(function(m){ return _maintCountsForYear(m) && (!repName || m.assignedTo===repName); }).reduce(function(a,m){ return a+(Number(m.amount)||0); },0); }
 const JOB_ST = ["SON KULLANICI","ALMIŞ MÜTEAHHİT","ALMIŞ TAŞERON","MÜTEAHHİT İHALESİ","TAŞERON İHALESİ","KEŞİF","BAYİ","OEM"];
 const PROP_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Reddedildi"];
 const SERV_ST = ["Hazırlanıyor","Gönderildi","Revize","Kazanıldı","Randevu","Kaçtı"];
@@ -5301,7 +5311,8 @@ function renderDashboardAdmin() {
   const totalCount = OF.length;
   const avgDeal = totalCount ? totalAll/totalCount : 0;
   const winRate = totalCount ? Math.round(OF.filter(o=>o.stage==='KAZANILDI').length/totalCount*100) : 0;
-  const serviceTotal = S.reduce((a,s)=>a+(Number(s.amount)||0),0);
+  const _maintN=(state.maintenances||[]).filter(_maintCountsForYear).length;
+  const serviceTotal = S.reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();   // servis kayıtları + bakım sözleşmeleri
   const compTarget = (state.targets&&state.targets.company)||0;
   const targetPct = compTarget>0?Math.min(100,Math.round(won/compTarget*100)):0;
 
@@ -5313,7 +5324,7 @@ function renderDashboardAdmin() {
     {l:'Win Rate',v:winRate+'%',s:OF.filter(o=>o.stage==='KAZANILDI').length+' kazanılan / '+totalCount+' toplam',c:'#16a34a',i:'🏆'},
     {l:'Şirket Yıllık Hedef',v:eur(compTarget),s:'Hedefe ulaşma: '+(compTarget>0?targetPct+'%':'Hedef girilmedi'),c:'#0891b2',i:'🎯'},
     {l:'Kaybedilen Fırsat',v:String(lost),s:'KAÇTI + NO GO + ÖLDÜ',c:'#dc2626',i:'❌'},
-    {l:'Teknik Servis Ciro',v:eur(serviceTotal),s:S.length+' kayıt',c:'#ea580c',i:'🔧'},
+    {l:'Teknik Servis Ciro',v:eur(serviceTotal),s:S.length+' servis · '+_maintN+' bakım sözleşmesi',c:'#ea580c',i:'🔧'},
     (()=>{ const wonOpps=OF.filter(o=>o.stage==='KAZANILDI'); const tasks=(state.tasks||[]).map(normTask); const invoiced=wonOpps.filter(o=>tasks.some(t=>t.linkType==='opportunity'&&t.linkId===o.id&&t.title&&t.title.indexOf('Fatura')>=0&&taskIsClosed(t))); const uninv=wonOpps.filter(o=>!invoiced.includes(o)).reduce((a,o)=>a+(Number(o.value)||0),0); return {l:'Fatura Edilmemiş İş',v:eur(uninv),s:(wonOpps.length-invoiced.length)+' / '+wonOpps.length+' proje',c:uninv>0?'#d97706':'#16a34a',i:'📄'}; })(),
   ].forEach(k=>kpiGrid.appendChild(kpiCard(k.l,k.v,k.s,k.c,k.i)));
 
@@ -5340,10 +5351,10 @@ function renderDashboardAdmin() {
   const repMap = {};
   OF.forEach(o=>{
     const n = o.assignedTo||'Atanmamış';
-    if(!repMap[n]) repMap[n]={tot:0,cnt:0,won:0,lost:0};
+    if(!repMap[n]) repMap[n]={tot:0,cnt:0,won:0,lost:0,wonVal:0};
     repMap[n].tot += Number(o.value)||0;
     repMap[n].cnt++;
-    if(o.stage==='KAZANILDI') repMap[n].won++;
+    if(o.stage==='KAZANILDI'){ repMap[n].won++; repMap[n].wonVal += Number(o.value)||0; }
     if(LOST.includes(o.stage)) repMap[n].lost++;
   });
   // repMap zaten activeReps'ten geliyor - hasTarget filtreli
@@ -5352,13 +5363,14 @@ function renderDashboardAdmin() {
       h('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:'linear-gradient(135deg,#2563eb,#7c3aed)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},n.split(' ').map(x=>x[0]).join('').slice(0,2)),
       h('span',{style:{fontWeight:'600',fontSize:'13px'}},n)
     ),
-    h('span',{style:{fontWeight:'700',color:'#2563eb'}},eur(d.tot)),
+    h('span',{style:{fontWeight:'700',color:'#2563eb'},title:'Atanmış tüm fırsatların (aktif + kazanılan + kaybedilen) tutar toplamı'},eur(d.tot)),
+    h('span',{style:{fontWeight:'800',color:'#16a34a'},title:'Yalnız KAZANILDI aşamasındaki fırsatların toplamı'},eur(d.wonVal)),
     h('span',{},String(d.cnt)),
     h('span',{style:{color:'#16a34a',fontWeight:'700'}},String(d.won)),
     h('span',{style:{color:'#dc2626',fontWeight:'700'}},String(d.lost)),
     h('span',{style:{fontWeight:'700',color:d.cnt?'#7c3aed':'#94a3b8'}},d.cnt?Math.round(d.won/d.cnt*100)+'%':'-')
   ]);
-  const repTable = miniTable(['Satış Temsilcisi','Toplam Ciro','Fırsat','Kazanılan','Kaybedilen','Win Rate'],repRows);
+  const repTable = miniTable(['Satış Temsilcisi','Toplam Fırsat Tutarı','Kazanılan Ciro','Fırsat','Kazanılan','Kaybedilen','Win Rate'],repRows);
 
   // Kazanılan/Kaybedilen/Devam pasta
   const lostSegments = [
