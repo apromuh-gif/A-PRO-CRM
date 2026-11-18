@@ -8006,6 +8006,7 @@ function clSystemCard(c, sys, idx){
     (c.formType==='bakim') ? h('div',{style:{flex:'0 0 140px'}}, _clSelect(
       [{v:'',l:'Ziyaret frekansı…'},{v:'haftalik',l:'Haftalık'},{v:'aylik',l:'Aylık'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'}],
       sys.visitFreq, function(v){ sys.visitFreq=v; clLoadItems(c,sys); _clRerender(); })) : '',
+    btn('✓ Tümü uygun', function(){ (sys.items||[]).forEach(function(it){ if(!it.result) it.result='uygun'; }); _clRerender(); }, '#16a34a', '#fff', '7px 12px', {fontSize:'12px'}),
     btn('↻ Maddeler', function(){ clLoadItems(c,sys); _clRerender(); }, '#0891b2', '#fff', '7px 12px', {fontSize:'12px'}),
     btn('✕', function(){ c.systems.splice(idx,1); _clRerender(); }, '#dc2626', '#fff', '7px 11px', {fontSize:'12px'}));
   var due = (c.formType==='bakim' && sys.nextDue) ? h('div',{style:{fontSize:'12px',color:'#0891b2',marginBottom:'6px'}}, '⏭ Sonraki bakım vadesi: '+_toTR(sys.nextDue)) : '';
@@ -8054,9 +8055,9 @@ function buildChecklistModal(c){
     [].concat(state.customers||[]).sort(function(a,b){ return (a.firmName||'').localeCompare(b.firmName||'','tr'); })
       .map(function(x){ return {v:x.id, l:x.firmName||'(isimsiz)'}; }));
   var header = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px',marginBottom:'12px'}},
-    h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Müşteri'),
+    h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},(c.formType==='bakim'?'İşveren':'Müşteri')),
       _clSelect(custOpts, c.customerId, function(v){ c.customerId=v; })),
-    h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Saha / Bina Adı'),
+    h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},(c.formType==='bakim'?'Proje / İş adı':'Saha / Bina Adı')),
       h('input',{value:c.siteName||'', placeholder:'Örn. Merkez Bina, A Blok', oninput:function(e){ c.siteName=e.target.value; }, style:_clInputStyle()})),
     h('div',{style:{flex:'0 0 190px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Form Tipi'),
       _clSelect([{v:'ariza',l:'Arıza / Servis'},{v:'devreye',l:'Test / Devreye Alma'},{v:'bakim',l:'Periyodik Bakım'}], c.formType, function(v){ c.formType=v; (c.systems||[]).forEach(function(s){ clLoadItems(c,s); }); _clRerender(); })),
@@ -8067,22 +8068,28 @@ function buildChecklistModal(c){
   var signs = h('div',{style:{marginTop:'14px',paddingTop:'14px',borderTop:'2px solid #e2e8f0'}},
     h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}}, 'İmzalar (dijital + ıslak)'),
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
-      clSignPad(c, c.staffSign, 'A-Pro Yetkilisi', 'sig-staff', (state.users||[]).filter(function(u){return u.active!==false;}).map(function(u){return u.displayName;}).sort(function(a,b){return a.localeCompare(b,'tr');})),
+      clSignPad(c, c.staffSign, (c.formType==='bakim'?'Teknik Servis İlgilisi (A-PRO)':'A-Pro Yetkilisi'), 'sig-staff', (state.users||[]).filter(function(u){return u.active!==false;}).map(function(u){return u.displayName;}).sort(function(a,b){return a.localeCompare(b,'tr');})),
       clSignPad(c, c.custSign, 'Müşteri İlgilisi', 'sig-cust')));
   var isExisting = (state.checklists||[]).some(function(x){ return x.id===c.id; });
   var footer = h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'16px'}},
     btn('💾 Kaydet', function(){ clSave(c); }, '#16a34a'),
     btn('📝 Taslak Kaydet', function(){ clSaveDraft(c); }, '#64748b'),
-    btn('🖨️ PDF / Yazdır', function(){ printChecklist(c); }, '#0891b2'),
+    btn(c.formType==='bakim'?'🖨️ Rapor — PDF / Yazdır':'🖨️ PDF / Yazdır', function(){ printChecklist(c); }, '#0891b2'),
     isExisting ? btn('🗑 Sil', function(){ clDelete(c.id); }, '#dc2626') : '',
     btn('Kapat', function(){ setState({modal:null}); }, '#64748b'));
-  var body = h('div',{}, header, ...systems, addBtn, signs, footer);
+  var tools = (c.formType==='bakim') ? h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'12px'}},
+      btn('📖 NFPA 25 (açık erişim)', function(){ window.open(NFPA25_URL,'_blank','noopener'); }, '#7c3aed','#fff','7px 12px',{fontSize:'12px'}),
+      (c.linkType==='maintenance') ? btn('📝 Servis Formu →', async function(){ await clSaveDraft(c); setState({modal:{type:'bakimformlar', maintId:c.linkId}}); }, '#0f766e','#fff','7px 12px',{fontSize:'12px'}) : h('span'),
+      h('span',{style:{fontSize:'11px',color:'#64748b',alignSelf:'center'}},'Teknik servis ilgilisi maddeleri işaretler (Uygun / Uygun Değil / N/A), imzalar; rapor PDF/yazdır ile müşteriye teslim edilir.'))
+    : h('span');
+  var body = h('div',{}, tools, header, ...systems, addBtn, signs, footer);
   return modal(FORMTYPE_META[c.formType]||'Servis Checklist', body, function(){ setState({modal:null}); }, '900px');
 }
 // ── PDF ──
 function _clResultBadge(r){ return r==='uygun'?'✔ Uygun': r==='uygundegil'?'✗ Uygun Değil': r==='na'?'N/A':'—'; }
 function printChecklist(c){
   c = normChecklist(c);
+  if(c.formType==='bakim'){ rpOpenPrint(c); return; }   // periyodik bakım: antetli müşteri raporu (iş programı ile aynı sayfa yapısı)
   var cust = (state.customers||[]).find(function(x){ return x.id===c.customerId; });
   var sysHtml = (c.systems||[]).map(function(sys){
     var meta = SYS_META[sys.sysKey] || {l:sys.sysKey};
@@ -10275,8 +10282,8 @@ async function maintStartIcra(m){
   }
   const me=(state.currentUser && state.currentUser.displayName) || '';
   if(!maintIcraActive(m)) await persistMaint({...m, mtIcra:{due:due, at:today(), by:me}, ...stamp()});
-  setState({modal:{type:'bakimformlar', maintId:m.id}});
-  showToast('🚀 İcra başlatıldı — Checklist ve Servis Formunu doldurun, sonra ziyareti tamamlayın.');
+  maintOpenVisitReport(m);
+  showToast('🚀 İcra başlatıldı — NFPA maddelerini işaretleyin, imzalayın; sonra Servis Formunu doldurup ziyareti tamamlayın.');
 }
 function maintIcraChip(m){
   if(!maintIcraActive(m)) return h('span');
@@ -10348,7 +10355,7 @@ const SYS_META = {
   davlumbaz:    { l: 'Davlumbaz / Mutfak Söndürme',  std: 'NFPA 96/17A',subs: [] }
 };
 const FREQ_META = { haftalik:'Haftalık', aylik:'Aylık', '3aylik':'3 Aylık', '6aylik':'6 Aylık', yillik:'Yıllık', '5yillik':'5 Yıllık', '10yillik':'10 Yıllık' };
-const FORMTYPE_META = { ariza:'Arıza / Servis Formu', devreye:'Test / Devreye Alma Formu', bakim:'Periyodik Bakım Formu' };
+const FORMTYPE_META = { ariza:'Arıza / Servis Formu', devreye:'Test / Devreye Alma Formu', bakim:'Periyodik Bakım Raporu' };
 
 // Şablon verisi fonksiyon-sarmalı (Node test harness yalnız function çıkarabilir).
 function _clTemplates(){ return {
@@ -11761,9 +11768,23 @@ function ipEnsureStyle(){
     '.ipg-sb .bd{height:72px;padding:6px 10px;font-size:9px;color:#475569;position:relative}.ipg-sb .bd p{margin:0 0 3px}',
     '.ipg-sb .sg{position:absolute;left:10px;right:10px;bottom:6px;border-top:1px solid #94a3b8;padding-top:2px;font-size:8px;color:#94a3b8}',
     '.ipg-ft{position:absolute;left:30px;right:30px;bottom:12px;display:flex;justify-content:space-between;border-top:1.5px solid #c00000;padding-top:4px;font-size:8px;color:#999}',
+    '.rpg-page{width:794px;height:1123px;background:#fff;padding:24px 28px 0;position:relative;box-sizing:border-box;overflow:hidden;font-family:Inter,Arial,Helvetica,sans-serif;color:#111;margin:0 auto 14px;box-shadow:0 2px 12px rgba(0,0,0,.25)}',
+    '.rpg-page *{box-sizing:border-box}',
+    '.rpg-info{display:grid;grid-template-columns:1.2fr 1fr 1fr;border-top:1.5px solid #1e2d4a;border-left:1.5px solid #1e2d4a;margin-bottom:9px}',
+    '.rpg-info>div{border-right:1.5px solid #1e2d4a;border-bottom:1.5px solid #1e2d4a;min-width:0}.rpg-info .w2{grid-column:span 2}.rpg-info .w3{grid-column:span 3}',
+    '.rpg-info span{display:block;background:#1e2d4a;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px}',
+    '.rpg-info b{display:block;font-size:11px;color:#0f1f35;padding:5px 8px;line-height:1.3}',
+    '.rpg-band{margin-top:6px;background:#1e2d4a;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.05em;padding:0 8px;height:20px;line-height:20px;display:flex;justify-content:space-between;text-transform:uppercase}.rpg-band i{font-style:normal;font-weight:600;opacity:.85}',
+    '.rpg-r{display:flex;border-bottom:1px solid #cbd5e1;border-left:1px solid #cbd5e1;border-right:1px solid #cbd5e1;font-size:8.5px;line-height:1.25;min-height:20px;align-items:stretch}.rpg-r.two{min-height:32px}',
+    '.rpg-r span{padding:3px 5px;border-right:1px solid #e2e8f0;display:flex;align-items:center;overflow:hidden}.rpg-r span:last-child{border-right:0}',
+    '.rpg-h{background:#e8eef7;font-weight:800;font-size:7.5px;color:#1e2d4a;min-height:18px}',
+    '.rpg-r .c1{width:26px;justify-content:center}.rpg-r .c2{flex:1;min-width:0}.rpg-r .c3{width:54px;justify-content:center;font-size:7.5px}.rpg-r .c4{width:46px;justify-content:center;text-align:center}.rpg-r .c5{width:130px}',
+    '.rpg-sum{margin-top:10px;font-size:9px;padding:5px 8px;background:#f1f5f9;border:1px solid #cbd5e1}',
+    '.rpg-box{margin-top:8px;border:1px solid #cbd5e1}.rpg-box h5{margin:0;background:#e8eef7;color:#1e2d4a;font-size:8.5px;font-weight:800;padding:3px 8px;letter-spacing:.05em}.rpg-box ol{margin:3px 0;padding-left:26px;font-size:9px;line-height:1.4}',
+    '.rpg-std{margin-top:10px;font-size:7.5px;color:#64748b;line-height:1.4}',
     '@media print{body.ip-printing>*:not(#ip-print-overlay){display:none!important}#ip-print-overlay{position:static!important;background:#fff!important;overflow:visible!important}',
     '#ip-print-overlay .ip-tb{display:none!important}#ip-print-overlay .ip-wrap{zoom:1!important;padding:0!important}',
-    '#ip-print-overlay .ipg-page{margin:0!important;box-shadow:none!important;page-break-after:always;break-after:page}#ip-print-overlay .ipg-page:last-child{page-break-after:auto;break-after:auto}',
+    '#ip-print-overlay .ipg-page,#ip-print-overlay .rpg-page{margin:0!important;box-shadow:none!important;page-break-after:always;break-after:page}#ip-print-overlay .ipg-page:last-child,#ip-print-overlay .rpg-page:last-child{page-break-after:auto;break-after:auto}',
     '@page{size:A4 landscape;margin:0}}'
   ].join('\n');
   document.head.appendChild(st);
@@ -11903,19 +11924,20 @@ function ipOpenPrint(o, plan, revLabel, prevPlan, autoPdf){
   window.addEventListener('afterprint', function(){ document.body.classList.remove('ip-printing'); }, {once:true});
   if(autoPdf) setTimeout(doPdf, 300);
 }
-async function ipExportPDF(o, revLabel, wrap){
+async function ipExportPDF(o, revLabel, wrap, opts){
+  opts = opts || {}; const portrait = opts.orient==='portrait';
   try{
     showToast('PDF hazırlanıyor…','#0284c7');
     await window._loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
     await window._loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-    const pages=wrap.querySelectorAll('.ipg-page');
-    const pdf=new window.jspdf.jsPDF({orientation:'landscape', unit:'mm', format:'a4'});
+    const pages=wrap.querySelectorAll('.ipg-page,.rpg-page');
+    const pdf=new window.jspdf.jsPDF({orientation:portrait?'portrait':'landscape', unit:'mm', format:'a4'});
     for(let i=0;i<pages.length;i++){
       const cv=await window.html2canvas(pages[i], {scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false});
-      if(i>0) pdf.addPage('a4','landscape');
-      pdf.addImage(cv.toDataURL('image/jpeg',0.95), 'JPEG', 0, 0, 297, 210);
+      if(i>0) pdf.addPage('a4',portrait?'portrait':'landscape');
+      pdf.addImage(cv.toDataURL('image/jpeg',0.95), 'JPEG', 0, 0, portrait?210:297, portrait?297:210);
     }
-    pdf.save('Is-Programi_'+ipSlug(o.title)+'_'+ipSlug(revLabel||'taslak')+'_'+today()+'.pdf');
+    pdf.save((opts.name || ('Is-Programi_'+ipSlug(o.title)+'_'+ipSlug(revLabel||'taslak')+'_'+today()))+'.pdf');
     showToast('✅ PDF indirildi.');
   }catch(e){
     console.error('[ipExportPDF]', e);
@@ -12034,6 +12056,129 @@ function buildIsProgramiPanel(oppId){
   const content=h('div',{}, infoRow, rowsTbl, rowBtns, holBox, acts, prev,
     h('div',{style:{fontSize:'11px',color:T4,marginTop:'8px'}},'Haftalar proje başlangıcından 7\'şer günlük dilimlerdir. Renk = faz; koyu kısım gerçekleşen ilerleme. Resmî tatil haftaları başlıkta kırmızı (●), tatilde çalışılacak haftalar turuncu (⚒). Her revizyon kaydı, önceki revizyondaki konumu gri izle gösterir.'));
   return content;
+}
+
+// ═══ PERİYODİK BAKIM RAPORU (müşteriye teslim; A4 dikey; iş programı ile aynı antetli sayfa yapısı) ═══
+// Veri kaynağı = ziyaretin NFPA Checklist'i (formType 'bakim'): sistem(ler), NFPA maddeleri, Uygun / Uygun Değil / N/A, not, imzalar.
+// Teknik servis ilgilisi = checklist'teki A-PRO yetkilisi (staffSign.name; ziyaret açılırken bakım kaydındaki T.Servis İlgilisi'nden gelir).
+const NFPA25_URL = 'https://link.nfpa.org/free-access/publications/25/2026';
+function rpSubLabel(sys){ const meta=SYS_META[sys.sysKey]||{}; if(sys.subType && meta.subs){ const so=meta.subs.find(function(o){ return o.v===sys.subType; }); return so?so.l:sys.subType; } return ''; }
+function rpBuildPages(c){
+  c = normChecklist(c);
+  const cust=(state.customers||[]).find(function(x){ return x.id===c.customerId; });
+  const systems=(c.systems||[]).filter(function(s){ return s.sysKey; });
+  const tech=(c.staffSign&&c.staffSign.name)||'';
+  const sysNames=systems.map(function(s){ const m=SYS_META[s.sysKey]||{l:s.sysKey}; const sl=rpSubLabel(s); return m.l+(sl?(' ('+sl+')'):''); });
+  const stds=[]; systems.forEach(function(s){ const m=SYS_META[s.sysKey]; if(m&&m.std&&stds.indexOf(m.std)<0) stds.push(m.std); });
+  const items=[]; const stats={uygun:0,uygundegil:0,na:0,bos:0}; const findings=[]; const notes=[];
+  systems.forEach(function(s,si){
+    const m=SYS_META[s.sysKey]||{l:s.sysKey,std:''};
+    items.push({t:'band', si:si, sys:s, meta:m}); items.push({t:'thead'});
+    let n=0;
+    (s.items||[]).forEach(function(it){
+      n++; const r=it.result||'';
+      if(r==='uygun') stats.uygun++; else if(r==='uygundegil'){ stats.uygundegil++; findings.push({sys:m.l, label:it.label, note:it.note||''}); } else if(r==='na') stats.na++; else stats.bos++;
+      const long=(String(it.label||'').length>82) || (String(it.note||'').length>30);
+      items.push({t:'row', si:si, no:n, it:it, u:long?1.6:1});
+    });
+    if(s.extraNotes && String(s.extraNotes).trim()) notes.push(m.l+': '+String(s.extraNotes).trim());
+  });
+  const unit=function(x){ return x.t==='band'?1.5:(x.t==='row'?x.u:1); };
+  // 1 birim ≈ 20px (ölçülerek ayarlandı)
+  const CAP1=39, CAPN=45; const pages=[]; let cur=[], used=0, cap=CAP1;
+  const flush=function(){ pages.push(cur); cur=[]; used=0; cap=CAPN; };
+  items.forEach(function(x,ix){
+    const w=unit(x);
+    if(x.t==='band' && used+3.6>cap && cur.length){ flush(); }
+    if(used+w>cap+0.001 && cur.length){ flush(); }
+    if(cur.length===0 && x.t==='row'){ const bs=items.slice(0,ix).filter(function(y){ return y.t==='band' && y.si===x.si; }).pop(); cur.push(Object.assign({}, bs, {cont:true})); cur.push({t:'thead'}); used+=2.5; }
+    cur.push(x); used+=w;
+  });
+  if(cur.length || !pages.length) pages.push(cur);
+  const tailU=17+Math.min(findings.length,10)*0.75+(notes.length?2.5:0);
+  if(used+tailU>cap+0.001) pages.push([]);
+  const total=pages.length;
+  const logoHdr='<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00 | info@a-pro.com.tr | www.a-pro.com.tr</div></div>';
+  const cell=function(lab,val,cls){ return '<div class="'+(cls||'')+'"><span>'+lab+'</span><b>'+val+'</b></div>'; };
+  const info='<div class="rpg-info">'
+    +cell('İşveren',_ipEsc(cust?cust.firmName:''))+cell('Proje / iş adı',_ipEsc(c.siteName||''))+cell('Bakım tarihi',ipFmt(c.createdAt||today())+(c.visitLabel?(' · '+_ipEsc(c.visitLabel)):''))
+    +cell('Sistem tipi',_ipEsc(sysNames.join(' · ')||'—'),'w2')+cell('Teknik servis ilgilisi',_ipEsc(tech||'—'))
+    +cell('Uygulanan standart',_ipEsc(stds.join(' · ')||'NFPA 25'),'w3')+'</div>';
+  const resMark=function(r,k){ return r===k ? (k==='uygun'?'<b style="color:#15803d">✔</b>':k==='uygundegil'?'<b style="color:#b91c1c">✗</b>':'<b style="color:#475569">N/A</b>') : ''; };
+  const rowHTML=function(x){
+    if(x.t==='band'){
+      const s=x.sys, m=x.meta, sl=rpSubLabel(s);
+      return '<div class="rpg-band">'+_ipEsc(m.l)+(sl?(' · '+_ipEsc(sl)):'')+(s.visitFreq?(' · '+_ipEsc(FREQ_META[s.visitFreq]||s.visitFreq)+' bakım'):'')+'<i>'+_ipEsc(m.std||'')+(x.cont?' · (devam)':'')+'</i></div>';
+    }
+    if(x.t==='thead') return '<div class="rpg-r rpg-h"><span class="c1">No</span><span class="c2">KONTROL / TEST MADDESİ</span><span class="c3">PERİYOT</span><span class="c4">UYGUN</span><span class="c4">UYGUN DEĞİL</span><span class="c4">N/A</span><span class="c5">NOT</span></div>';
+    const it=x.it, r=it.result||'';
+    return '<div class="rpg-r'+(x.u>1?' two':'')+'"><span class="c1">'+x.no+'</span><span class="c2">'+_ipEsc(it.label)+'</span><span class="c3">'+_ipEsc(it.freq?(FREQ_META[it.freq]||it.freq):'')+'</span><span class="c4">'+resMark(r,'uygun')+'</span><span class="c4">'+resMark(r,'uygundegil')+'</span><span class="c4">'+resMark(r,'na')+'</span><span class="c5">'+_ipEsc(it.note||'')+'</span></div>';
+  };
+  const sigBox=function(title,name,unvan,sign){
+    return '<div class="ipg-sb"><h4>'+title+'</h4><div class="bd"><p><b>Ad Soyad:</b> '+_ipEsc(name||'')+'</p><p><b>Ünvan:</b> '+_ipEsc(unvan)+'</p><p><b>Tarih:</b> '+ipFmt((sign&&sign.at)||c.completedAt||c.createdAt||today())+'</p>'
+      +((sign&&sign.dataURL)?'<img alt="" src="'+sign.dataURL+'" style="position:absolute;right:12px;top:4px;height:56px;max-width:55%">':'')+'<div class="sg">İmza</div></div></div>';
+  };
+  const tail='<div class="rpg-sum"><b>ÖZET</b> · Toplam madde: '+(stats.uygun+stats.uygundegil+stats.na+stats.bos)+' · <span style="color:#15803d">Uygun: '+stats.uygun+'</span> · <span style="color:#b91c1c">Uygun değil: '+stats.uygundegil+'</span> · N/A: '+stats.na+(stats.bos?(' · <span style="color:#b45309">İşaretlenmemiş: '+stats.bos+'</span>'):'')+'</div>'
+    +'<div class="rpg-box"><h5>TESPİT EDİLEN EKSİKLİKLER / UYGUN OLMAYAN MADDELER</h5>'+(findings.length?('<ol>'+findings.slice(0,10).map(function(f){ return '<li><b>'+_ipEsc(f.sys)+':</b> '+_ipEsc(f.label)+(f.note?(' — <i>'+_ipEsc(f.note)+'</i>'):'')+'</li>'; }).join('')+(findings.length>10?('<li>… ve '+(findings.length-10)+' madde daha (tabloya bakınız)</li>'):'')+'</ol>'):'<div style="padding:3px 8px;font-size:9px;color:#15803d">Uygun olmayan madde tespit edilmemiştir.</div>')+'</div>'
+    +(notes.length?('<div class="rpg-box"><h5>EK NOTLAR</h5><div style="padding:3px 8px;font-size:9px;line-height:1.4">'+notes.map(_ipEsc).join('<br>')+'</div></div>'):'')
+    +'<div class="ipg-sign" style="margin-top:14px">'+sigBox('Teknik servis ilgilisi (A-PRO)',tech,'Teknik Servis',c.staffSign)+sigBox('Müşteri ilgilisi',c.custSign&&c.custSign.name,'İşveren Yetkilisi',c.custSign)+'</div>'
+    +'<div class="rpg-std">Bu rapor, '+_ipEsc(stds.join(', ')||'NFPA 25')+' standartları kapsamındaki periyodik muayene, test ve bakım maddelerine göre hazırlanmıştır. Standart metni: NFPA 25 (2026) — link.nfpa.org/free-access/publications/25/2026</div>';
+  return pages.map(function(pg,pi){
+    const isLast=pi===total-1;
+    return '<div class="rpg-page">'+logoHdr
+      +'<div class="ipg-title">PERİYODİK BAKIM RAPORU</div><div class="ipg-sub">Rapor tarihi: '+ipFmt(today())+' · NFPA standartlarına göre periyodik muayene, test ve bakım</div>'
+      +(pi===0?info:'')
+      +pg.map(rowHTML).join('')
+      +(isLast?tail:'')
+      +'<div class="ipg-ft"><span>A-PRO Mühendislik Ltd. Şti. — Periyodik Bakım Raporu · '+_ipEsc(c.siteName||'')+'</span><span>www.a-pro.com.tr</span><span>Sayfa '+(pi+1)+' / '+total+'</span></div></div>';
+  });
+}
+function rpOpenPrint(c, autoPdf){
+  const pages=rpBuildPages(c);
+  if(!pages.length){ showToast('⚠️ Önce en az bir sistem ekleyin.','#dc2626'); return; }
+  ipEnsureStyle();
+  const old=document.getElementById('ip-print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='ip-print-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:#cbd5e1;display:flex;flex-direction:column;';
+  const tb=document.createElement('div'); tb.className='ip-tb';
+  tb.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 18px;background:#1e2d4a;color:#fff;flex-shrink:0;flex-wrap:wrap;';
+  tb.innerHTML='<div style="font-weight:800;font-size:15px">📋 Periyodik Bakım Raporu — '+_ipEsc(c.siteName||'')+' ('+pages.length+' sayfa)</div>';
+  const bw=document.createElement('div'); bw.style.cssText='display:flex;gap:8px;';
+  const mk=function(txt,bg,fn){ const b=document.createElement('button'); b.textContent=txt; b.style.cssText='padding:8px 16px;background:'+bg+';color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer'; b.onclick=fn; return b; };
+  const wrap=document.createElement('div'); wrap.className='ip-wrap'; wrap.style.cssText='flex:1;overflow:auto;padding:14px 0;';
+  const fit=function(){ wrap.style.zoom=String(Math.min(1,(window.innerWidth-24)/794)); };
+  const fname='Periyodik-Bakim-Raporu_'+ipSlug(c.siteName)+'_'+(c.createdAt||today());
+  const doPdf=function(){ wrap.style.zoom='1'; ipExportPDF({title:c.siteName}, '', wrap, {orient:'portrait', name:fname}).then(fit,fit); };
+  bw.appendChild(mk('🖨️ Yazdır','linear-gradient(135deg,#2563eb,#1d4ed8)',function(){
+    const ps=document.createElement('style'); ps.id='rp-page-style'; ps.textContent='@media print{@page{size:A4 portrait;margin:0}}'; document.head.appendChild(ps);
+    document.body.classList.add('ip-printing'); setTimeout(function(){ window.print(); },50);
+  }));
+  bw.appendChild(mk('⬇️ PDF indir','linear-gradient(135deg,#16a34a,#15803d)',doPdf));
+  bw.appendChild(mk('📖 NFPA 25','#7c3aed',function(){ window.open(NFPA25_URL,'_blank','noopener'); }));
+  bw.appendChild(mk('✕ Kapat','#dc2626',function(){ ov.remove(); document.body.classList.remove('ip-printing'); const s=document.getElementById('rp-page-style'); if(s) s.remove(); }));
+  tb.appendChild(bw); ov.appendChild(tb);
+  wrap.innerHTML=pages.join('');
+  ov.appendChild(wrap); document.body.appendChild(ov); fit();
+  window.addEventListener('afterprint', function(){ document.body.classList.remove('ip-printing'); const s=document.getElementById('rp-page-style'); if(s) s.remove(); }, {once:true});
+  if(autoPdf) setTimeout(doPdf, 300);
+}
+// Periyodik bakım ziyareti: "İcrayı başlat" → o ziyaretin raporunu (NFPA checklist) hazır maddelerle açar.
+function maintOpenVisitReport(m){
+  const cust=(state.customers||[]).find(function(x){ return x.id===m.customerId; })||null;
+  const since=m.mtLastDone||'';
+  const mine=(state.checklists||[]).filter(function(x){ return x.linkType==='maintenance' && x.linkId===m.id && x.formType==='bakim' && String(x.createdAt||'')>=since; })
+    .sort(function(a,b){ return String(b.createdAt||'').localeCompare(String(a.createdAt||'')); });
+  const draft=mine.find(function(x){ return x.status!=='tamam'; }) || mine[0];
+  if(draft){ setState({modal:{type:'checklist', item:normChecklist(JSON.parse(JSON.stringify(draft)))}}); return; }
+  const dueISO=maintHasSystems(m) ? mtRecordNextDue(m.mtSystems) : String(maintNextDue(m)||'').slice(0,10);
+  const dueSys=maintHasSystems(m) ? mtSystemsDueOn(m.mtSystems, dueISO) : [];
+  const c=normChecklist({ id:genId(), formType:'bakim', customerId:m.customerId||'', siteName:m.jobName||((cust&&cust.firmName)||''), linkType:'maintenance', linkId:m.id, createdAt:today(), status:'taslak',
+    visitLabel:(maintOccurrenceLabel(m)||''), staffSign:{name:m.serviceContact||'', dataURL:'', at:''}, systems:[] });
+  dueSys.forEach(function(s){
+    const sys={ sysKey:s.sysKey, subType:'', visitFreq:s.freq||'', items:[], extraNotes:'', nextDue:'' };
+    clLoadItems(c, sys); c.systems.push(sys);
+  });
+  setState({modal:{type:'checklist', item:c}});
 }
 
 function buildIsProgramiBlock(o, isAdmin, closed){
