@@ -12186,8 +12186,10 @@ function projListRow(o, isAdmin){
     (!o.execClosedAt && !hkDay(o))?(function(){ const c=h('span',{title:'Hakediş sekmesini aç',style:{background:'#dc2626',color:'#fff',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}},'⚠ Hakediş günü yok'); c.addEventListener('click',function(e){ e.stopPropagation(); setState({modal:{type:'proje', oppId:o.id, tab:'hakedis'}}); }); return c; })():h('span'),
     ipApplies(o) ? (function(){
       const l=ipList(o), due=ipNextDue(o), late=_diffDays(due)<0;
-      const chip=h('span',{title:'İş Programı sekmesini aç',style:{background:late?'#fee2e2':'#ccfbf1',color:late?'#b91c1c':'#0f766e',border:'1px solid '+(late?'#fca5a5':'#5eead4'),borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800',whiteSpace:'nowrap',cursor:'pointer'}},
-        '📆 '+(l.length ? (ipLabel(l[l.length-1].no)+' · sonraki '+ipFmtShort(due)) : ('İlk program · vade '+ipFmtShort(due)))+(late?' (gecikti)':''));
+      const chip=h('span',{title:(l.length?'İş programı revizyonu 15 günde bir yapılır. ':'Projenin iş programı henüz hazırlanmadı; son tarihe kadar hazırlanmalı. ')+'Tıklayınca İş Programı sekmesi açılır.',style:{background:late?'#fee2e2':'#ccfbf1',color:late?'#b91c1c':'#0f766e',border:'1px solid '+(late?'#fca5a5':'#5eead4'),borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800',whiteSpace:'nowrap',cursor:'pointer'}},
+        '📆 '+(l.length
+          ? ('İş programı '+ipLabel(l[l.length-1].no)+' · '+(late?('revizyon gecikti (son tarih '+ipFmtShort(due)+')'):('sonraki revizyon '+ipFmtShort(due))))
+          : (late?('İş programı hazırlanmadı · son tarih '+ipFmtShort(due)+' geçti'):('İş programı hazırlanmadı · son tarih '+ipFmtShort(due)))));
       chip.addEventListener('click',function(e){ e.stopPropagation(); setState({modal:{type:'proje', oppId:o.id, tab:'isprogrami'}}); });
       return chip;
     })() : h('span'),
