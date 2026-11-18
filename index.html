@@ -3438,7 +3438,7 @@ function buildMaintModal(item) {
       mtUtilRow
     ) : h('span'),
     h('div',{style:{display:'flex',gap:'10px'}},
-      btn('Kaydet',()=>{ if(!String(f.jobName||'').trim()){ showToast('⚠ İşin adı zorunludur.','#dc2626'); return; } if(!f.assignedTo){ showToast('⚠ Satış Temsilcisi zorunludur — servis hedefine yazılması için seçin.','#dc2626'); return; } var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); if(sys.length && !_isSaneISODate(f.mtEndDate)){ showToast('⚠ Bitiş tarihi girilmelidir — ziyaret programı ve yıllık testlerin hangi bakımda yapılacağı buna göre hesaplanır.','#dc2626'); return; } var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,eurRateDate:f.eurRateDate||'',mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; saveMaint(_rec,!!item); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
+      btn('Kaydet',()=>{ if(!String(f.jobName||'').trim()){ showToast('⚠ İşin adı zorunludur.','#dc2626'); return; } if(!f.assignedTo){ showToast('⚠ Satış Temsilcisi zorunludur — servis hedefine yazılması için seçin.','#dc2626'); return; } var sys=(f.mtSystems||[]).filter(s=>s.sysKey&&s.freq); if(sys.length && !_isSaneISODate(f.mtEndDate)){ showToast('⚠ Bitiş tarihi girilmelidir — ziyaret programı ve yıllık testlerin hangi bakımda yapılacağı buna göre hesaplanır.','#dc2626'); return; } var next = sys.length ? mtRecordNextDue(sys) : ((item&&item.mtNextDue)||''); const _rec={...f,amount:Number(f.amount)||0,amountTRY:Number(f.amountTRY)||0,eurRate:Number(f.eurRate)||0,eurRateDate:f.eurRateDate||'',mtSystems:sys,mtNextDue:next}; delete _rec._eurManual; delete _rec._sysInit; saveMaint(_rec,!!(item&&item.id)); },'linear-gradient(135deg,#10b981,#059669)','#fff','11px 16px',{flex:'1',fontSize:'14px'}),
       btn('İptal',()=>setState({modal:null}),'#21262d','#8b949e','11px 20px',{fontSize:'14px'})
     )
   );
@@ -3477,6 +3477,7 @@ function maintSysSection(f){
   if(!endDate && _isSaneISODate(base)) endDate = _addMonth(base, 12);   // bitiş tarihi boşsa baz + 12 ay otomatik (elle değiştirilebilir)
   f.mtEndDate = endDate;
   const rerender = ()=>setState({modal:{type:'maintenance',item:JSON.parse(JSON.stringify(f))}});
+  if(!f.id && !f._sysInit){ f._sysInit=true; if(!f.mtSystems.length) f.mtSystems.push({sysKey:'',freq:'',due:'',lastDone:'',doneCount:0}); }   // yeni kayıt: hazır boş sistem satırı ("Yıllık bakım sayısı" hemen görünür)
   const sysOpts = [{v:'',l:'-- Sistem --'}, ...Object.keys(SYS_META).map(k=>({v:k,l:SYS_META[k].l}))];
   const fBase = inp('', base, v=>{
     if(v && !_isSaneISODate(v)){ showToast('⚠️ Geçersiz tarih. Yıl 4 haneli olmalı (ör. 28.02.2027).','#d97706'); return; }
@@ -3530,7 +3531,10 @@ function maintSysSection(f){
     lbl('🔁 Periyodik Bakım Takibi (Çok Sistemli)'),
     row(field('Sözleşme / Baz Tarihi', fBase, true), field('Bitiş Tarihi * (baz + 12 ay otomatik)', fEndDate, true)),
     h('div',{style:{fontSize:'11px',color:'#15803d',marginBottom:'8px'}},'ℹ️ Her sistem kendi periyodunda takip edilir. Kayıt vadesi = en erken sistem vadesi. Bitiş tarihi girilirse tüm planlanan ziyaret tarihleri (kaç kez yapılacağı dahil) otomatik hesaplanır — program en fazla 1 yıl ileriyi kapsar (yılda 4 bakım: 4, yılda 2 bakım: 2, yılda 1 bakım: 1 ziyaret). Yıllık testler 4 bakımlıda 4., 2 bakımlıda 2. bakımda yapılır. Vade tarihini devam eden işler için elle de değiştirebilirsiniz.'),
-    rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px'}},'Henüz sistem eklenmedi.'),
+    rows.length ? h('div',{},
+      h('div',{style:{display:'flex',gap:'6px',alignItems:'center',marginBottom:'3px',fontSize:'10.5px',fontWeight:'800',color:'#15803d',textTransform:'uppercase',letterSpacing:'.04em'}},
+        h('div',{style:{flex:'2'}},'Sistem'), h('div',{style:{flex:'1.3'}},'Yıllık bakım sayısı'), h('div',{style:{flex:'1.2'}},'İlk bakım vadesi'), h('div',{style:{width:'34px',flexShrink:'0'}})),
+      ...rows) : h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'6px'}},'Henüz sistem eklenmedi.'),
     btn('+ Sistem Ekle',()=>{ f.mtSystems.push({sysKey:'',freq:'',due:'',lastDone:'',doneCount:0}); rerender(); },'#dcfce7','#15803d','8px 12px',{fontSize:'12px',marginBottom:'8px'}),
     recordDue ? h('div',{style:{marginTop:'8px',paddingTop:'8px',borderTop:'1px dashed #bbf7d0'}},
       h('div',{style:{fontSize:'13px',fontWeight:'800',color:'#0f5132'}},'📅 Sonraki Bakım Vadesi: '+_toTR(recordDue)),
@@ -7987,12 +7991,11 @@ function buildChecklistModal(c){
     btn('💾 Kaydet', function(){ clSave(c); }, '#16a34a'),
     btn('📝 Taslak Kaydet', function(){ clSaveDraft(c); }, '#64748b'),
     btn(c.formType==='bakim'?'🖨️ Rapor — PDF / Yazdır':'🖨️ PDF / Yazdır', function(){ printChecklist(c); }, '#0891b2'),
+    (c.formType==='bakim') ? btn('📄 Müşteri Kontrol Föyü', function(){ clOwnerFoyOpen(c); }, '#c00000') : '',
     isExisting ? btn('🗑 Sil', function(){ clDelete(c.id); }, '#dc2626') : '',
     btn('Kapat', function(){ setState({modal:null}); }, '#64748b'));
   var tools = (c.formType==='bakim') ? h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'12px'}},
-      btn('📖 NFPA 25 (açık erişim)', function(){ window.open(NFPA25_URL,'_blank','noopener'); }, '#7c3aed','#fff','7px 12px',{fontSize:'12px'}),
-      btn('📄 Müşteri Kontrol Föyü', function(){ clOwnerFoyOpen(c); }, '#c00000','#fff','7px 12px',{fontSize:'12px'}),
-      h('span',{style:{fontSize:'11px',color:'#64748b',alignSelf:'center'}},'Teknik servis ilgilisi maddeleri işaretler (Uygun / Uygun Değil / N/A), yapılan işlemi yazar ve imzalar; müşteri imzalar. Rapor PDF/yazdır ile müşteriye teslim edilir (ayrı Servis Formu gerekmez). Haftalık / aylık kontroller müşteriye ait olduğundan bu raporda yoktur; Müşteri Kontrol Föyü her bakımda müşteriye teslim edilir.'))
+            h('span',{style:{fontSize:'11px',color:'#64748b',alignSelf:'center'}},'Teknik servis ilgilisi maddeleri işaretler (Uygun / Uygun Değil / N/A), yapılan işlemi yazar ve imzalar; müşteri imzalar. Rapor PDF/yazdır ile müşteriye teslim edilir (ayrı Servis Formu gerekmez). Haftalık / aylık kontroller müşteriye ait olduğundan bu raporda yoktur; Müşteri Kontrol Föyü her bakımda müşteriye teslim edilir.'))
     : h('span');
   var body = h('div',{}, tools, header, ...systems, addBtn, workBox, foyBox, signs, footer);
   return modal(FORMTYPE_META[c.formType]||'Servis Checklist', body, function(){ setState({modal:null}); }, '900px');
