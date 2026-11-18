@@ -7403,46 +7403,6 @@ function buildServiceFormModal(sf){
     signs, footer);
   return modal(SF_DOCTYPE_META[sf.docType]||'Servis-Devreye Alma Formu', body, function(){ setState({modal:null}); }, '820px');
 }
-function printServiceForm(sf){
-  sf = normServiceForm(sf);
-  var cust = (state.customers||[]).find(function(x){ return x.id===sf.customerId; });
-  var proj = sf.projectId ? (state.opportunities||[]).find(function(x){ return x.id===sf.projectId; }) : null;
-  function infoRow(lbl, val){ return '<tr><td class="lbl">'+escapeHtml(lbl)+'</td><td>'+escapeHtml(val||'—')+'</td></tr>'; }
-  var infoGrid = '<table class="infogrid"><tbody>'
-    + infoRow('Müşteri', cust?(cust.firmName||'—'):'—')
-    + infoRow('Saha / Bina', sf.siteName)
-    + infoRow('Proje', proj?(proj.title||'—'):'—')
-    + infoRow('Tarih', _toTR(sf.createdAt||today()))
-    + infoRow('Referans', String(sf.id).slice(-8).toUpperCase())
-    + '</tbody></table>';
-  var sysLabels = (sf.systemsPresent||[]).map(function(k){ return (SYS_META[k]&&SYS_META[k].l)||k; });
-  function signBox(s, role){
-    var img = s.dataURL ? '<img src="'+s.dataURL+'" class="sig"/>' : '<div class="sig"></div>';
-    return '<div class="signbox"><div class="role">'+role+'</div>'+img+'<div class="sigline">Ad Soyad: '+escapeHtml(s.name||'')+'</div><div class="sigline">Tarih: '+escapeHtml(s.at?_toTR(s.at):'')+'</div><div class="sigline">İmza (ıslak): ______________________</div></div>';
-  }
-  var html = ''
-   + '<style>@media print{.no-print{display:none!important;}} @page{margin:14mm;} body{font-family:Arial,Helvetica,sans-serif;color:#111;} .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #c00000;padding-bottom:10px;margin-bottom:14px;} .hd img{height:56px;} .letterhead{text-align:right;font-size:11px;color:#333;line-height:1.6;} .letterhead b{display:block;font-size:13px;color:#111;margin-bottom:2px;} .secbar{background:#c00000;color:#fff;font-weight:700;font-size:12px;padding:6px 10px;text-transform:uppercase;letter-spacing:.03em;margin:14px 0 8px;} .infogrid{width:100%;border-collapse:collapse;margin-bottom:6px;} .infogrid td{border:1px solid #e2e8f0;padding:7px 10px;font-size:12px;} .infogrid td.lbl{background:#f5f5f5;font-weight:700;color:#333;width:22%;} .badges{font-size:12px;} .badge{display:inline-block;background:#fdecec;color:#7a0e0e;border:1px solid #f3b8b8;border-radius:14px;padding:3px 10px;margin:0 6px 6px 0;font-weight:700;} .desc{font-size:12.5px;white-space:pre-wrap;line-height:1.6;} .parties{display:flex;gap:20px;} .parties>div{flex:1;} .signs{display:flex;gap:24px;margin-top:26px;page-break-inside:avoid;} .signbox{flex:1;} .role{font-weight:700;font-size:13px;margin-bottom:4px;} img.sig,.sig{display:block;width:220px;height:80px;border:1px solid #cbd5e1;border-radius:6px;object-fit:contain;} .sigline{font-size:12px;margin-top:4px;} .foot{margin-top:24px;font-size:10px;color:#94a3b8;text-align:center;}</style>'
-   + '<div class="hd"><img src="'+APRO_LOGO_DATAURI+'"/><div class="letterhead">' + APRO_LETTERHEAD.map(function(l,i){ return i===0?('<b>'+escapeHtml(l)+'</b>'):escapeHtml(l)+'<br/>'; }).join('') + '</div></div>'
-   + '<h1 style="font-size:16px;margin:0 0 10px;color:#0f1f35;">'+escapeHtml(SF_DOCTYPE_META[sf.docType]||'Servis-Devreye Alma Formu')+'</h1>'
-   + infoGrid
-   + '<div class="secbar">Hizmet Türü</div><div class="badges"><span class="badge">'+escapeHtml(SF_DOCTYPE_META[sf.docType]||sf.docType)+'</span></div>'
-   + '<div class="secbar">Tesisteki Sistemler</div><div class="badges">'+(sysLabels.length?sysLabels.map(function(l){return '<span class="badge">'+escapeHtml(l)+'</span>';}).join(''):'<span style="color:#94a3b8;font-size:12px;">Belirtilmedi</span>')+'</div>'
-   + '<div class="secbar">Yapılan Hizmet</div><div class="desc">'+escapeHtml(sf.description||'—')+'</div>'
-   + '<div class="secbar">Taraflar</div><div class="parties">'
-     + '<div><b style="font-size:12px;">Servis Personeli</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.staffContact.name||'—')+(sf.staffContact.phone?(' · '+escapeHtml(sf.staffContact.phone)):'')+'</div></div>'
-     + '<div><b style="font-size:12px;">Müşteri İlgilisi</b><div style="font-size:12px;margin-top:3px;">'+escapeHtml(sf.custContact.name||'—')+(sf.custContact.phone?(' · '+escapeHtml(sf.custContact.phone)):'')+'</div></div>'
-   + '</div>'
-   + '<div class="signs">'+signBox(sf.staffSign,'A-Pro Yetkilisi')+signBox(sf.custSign,'Müşteri İlgilisi')+'</div>'
-   + '<div class="foot">A-PRO Mühendislik · Hizmet teslim formu · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
-  var ep = document.getElementById('print-overlay'); if(ep) ep.remove();
-  var po = document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
-  var bar = document.createElement('div'); bar.className='no-print'; bar.style.cssText='display:flex;gap:8px;padding:10px;border-bottom:1px solid #e2e8f0;';
-  var pb = document.createElement('button'); pb.textContent='🖨️ Yazdır'; pb.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;'; pb.onclick=function(){ window.print(); };
-  var cb = document.createElement('button'); cb.textContent='✕ Kapat'; cb.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;'; cb.onclick=function(){ po.remove(); };
-  bar.appendChild(pb); bar.appendChild(cb);
-  var content = document.createElement('div'); content.style.cssText='overflow:auto;padding:24px;'; content.innerHTML=html;
-  po.appendChild(bar); po.appendChild(content); document.body.appendChild(po);
-}
 // ═══════════════════════════════════════════════════════
 // SAHA RAPORU (Field Report) — Proje bazlı günlük/periyodik saha imalat raporu
 // ═══════════════════════════════════════════════════════
@@ -7843,66 +7803,7 @@ function buildFieldReportModal(fr){
   var body=fr.noWork ? h('div',{},header,noWorkRow,noteOnly,footer) : h('div',{},header,noWorkRow,persSec,workSec,matSec,safetySec,reworkSec,budgetRow,photoSec,signSec,footer);
   return modal('Saha Raporu',body,function(){setState({modal:null});},'860px');
 }
-function printFieldReport(fr, photos){
-  photos=Array.isArray(photos)?photos:[];
-  fr=normFieldReport(fr);
-  var proj=fr.projectId?(state.opportunities||[]).find(function(x){return x.id===fr.projectId;}):null;
-  var cust=fr.customerId?(state.customers||[]).find(function(x){return x.id===fr.customerId;}):null;
-  function infoRow(l,v){return '<tr><td class="lbl">'+escapeHtml(l)+'</td><td>'+escapeHtml(v||'—')+'</td></tr>';}
-  var info='<table class="infogrid"><tbody>'
-    +infoRow('Proje',proj?(proj.title||'—'):'—')
-    +infoRow('Müşteri',cust?(cust.firmName||'—'):'—')
-    +infoRow('Tarih',_toTR(fr.reportDate||today()))
-    +infoRow('Hava',(FR_WEATHER.find(function(w){return w.v===fr.weather;})||{}).l||fr.weather||'—')
-    +infoRow('Sıcaklık',fr.temperature?(fr.temperature+' °C'):'—')
-    +infoRow('Referans',String(fr.id).slice(-8).toUpperCase())
-    +'</tbody></table>';
-  var _crewAll=(fr.crewUsers||[]).map(function(n){var u=(state.users||[]).find(function(x){return x.displayName===n;});return {name:n,role:(u&&DEPT_LABEL[u.department])||'Saha'};}).concat(fr.personnelOnSite||[]);
-  var persRows=_crewAll.map(function(p,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(p.name||'')+'</td><td>'+escapeHtml(p.role||'')+'</td></tr>';}).join('')
-    +(fr.workerCount?'<tr><td></td><td colspan="2"><b>Toplam kişi sayısı: '+escapeHtml(String(fr.workerCount))+'</b></td></tr>':'');
-  var persTable=persRows?'<table class="wtable"><thead><tr><th>#</th><th>Ad Soyad</th><th>Görevi</th></tr></thead><tbody>'+persRows+'</tbody></table>':'<p style="color:#94a3b8;font-size:12px;">Personel girilmemiş.</p>';
-  var workRows=(fr.workItems||[]).map(function(w,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(w.desc||'')+'</td><td>'+escapeHtml(w.quantity||'')+'</td><td>'+escapeHtml(w.unit||'')+'</td><td>'+escapeHtml(w.pct?(w.pct+' %'):'')+'</td><td>'+escapeHtml(w.note||'')+'</td></tr>';}).join('');
-  var workTable=workRows?'<table class="wtable"><thead><tr><th>#</th><th>İş Tanımı</th><th>Miktar</th><th>Birim</th><th>% Bitti</th><th>Not</th></tr></thead><tbody>'+workRows+'</tbody></table>':(fr.noWork?'<p style="font-size:13px;font-weight:700;color:#b45309;">Bugün sahada çalışma yapılmamıştır.</p>':'');
-  var matRows=(fr.materialsUsed||[]).map(function(m,i){return '<tr><td>'+(i+1)+'</td><td>'+escapeHtml(m.name||'')+'</td><td>'+escapeHtml(m.quantity||'')+'</td><td>'+escapeHtml(m.unit||'')+'</td></tr>';}).join('');
-  var matTable=matRows?'<table class="wtable"><thead><tr><th>#</th><th>Malzeme</th><th>Miktar</th><th>Birim</th></tr></thead><tbody>'+matRows+'</tbody></table>':'<p style="color:#94a3b8;font-size:12px;">Malzeme girilmemiş.</p>';
-  var safetyHtml=fr.safetyOk?'<span style="color:#16a34a;font-weight:700;">✅ Uygunsuzluk yok</span>':'';
-  if(!fr.safetyOk&&fr.safetyIncidents.length){
-    safetyHtml='<table class="wtable"><thead><tr><th>#</th><th>Açıklama</th><th>Seviye</th></tr></thead><tbody>';
-    fr.safetyIncidents.forEach(function(s,i){safetyHtml+='<tr><td>'+(i+1)+'</td><td>'+escapeHtml(s.desc||'')+'</td><td>'+escapeHtml(s.severity||'')+'</td></tr>';});
-    safetyHtml+='</tbody></table>';
-  }
-  var reworkHtml='';
-  if(fr.reworkItems.length){
-    reworkHtml='<table class="wtable"><thead><tr><th>#</th><th>Açıklama</th><th>Kaynağı</th><th>Not</th></tr></thead><tbody>';
-    fr.reworkItems.forEach(function(r,i){reworkHtml+='<tr><td>'+(i+1)+'</td><td>'+escapeHtml(r.desc||'')+'</td><td>'+escapeHtml((FR_REWORK_CAUSES.find(function(c){return c.v===(r.cause||'uygulama');})||{}).l||'')+'</td><td>'+escapeHtml(r.reason||'')+'</td></tr>';});
-    reworkHtml+='</tbody></table>';
-  }
-  var signImg=fr.staffSign&&fr.staffSign.dataURL?'<img src="'+fr.staffSign.dataURL+'" class="sig"/>':'<div class="sig"></div>';
-  var html=''
-    +'<style>@media print{.no-print{display:none!important;}} @page{margin:14mm;} body{font-family:Arial,Helvetica,sans-serif;color:#111;} .hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #c00000;padding-bottom:10px;margin-bottom:14px;} .hd img{height:56px;} .letterhead{text-align:right;font-size:11px;color:#333;line-height:1.6;} .letterhead b{display:block;font-size:13px;color:#111;margin-bottom:2px;} .secbar{background:#1e3a5f;color:#fff;font-weight:700;font-size:12px;padding:6px 10px;text-transform:uppercase;letter-spacing:.03em;margin:14px 0 8px;} .infogrid{width:100%;border-collapse:collapse;margin-bottom:6px;} .infogrid td{border:1px solid #e2e8f0;padding:7px 10px;font-size:12px;} .infogrid td.lbl{background:#f5f5f5;font-weight:700;color:#333;width:22%;} .wtable{width:100%;border-collapse:collapse;margin:6px 0;font-size:12px;} .wtable th{background:#f0f4f8;border:1px solid #d0daea;padding:6px 8px;text-align:left;font-weight:700;} .wtable td{border:1px solid #e2e8f0;padding:5px 8px;} .signbox{margin-top:20px;} .role{font-weight:700;font-size:13px;margin-bottom:4px;} img.sig,.sig{display:block;width:220px;height:80px;border:1px solid #cbd5e1;border-radius:6px;object-fit:contain;} .sigline{font-size:12px;margin-top:4px;} .foot{margin-top:24px;font-size:10px;color:#94a3b8;text-align:center;}</style>'
-    +'<div class="hd"><img src="'+APRO_LOGO_DATAURI+'"/><div class="letterhead">'+APRO_LETTERHEAD.map(function(l,i){return i===0?('<b>'+escapeHtml(l)+'</b>'):escapeHtml(l)+'<br/>';}).join('')+'</div></div>'
-    +'<h1 style="font-size:16px;margin:0 0 10px;color:#0f1f35;">Saha Raporu</h1>'
-    +info
-    +'<div class="secbar">Sahada Bulunan Personel</div>'+persTable
-    +'<div class="secbar">Yapılan İşler</div>'+workTable
-    +'<div class="secbar">Kullanılan Malzeme</div>'+matTable
-    +'<div class="secbar">İş Güvenliği</div>'+safetyHtml
-    +(reworkHtml?'<div class="secbar">Yeniden-İş</div>'+reworkHtml:'')
-    +(fr.budgetSpent?'<div class="secbar">Harcama</div><p style="font-size:13px;">'+eur(fr.budgetSpent)+'</p>':'')
-    +(fr.generalNotes?'<div class="secbar">Genel Notlar</div><p style="font-size:12.5px;white-space:pre-wrap;">'+escapeHtml(fr.generalNotes)+'</p>':'')
-    +(fr.nextDayPlan?'<div class="secbar">Ertesi Gün Planı</div><p style="font-size:12.5px;white-space:pre-wrap;">'+escapeHtml(fr.nextDayPlan)+'</p>':'')
-    +(photos.length?'<div class="secbar">Fotoğraflar</div><div style="display:flex;flex-wrap:wrap;gap:6px;">'+photos.filter(function(p){return p&&typeof p.dataURL==='string'&&p.dataURL.indexOf('data:image/jpeg;base64,')===0;}).map(function(p){return '<img src="'+p.dataURL+'" style="width:49%;max-height:300px;object-fit:contain;border:1px solid #e2e8f0;"/>';}).join('')+'</div>':'')
-    +'<div class="signbox"><div class="role">Saha Sorumlusu</div>'+signImg+'<div class="sigline">Ad Soyad: '+escapeHtml((fr.staffSign&&fr.staffSign.name)||'')+'</div><div class="sigline">Tarih: '+escapeHtml(fr.staffSign&&fr.staffSign.at?_toTR(fr.staffSign.at):'')+'</div><div class="sigline">İmza (ıslak): ______________________</div></div>'
-    +'<div class="foot">A-PRO Mühendislik · Saha İmalat Raporu · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
-  var ep=document.getElementById('print-overlay');if(ep)ep.remove();
-  var po=document.createElement('div');po.id='print-overlay';po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
-  var bar=document.createElement('div');bar.className='no-print';bar.style.cssText='display:flex;gap:8px;padding:10px;border-bottom:1px solid #e2e8f0;';
-  var pb=document.createElement('button');pb.textContent='Yazdır';pb.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;';pb.onclick=function(){window.print();};
-  var cb=document.createElement('button');cb.textContent='Kapat';cb.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;';cb.onclick=function(){po.remove();};
-  bar.appendChild(pb);bar.appendChild(cb);
-  var content=document.createElement('div');content.style.cssText='overflow:auto;padding:24px;';content.innerHTML=html;
-  po.appendChild(bar);po.appendChild(content);document.body.appendChild(po);
-}
+
 function frListBlock(opts){
   var list=(state.fieldReports||[]).filter(function(x){return x.linkType===opts.linkType&&x.linkId===opts.linkId;})
     .sort(function(a,b){return(a.reportDate||'').localeCompare(b.reportDate||'');});
@@ -8092,41 +7993,7 @@ function buildChecklistModal(c){
 }
 // ── PDF ──
 function _clResultBadge(r){ return r==='uygun'?'✔ Uygun': r==='uygundegil'?'✗ Uygun Değil': r==='na'?'N/A':'—'; }
-function printChecklist(c){
-  c = normChecklist(c);
-  if(c.formType==='bakim'){ rpOpenPrint(c); return; }   // periyodik bakım: antetli müşteri raporu (iş programı ile aynı sayfa yapısı)
-  var cust = (state.customers||[]).find(function(x){ return x.id===c.customerId; });
-  var sysHtml = (c.systems||[]).map(function(sys){
-    var meta = SYS_META[sys.sysKey] || {l:sys.sysKey};
-    var subLabel = ''; if(sys.subType && meta.subs){ var so=meta.subs.find(function(o){return o.v===sys.subType;}); subLabel = so?so.l:sys.subType; }
-    var head = escapeHtml(meta.l) + (subLabel?(' · '+escapeHtml(subLabel)):'') + (c.formType==='bakim'&&sys.visitFreq?(' · '+escapeHtml(FREQ_META[sys.visitFreq]||sys.visitFreq)):'');
-    var due = (c.formType==='bakim'&&sys.nextDue) ? '<div class="due">Sonraki bakım vadesi: '+escapeHtml(_toTR(sys.nextDue))+'</div>' : '';
-    var rows = (sys.items||[]).map(function(it){
-      return '<tr><td>'+escapeHtml(it.label)+'</td><td class="c">'+(it.freq?escapeHtml(FREQ_META[it.freq]||it.freq):'')+'</td><td class="c">'+_clResultBadge(it.result)+'</td><td>'+escapeHtml(it.note||'')+'</td></tr>';
-    }).join('');
-    var extra = sys.extraNotes ? '<div class="extra"><b>Ek not:</b> '+escapeHtml(sys.extraNotes)+'</div>' : '';
-    return '<div class="sys"><h3>'+head+'</h3>'+due+'<table><thead><tr><th>Madde</th><th class="c">Frekans</th><th class="c">Sonuç</th><th>Not</th></tr></thead><tbody>'+(rows||'<tr><td colspan="4" class="c">—</td></tr>')+'</tbody></table>'+extra+'</div>';
-  }).join('');
-  function signBox(s, role){
-    var img = s.dataURL ? '<img src="'+s.dataURL+'" class="sig"/>' : '<div class="sig"></div>';
-    return '<div class="signbox"><div class="role">'+role+'</div>'+img+'<div class="sigline">Ad Soyad: '+escapeHtml(s.name||'')+'</div><div class="sigline">Tarih: '+escapeHtml(s.at?_toTR(s.at):'')+'</div><div class="sigline">İmza (ıslak): ______________________</div></div>';
-  }
-  var html = ''
-   + '<style>@media print{.no-print{display:none!important;}} @page{margin:14mm;} body{font-family:Arial,Helvetica,sans-serif;color:#111;} .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f1f35;padding-bottom:8px;margin-bottom:12px;} .hd img{height:46px;} .hd h1{font-size:17px;margin:0;color:#0f1f35;text-align:right;} .meta{font-size:12px;color:#334155;margin-bottom:12px;line-height:1.6;} .sys{margin:14px 0;page-break-inside:avoid;} .sys h3{font-size:14px;background:#eef2ff;padding:6px 9px;border-radius:6px;margin:0 0 6px;} table{width:100%;border-collapse:collapse;font-size:11.5px;} th,td{border:1px solid #e2e8f0;padding:5px 7px;text-align:left;vertical-align:top;} th{background:#f8fafc;} td.c,th.c{text-align:center;white-space:nowrap;} .due{font-size:12px;color:#0891b2;margin:2px 0 6px;} .extra{font-size:12px;margin:4px 0;} .signs{display:flex;gap:24px;margin-top:26px;page-break-inside:avoid;} .signbox{flex:1;} .role{font-weight:700;font-size:13px;margin-bottom:4px;} img.sig,.sig{display:block;width:220px;height:80px;border:1px solid #cbd5e1;border-radius:6px;object-fit:contain;} .sigline{font-size:12px;margin-top:4px;} .foot{margin-top:24px;font-size:10px;color:#94a3b8;text-align:center;}</style>'
-   + '<div class="hd"><img src="'+APRO_LOGO_DATAURI+'"/><h1>'+escapeHtml(FORMTYPE_META[c.formType]||'Servis Checklist')+'</h1></div>'
-   + '<div class="meta"><b>Müşteri:</b> '+escapeHtml(cust?(cust.firmName||'—'):'—')+' &nbsp;·&nbsp; <b>Saha / Bina:</b> '+escapeHtml(c.siteName||'—')+' &nbsp;·&nbsp; <b>Tarih:</b> '+escapeHtml(_toTR(c.createdAt||today()))+'</div>'
-   + sysHtml
-   + '<div class="signs">'+signBox(c.staffSign,'A-Pro Yetkilisi')+signBox(c.custSign,'Müşteri İlgilisi')+'</div>'
-   + '<div class="foot">A-PRO Mühendislik · NFPA temelli servis checklist · Bu belge dijital ve ıslak imza ile geçerlidir.</div>';
-  var ep = document.getElementById('print-overlay'); if(ep) ep.remove();
-  var po = document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
-  var bar = document.createElement('div'); bar.className='no-print'; bar.style.cssText='display:flex;gap:8px;padding:10px;border-bottom:1px solid #e2e8f0;';
-  var pb = document.createElement('button'); pb.textContent='🖨️ Yazdır'; pb.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;'; pb.onclick=function(){ window.print(); };
-  var cb = document.createElement('button'); cb.textContent='✕ Kapat'; cb.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;'; cb.onclick=function(){ po.remove(); };
-  bar.appendChild(pb); bar.appendChild(cb);
-  var content = document.createElement('div'); content.style.cssText='overflow:auto;padding:24px;'; content.innerHTML=html;
-  po.appendChild(bar); po.appendChild(content); document.body.appendChild(po);
-}
+function printChecklist(c){ rpOpenPrint(normChecklist(c)); }   // tüm checklist türleri: antetli (teklif tasarımlı) rapor çıktısı
 // Bir kayda bağlı checklist listesi + yeni buton bloğu (modal içi giriş noktası).
 function clListBlock(opts){
   var list = (state.checklists||[]).filter(function(x){ return x.linkType===opts.linkType && x.linkId===opts.linkId; })
@@ -9165,78 +9032,30 @@ function printPrimBordro(person, period){
     ? `<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">✔ Eşik aşıldı — prim hak edildi</span>`
     : `<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700">✕ Eşik altı — prim oluşmadı</span>`;
 
-  const printHTML = `<!DOCTYPE html>
-<html lang="tr"><head><meta charset="UTF-8"/>
-<title>A-PRO CRM — Prim Bordrosu</title>
-<style>
-  body{font-family:Arial,sans-serif;padding:28px;color:#1e293b;font-size:13px;max-width:760px;margin:0 auto}
-  h1{color:#1e2d4a;font-size:19px;margin:0 0 4px}
-  .meta{font-size:11px;color:#64748b;margin-bottom:18px}
-  .hdr{display:flex;align-items:center;gap:14px;background:#f0f5fc;border:1px solid #b0c8e0;border-radius:10px;padding:16px;margin-bottom:16px}
-  .avatar{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#0891b2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0}
-  .big{text-align:right}
-  .big .val{font-size:26px;font-weight:800;color:${pr.pass&&pr.thisQuarterPayable>0?'#16a34a':'#94a3b8'}}
-  .big .lbl{font-size:10px;color:#64748b;text-transform:uppercase}
-  h2{color:#1e2d4a;font-size:14px;margin:20px 0 10px;border-bottom:2px solid #1e2d4a;padding-bottom:6px}
-  table{width:100%;border-collapse:collapse;margin-bottom:16px}
-  th{background:#1e2d4a;color:#fff;padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase}
-  th.c{text-align:center}th.r{text-align:right}
-  td{padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px}
-  tbody tr:nth-child(even){background:#f8fafc}
-  .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:34px}
-  .sign .box{border-top:1px solid #334155;padding-top:6px;font-size:11px;color:#475569;text-align:center}
-  @media print{body{padding:10px}.no-print{display:none}}
-</style></head>
-<body>
-  <h1>⚡ A-PRO İş Takip CRM — Çeyreklik Prim Bordrosu</h1>
-  <div class="meta">Dönem: ${escapeHtml(period)} (${pr.year}-Q${pr.quarter}) · Yazdırma tarihi: ${new Date().toLocaleString('tr-TR')} · Hazırlayan: ${escapeHtml((state.currentUser&&state.currentUser.displayName)||'-')}</div>
-  <div class="hdr">
-    <div class="avatar">${escapeHtml(nm.split(' ').map(n=>n[0]).join('').slice(0,2))}</div>
-    <div style="flex:1">
-      <div style="font-size:17px;font-weight:800;color:#0f1f35">${escapeHtml(nm)}</div>
-      <div style="font-size:12px;color:#64748b">${escapeHtml(dept)}${person.email?' · '+escapeHtml(person.email):''}</div>
-      <div style="font-size:12px;color:#475569;margin-top:4px">Skor: <b>${skorPct}%</b> · Eşik: %${thrPct} &nbsp; ${passBadge}</div>
-    </div>
-    <div class="big">
-      <div class="val">${eur(pr.pass?pr.thisQuarterPayable:0)}</div>
-      <div class="lbl">Q${pr.quarter} Ödenecek</div>
-    </div>
-  </div>
-  <h2>📋 Kriter Kırılımı <span style="font-size:11px;font-weight:400;color:#64748b">(yıl başından hak edilen €)</span></h2>
-  <table>
-    <thead><tr><th>Kriter</th><th class="c">Ağırlık</th><th class="r">Hak Edilen</th></tr></thead>
-    <tbody>${critRows||'<tr><td colspan="3" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
-    <tfoot>
-      ${sumRow('Taban (kümülatif)', pr.baseAmount)}
-      ${pr.overAmount>0?sumRow('⚡ Aşım (Q4)', pr.overAmount, {color:'#7c3aed'}):''}
-      ${sumRow('Yıl başından hak edilen', pr.earnedToDate, {bg:'#f0fdf4', bold:true})}
-      ${sumRow('Önceki çeyreklerde ödenen', pr.paidBefore)}
-      ${pr.carry>0?sumRow('Fazla avans → devir', pr.carry, {color:'#dc2626'}):''}
-      ${sumRow('Bu çeyrek ödenecek', pr.pass?pr.thisQuarterPayable:0, {bg:'#ecfdf5', bold:true, color:'#16a34a'})}
-    </tfoot>
-  </table>
-  <div style="font-size:11px;color:#64748b;line-height:1.6;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px">
-    Primler <b>çeyreklik</b> ödenir; hak ediş <b>yıllık</b> hedefe göre kümülatiftir. “Bu çeyrek ödenecek” = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz, fazlası sonraki çeyreğe devreder). Aşım primi yalnızca yıl kapanışında (Q4) yıllık hedefi aşanlara verilir.
-  </div>
-  <div class="sign">
-    <div class="box">Personel — Ad Soyad / İmza / Tarih</div>
-    <div class="box">Yönetici — Ad Soyad / İmza / Tarih</div>
-  </div>
-  <div style="margin-top:24px;font-size:10px;color:#94a3b8;text-align:center">A-PRO Mühendislik · CRM Sistemi · Gizlidir</div>
-</body></html>`;
-
-  var ep=document.getElementById('print-overlay'); if(ep) ep.remove();
-  var po=document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
-  var ptb=document.createElement('div'); ptb.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#1e2d4a;color:#fff;flex-shrink:0;';
-  var ptbT=document.createElement('div'); ptbT.style.cssText='font-weight:800;font-size:15px;'; ptbT.textContent='🖨️ Prim Bordrosu — '+nm;
-  var ptbB=document.createElement('div'); ptbB.style.cssText='display:flex;gap:10px;';
-  var ppBtn=document.createElement('button'); ppBtn.textContent='🖨️ Yazdır'; ppBtn.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; ppBtn.onclick=function(){window.print();};
-  var pcBtn=document.createElement('button'); pcBtn.textContent='✕ Kapat'; pcBtn.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; pcBtn.onclick=function(){var el=document.getElementById('print-overlay');if(el)el.remove();};
-  ptbB.appendChild(ppBtn); ptbB.appendChild(pcBtn); ptb.appendChild(ptbT); ptb.appendChild(ptbB); po.appendChild(ptb);
-  var pc=document.createElement('div'); pc.style.cssText='flex:1;overflow-y:auto;'; pc.innerHTML=printHTML; po.appendChild(pc);
-  document.body.appendChild(po);
+  const _rows = function(h){ return String(h).match(/<tr[\s\S]*?<\/tr>/g)||[]; };
+  const _sum = function(lbl,val,o){ o=o||{}; const st='font-weight:'+(o.bold?'800':'700')+';'+(o.color?('color:'+o.color+';'):'')+(o.bg?('background:'+o.bg+';'):''); return '<tr><td colspan="2" style="text-align:right;'+st+'">'+lbl+'</td><td style="text-align:right;'+st+'">'+_ipEsc(eur(val))+'</td></tr>'; };
+  const cu=(state.currentUser&&state.currentUser.displayName)||'-';
+  const blocks=[
+    {k:'html', html:'<div class="ipg-title">ÇEYREKLİK PRİM BORDROSU</div><div class="ipg-sub">Dönem: '+_ipEsc(period)+' ('+pr.year+'-Q'+pr.quarter+')</div>'},
+    {k:'html', html:docInfoTable([
+      ['Personel','<b>'+_ipEsc(nm)+'</b>','Dönem',_ipEsc(period)+' ('+pr.year+'-Q'+pr.quarter+')'],
+      ['Departman',_ipEsc(dept)+(person.email?(' · '+_ipEsc(person.email)):''),'Skor / eşik','<b>%'+skorPct+'</b> / %'+thrPct],
+      ['Durum',pr.pass?'<b style="color:#15803d">✔ Eşik aşıldı — prim hak edildi</b>':'<b style="color:#b91c1c">✕ Eşik altı — prim oluşmadı</b>','Q'+pr.quarter+' ödenecek','<b style="font-size:12px;color:'+(pr.pass&&pr.thisQuarterPayable>0?'#15803d':'#666')+'">'+_ipEsc(eur(pr.pass?pr.thisQuarterPayable:0))+'</b>'],
+      ['Hazırlayan',_ipEsc(cu),'Yazdırma tarihi',_ipEsc(new Date().toLocaleString('tr-TR'))] ])},
+    {k:'sec', title:'Kriter kırılımı (yıl başından hak edilen €)'},
+    {k:'table', cols:[0,70,110], head:['Kriter','Ağırlık','Hak edilen'],
+      rows:(_rows(critRows).length?_rows(critRows):['<tr><td colspan="3" style="text-align:center;color:#888">Veri yok</td></tr>'])
+        .concat([ _sum('Taban (kümülatif)', pr.baseAmount) ])
+        .concat(pr.overAmount>0?[ _sum('⚡ Aşım (Q4)', pr.overAmount, {color:'#7c3aed'}) ]:[])
+        .concat([ _sum('Yıl başından hak edilen', pr.earnedToDate, {bg:'#f5f5f5', bold:true}), _sum('Önceki çeyreklerde ödenen', pr.paidBefore) ])
+        .concat(pr.carry>0?[ _sum('Fazla avans → devir', pr.carry, {color:'#b91c1c'}) ]:[])
+        .concat([ _sum('Bu çeyrek ödenecek', pr.pass?pr.thisQuarterPayable:0, {bg:'#f5f5f5', bold:true, color:'#c00000'}) ])},
+    {k:'html', html:'<div class="dc-p" style="font-size:9px;color:#555">Primler <b>çeyreklik</b> ödenir; hak ediş <b>yıllık</b> hedefe göre kümülatiftir. “Bu çeyrek ödenecek” = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz, fazlası sonraki çeyreğe devreder). Aşım primi yalnızca yıl kapanışında (Q4) yıllık hedefi aşanlara verilir.</div>'},
+    {k:'html', html:docSignBoxes({title:'Personel',name:nm,unvan:dept,sign:{}},{title:'Yönetici',name:'',unvan:'Yönetici',sign:{}})+'<div class="rpg-std">Gizli — yalnızca ilgili personel ve yönetim içindir.</div>'}
+  ];
+  const pages=docPaginate(blocks, 'Prim Bordrosu · '+nm);
+  docShowOverlay(pages, '🖨️ Prim Bordrosu — '+nm, 'Prim-Bordrosu_'+ipSlug(nm)+'_'+ipSlug(period));
 }
-
 function printPersonelReport(person, period, isAdmin){
   const sc = personelScore(person, period);
   if(!sc){ showToast('⚠ Bu personel için değerlendirme verisi yok.','#dc2626'); return; }
@@ -9398,97 +9217,57 @@ function printPersonelReport(person, period, isAdmin){
   <h2>🗒️ Yönetici Değerlendirme Notu</h2>
   <div class="note-box" style="color:#94a3b8">— (Performans ekranındaki not alanından doldurulabilir) —</div>`;
 
-  const printHTML = `<!DOCTYPE html>
-<html lang="tr"><head><meta charset="UTF-8"/>
-<title>A-PRO CRM — Personel Performans Raporu</title>
-<style>
-  body{font-family:Arial,sans-serif;padding:24px;color:#1e293b;font-size:13px}
-  h1{color:#1e2d4a;font-size:20px;margin-bottom:4px}
-  h2{color:#1e2d4a;font-size:14px;margin:20px 0 10px;border-bottom:2px solid #1e2d4a;padding-bottom:6px}
-  .meta{font-size:11px;color:#64748b;margin-bottom:20px}
-  .hdr{display:flex;align-items:center;gap:14px;background:#f0f5fc;border:1px solid #b0c8e0;border-radius:10px;padding:16px;margin-bottom:14px}
-  .avatar{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0}
-  .verdict{border-radius:10px;padding:12px 16px;margin-bottom:18px;font-size:13px;font-weight:700}
-  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
-  .kpi{background:#f0f5fc;border:1px solid #b0c8e0;border-radius:8px;padding:12px;text-align:center}
-  .kpi-val{font-size:20px;font-weight:800;color:#2563eb}
-  .kpi-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.05em}
-  .target-bar{height:16px;background:#e0e7ff;border-radius:8px;overflow:hidden;margin:8px 0 18px}
-  .target-fill{height:100%;border-radius:8px}
-  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:6px}
-  .panel{border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px}
-  .panel h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
-  .panel ul{margin:0;padding-left:18px;font-size:12px;line-height:1.7}
-  .note-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px;font-size:12.5px;line-height:1.6;min-height:40px}
-  table{width:100%;border-collapse:collapse;margin-bottom:20px}
-  th{background:#1e2d4a;color:#fff;padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase}
-  td{padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px}
-  tr:nth-child(even){background:#f8fafc}
-  .disc-lines{border:1px solid #e2e8f0;border-radius:8px;padding:14px;min-height:70px;margin-bottom:22px}
-  .disc-lines div{border-bottom:1px dashed #cbd5e1;height:22px}
-  .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:26px}
-  .sign .box{border-top:1px solid #334155;padding-top:6px;font-size:11px;color:#475569;text-align:center}
-  @media print{body{padding:10px}.no-print{display:none}}
-</style></head>
-<body>
-  <h1>⚡ A-PRO İş Takip CRM — Personel Performans Değerlendirme Raporu</h1>
-  <div class="meta">Dönem: ${escapeHtml(period)} · Yazdırma tarihi: ${new Date().toLocaleString('tr-TR')} · Değerlendiren: ${escapeHtml((state.currentUser&&state.currentUser.displayName)||'-')}</div>
-  <div class="hdr">
-    <div class="avatar">${escapeHtml(person.displayName.split(' ').map(n=>n[0]).join('').slice(0,2))}</div>
-    <div style="flex:1">
-      <div style="font-size:17px;font-weight:800;color:#0f1f35">${escapeHtml(person.displayName)}</div>
-      <div style="font-size:12px;color:#64748b">${escapeHtml(dept)}${person.email?' · '+escapeHtml(person.email):''}</div>
-    </div>
-    <div style="text-align:right">
-      <div style="font-size:26px;font-weight:800;color:${col(sc.skor)}">${skorPct}%</div>
-      <div style="font-size:10px;color:#64748b;text-transform:uppercase">Toplam Skor</div>
-    </div>
-  </div>
-  <div class="verdict" style="background:${vBg};color:${vColor}">${verdict}</div>
-  <div class="target-bar"><div class="target-fill" style="width:${Math.min(100,skorPct)}%;background:${col(sc.skor)}"></div></div>
-  ${primBanner}
-  ${monthTargetSection}
-  <div class="kpi-grid" style="grid-template-columns:repeat(6,1fr)">
-    <div class="kpi"><div class="kpi-val" style="color:${col(sc.skor)}">${skorPct}%</div><div class="kpi-label">Skor</div></div>
-    <div class="kpi"><div class="kpi-val">${sc.managerScore||'—'}${sc.managerScore?'/5':''}</div><div class="kpi-label">Yön. Puanı</div></div>
-    <div class="kpi"><div class="kpi-val">${tTotal}</div><div class="kpi-label">Görev</div></div>
-    <div class="kpi"><div class="kpi-val" style="color:#16a34a">${tDone}</div><div class="kpi-label">Tamamlanan</div></div>
-    <div class="kpi"><div class="kpi-val" style="color:#2563eb">${tOpen}</div><div class="kpi-label">Açık</div></div>
-    <div class="kpi"><div class="kpi-val" style="color:${tOverdue?'#dc2626':'#64748b'}">${tOverdue}</div><div class="kpi-label">Geciken</div></div>
-  </div>
-  <h2>📊 Kriter Bazlı Değerlendirme</h2>
-  <table>
-    <thead><tr><th>Kriter</th><th style="text-align:right">Hedef</th><th style="text-align:right">Gerçekleşen</th><th style="text-align:right">Hedefe Kalan</th><th style="text-align:center">Oran</th><th style="text-align:center">Durum</th></tr></thead>
-    <tbody>${critRows||'<tr><td colspan="6" style="text-align:center;color:#94a3b8">Veri yok</td></tr>'}</tbody>
-  </table>
-  ${wonSection}
-  ${trendSection}
-  <h2>💬 Değerlendirme Özeti</h2>
-  <div class="cols">
-    <div class="panel" style="border-color:#bbf7d0;background:#f0fdf4"><h3 style="color:#166534">✅ Güçlü Yönler</h3><ul>${liOr(strong,'Bu dönem hedefi aşan kriter yok.')}</ul></div>
-    <div class="panel" style="border-color:#fecaca;background:#fef2f2"><h3 style="color:#991b1b">⚠ Gelişim Alanları</h3><ul>${liOr(improve,'Eşik altı kriter yok.')}</ul></div>
-  </div>
-  ${midd.length?`<div class="panel" style="border-color:#fde68a;background:#fffbeb;margin-bottom:6px"><h3 style="color:#92400e">◐ İzlenecek Alanlar (yeterli, hedefe yaklaşıyor)</h3><ul>${liOr(midd,'')}</ul></div>`:''}
-  ${notesBlock}
-  <h2>🤝 Görüşme Notları (personel ile birlikte doldurulur)</h2>
-  <div class="disc-lines"><div></div><div></div><div></div></div>
-  <div class="sign">
-    <div class="box">Personel — Ad Soyad / İmza / Tarih</div>
-    <div class="box">Yönetici — Ad Soyad / İmza / Tarih</div>
-  </div>
-  <div style="margin-top:24px;font-size:10px;color:#94a3b8;text-align:center">A-PRO Mühendislik · CRM Sistemi · Gizlidir</div>
-</body></html>`;
-
-  var ep=document.getElementById('print-overlay'); if(ep) ep.remove();
-  var po=document.createElement('div'); po.id='print-overlay'; po.style.cssText='position:fixed;inset:0;z-index:99999;background:#fff;display:flex;flex-direction:column;';
-  var ptb=document.createElement('div'); ptb.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:#1e2d4a;color:#fff;flex-shrink:0;';
-  var ptbT=document.createElement('div'); ptbT.style.cssText='font-weight:800;font-size:15px;'; ptbT.textContent='🖨️ Performans Raporu — '+person.displayName;
-  var ptbB=document.createElement('div'); ptbB.style.cssText='display:flex;gap:10px;';
-  var ppBtn=document.createElement('button'); ppBtn.textContent='🖨️ Yazdır'; ppBtn.style.cssText='padding:8px 18px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; ppBtn.onclick=function(){window.print();};
-  var pcBtn=document.createElement('button'); pcBtn.textContent='✕ Kapat'; pcBtn.style.cssText='padding:8px 18px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;'; pcBtn.onclick=function(){var el=document.getElementById('print-overlay');if(el)el.remove();};
-  ptbB.appendChild(ppBtn); ptbB.appendChild(pcBtn); ptb.appendChild(ptbT); ptb.appendChild(ptbB); po.appendChild(ptb);
-  var pc=document.createElement('div'); pc.style.cssText='flex:1;overflow-y:auto;'; pc.innerHTML=printHTML; po.appendChild(pc);
-  document.body.appendChild(po);
+  const _rows = function(h){ return String(h).match(/<tr[\s\S]*?<\/tr>/g)||[]; };
+  const cu=(state.currentUser&&state.currentUser.displayName)||'-';
+  const blocks=[
+    {k:'html', html:'<div class="ipg-title">PERSONEL PERFORMANS DEĞERLENDİRME RAPORU</div><div class="ipg-sub">Dönem: '+_ipEsc(period)+'</div>'},
+    {k:'html', html:docInfoTable([
+      ['Personel','<b>'+_ipEsc(person.displayName)+'</b>','Toplam skor','<b style="font-size:13px;color:'+col(sc.skor)+'">%'+skorPct+'</b>'],
+      ['Departman',_ipEsc(dept)+(person.email?(' · '+_ipEsc(person.email)):''),'Dönem',_ipEsc(period)],
+      ['Değerlendiren',_ipEsc(cu),'Yazdırma tarihi',_ipEsc(new Date().toLocaleString('tr-TR'))] ])},
+    {k:'html', html:'<div class="dc-p" style="font-weight:700;color:'+vColor+'">'+verdict+'</div>'}
+  ];
+  if(isAdmin && primInfo){
+    blocks.push({k:'sec', title:'Q'+primInfo.quarter+' ödenecek prim'});
+    blocks.push({k:'html', html:'<div class="dc-p"><b style="font-size:12px;color:'+(primInfo.pass?'#15803d':'#b91c1c')+'">'+_ipEsc(eur(primInfo.pass?primInfo.thisQuarterPayable:0))+'</b> &nbsp; '
+      +(primInfo.pass?('Yıl başından hak edilen '+_ipEsc(eur(primInfo.earnedToDate))+(primInfo.overAmount>0?(' · Aşım '+_ipEsc(eur(primInfo.overAmount))):'')+' · Önceki ödenen '+_ipEsc(eur(primInfo.paidBefore))+(primInfo.carry>0?(' · Devir '+_ipEsc(eur(primInfo.carry))):'')):'Eşik altı — prim oluşmadı')+'</div>'});
+  }
+  const _tgt=[['Bireysel satış hedefi (yıllık)',bireyN],['Şirket satış hedefi (yıllık)',compN],['Karlılık marj hedefi',karlN]].filter(function(x){ return x[1]; });
+  if(_tgt.length){
+    blocks.push({k:'sec', title:_mYear+' mali yılı — yıllık hedef (gerçekleşen: yıl başından '+_ipEsc(_mName)+' sonuna kümülatif)'});
+    blocks.push({k:'table', cols:[0,110,110,110], head:['Hedef','Hedef','Gerçekleşen','Kalan'], rows:_tgt.map(function(x){ return '<tr><td>'+x[0]+'</td><td style="text-align:right">'+x[1].hedef+'</td><td style="text-align:right;font-weight:700">'+x[1].gerc+'</td><td style="text-align:right">'+x[1].kalan+'</td></tr>'; })});
+  }
+  blocks.push({k:'sec', title:'Görev özeti'});
+  blocks.push({k:'table', cols:[0,0,0,0,0,0], head:['Skor','Yön. puanı','Görev','Tamamlanan','Açık','Geciken'], rows:['<tr style="text-align:center;font-weight:800"><td style="color:'+col(sc.skor)+'">%'+skorPct+'</td><td>'+(sc.managerScore?(sc.managerScore+'/5'):'—')+'</td><td>'+tTotal+'</td><td style="color:#15803d">'+tDone+'</td><td>'+tOpen+'</td><td style="color:'+(tOverdue?'#b91c1c':'#666')+'">'+tOverdue+'</td></tr>']});
+  blocks.push({k:'sec', title:'Kriter bazlı değerlendirme'});
+  blocks.push({k:'table', cols:[0,78,78,78,48,56], head:['Kriter','Hedef','Gerçekleşen','Hedefe kalan','Oran','Durum'], rows:_rows(critRows).length?_rows(critRows):['<tr><td colspan="6" style="text-align:center;color:#888">Veri yok</td></tr>']});
+  blocks.push({k:'sec', title:'Prime dahil kazanılan projeler (dönem başından '+_ipEsc(period)+' sonuna)'});
+  blocks.push({k:'table', cols:[0,150,86,62], head:['Proje','Müşteri','Tutar','Kapanış'],
+    rows:(_rows(wonRows).length?_rows(wonRows):['<tr><td colspan="4" style="text-align:center;color:#888">Bu dönemde kazanılan proje yok.</td></tr>'])
+      .concat(wonProjects.length?['<tr style="background:#f5f5f5"><td colspan="2" style="text-align:right;font-weight:800">Toplam ('+wonProjects.length+' proje)</td><td style="text-align:right;font-weight:800;color:#c00000">'+_ipEsc(eur(wonTotal))+'</td><td></td></tr>']:[])});
+  // Kriter performans görünümü (çubuk)
+  const _pp=function(v){ return Math.max(0, Math.min(100, (v/1.5)*100)); };
+  const bars=sc.rows.map(function(r){
+    const has=r.oran!=null;
+    const c=!has?'#999':(r.oran>=1?'#15803d':r.oran>=0.7?'#d97706':'#b91c1c');
+    const w=has?Math.max(2,_pp(Math.min(r.oran,1.5))):0;
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><div style="width:200px;font-size:8.5px;text-align:right;line-height:1.2">'+_ipEsc(r.label)+' <span style="color:#999">· %'+Math.round((Number(r.weight)||0)*100)+'</span></div>'
+      +'<div style="flex:1;position:relative;height:14px;background:#f5f5f5;border:1px solid #e0e0e0"><div style="position:absolute;left:'+_pp(0.7)+'%;top:0;bottom:0;width:1px;background:#d97706"></div><div style="position:absolute;left:'+_pp(1)+'%;top:0;bottom:0;width:2px;background:#333"></div><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:'+c+'"></div></div>'
+      +'<div style="width:54px;font-size:9px;font-weight:800;color:'+c+'">'+(has?(Math.round(r.oran*100)+'%'):'veri yok')+'</div></div>';
+  }).join('');
+  blocks.push({k:'sec', title:'Kriter performans görünümü ('+_ipEsc(period)+')'});
+  blocks.push({k:'html', html:'<div class="dc-p" style="white-space:normal">'+(bars||'<div style="color:#888">Veri yok</div>')
+    +'<div style="font-size:8px;color:#666;margin-top:6px;border-top:1px solid #e0e0e0;padding-top:5px">Koyu çizgi <b>%100 hedef</b>, turuncu çizgi <b>%70 prim eşiği</b> (ölçek %0–%150). <span style="color:#15803d;font-weight:700">■ ≥%100 Güçlü</span> · <span style="color:#d97706;font-weight:700">■ %70–99 Yeterli</span> · <span style="color:#b91c1c;font-weight:700">■ &lt;%70 Gelişmeli</span></div></div>'});
+  blocks.push({k:'sec', title:'Değerlendirme özeti'});
+  blocks.push({k:'html', html:'<div class="dc-two"><div><b style="color:#15803d">✔ Güçlü yönler</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(strong,'Bu dönem hedefi aşan kriter yok.')+'</ul></div><div><b style="color:#b91c1c">⚠ Gelişim alanları</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(improve,'Eşik altı kriter yok.')+'</ul></div></div>'
+    +(midd.length?'<div class="dc-two" style="margin-top:8px"><div><b style="color:#b45309">◐ İzlenecek alanlar (yeterli, hedefe yaklaşıyor)</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(midd,'')+'</ul></div></div>':'')});
+  blocks.push({k:'sec', title:'Yönetici değerlendirme notu'});
+  blocks.push({k:'html', html:'<div class="dc-p"'+((ev&&ev.notes)?'':' style="color:#888"')+'>'+((ev&&ev.notes)?_ipEsc(ev.notes):'— (Performans ekranındaki not alanından doldurulabilir) —')+'</div>'});
+  blocks.push({k:'sec', title:'Görüşme notları (personel ile birlikte doldurulur)'});
+  blocks.push({k:'html', html:'<div class="dc-p" style="white-space:normal"><div style="border-bottom:1px dashed #bbb;height:22px"></div><div style="border-bottom:1px dashed #bbb;height:22px"></div><div style="border-bottom:1px dashed #bbb;height:22px"></div></div>'});
+  blocks.push({k:'html', html:docSignBoxes({title:'Personel',name:person.displayName,unvan:dept,sign:{}},{title:'Yönetici',name:'',unvan:'Yönetici',sign:{}})+'<div class="rpg-std">Gizli — yalnızca ilgili personel ve yönetim içindir.</div>'});
+  const pages=docPaginate(blocks, 'Performans Raporu · '+person.displayName);
+  docShowOverlay(pages, '🖨️ Performans Raporu — '+person.displayName, 'Performans-Raporu_'+ipSlug(person.displayName)+'_'+ipSlug(period));
 }
 // ═══ DENEME MODU (SANDBOX) — tüm CRM akışlarını denemek için; hiçbir şey kaydedilmez, hiçbir dış sisteme/mail'e gitmez ═══
 // Nasıl korur: (1) Firestore'a tüm yazmalar (set/update/delete, transaction, batch) boşa çıkarılır — okuma serbesttir;
@@ -11791,6 +11570,15 @@ function ipEnsureStyle(){
     '.rpg-sum{margin-top:10px;font-size:9px;padding:5px 8px;background:#f5f5f5;border:1px solid #d4d4d4;border-left:3px solid #c00000}',
     '.rpg-box{margin-top:8px;border:1px solid #e0e0e0;border-left:3px solid #c00000}.rpg-box h5{margin:0;color:#c00000;font-size:8.5px;font-weight:700;padding:4px 8px 0;letter-spacing:.3px;text-transform:uppercase}.rpg-box ol{margin:3px 0;padding-left:26px;font-size:9px;line-height:1.4}',
     '.rpg-std{margin-top:10px;font-size:7.5px;color:#666;line-height:1.4}',
+    '.rpg-page .dc-a{padding-bottom:7px}',
+    '.dc-sec{background:#c00000;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.3px;padding:5px 8px;text-transform:uppercase}',
+    '.dc-tbl{width:100%;border-collapse:collapse;table-layout:fixed;font-size:9px}',
+    '.dc-tbl th{background:#e9e9e9;color:#111;font-size:8.5px;font-weight:800;padding:4px 6px;border:1px solid #d0d0d0;border-bottom:2px solid #333;text-align:left}',
+    '.dc-tbl td{padding:4px 6px;border:1px solid #e0e0e0;vertical-align:top;line-height:1.35;word-wrap:break-word}',
+    '.dc-p{font-size:9.5px;line-height:1.55;color:#333;white-space:pre-wrap;padding:6px 8px;border:1px solid #e0e0e0;border-left:3px solid #c00000}',
+    '.dc-badges span{display:inline-block;background:#f5f5f5;border:1px solid #d4d4d4;border-left:3px solid #c00000;padding:3px 8px;margin:0 6px 6px 0;font-size:9px;font-weight:700}',
+    '.dc-two{display:flex;gap:14px}.dc-two>div{flex:1;border:1px solid #d4d4d4;border-left:3px solid #c00000;padding:6px 8px;font-size:9.5px;line-height:1.5}',
+    '.dc-ph{display:flex;flex-wrap:wrap;gap:8px}.dc-ph .ph{width:calc(50% - 4px);height:200px;background-size:cover;background-position:center;border:1px solid #d4d4d4}',
     '@media print{body.ip-printing>*:not(#ip-print-overlay){display:none!important}#ip-print-overlay{position:static!important;background:#fff!important;overflow:visible!important}',
     '#ip-print-overlay .ip-tb{display:none!important}#ip-print-overlay .ip-wrap{zoom:1!important;padding:0!important}',
     '#ip-print-overlay .ipg-page,#ip-print-overlay .rpg-page{margin:0!important;box-shadow:none!important;page-break-after:always;break-after:page}#ip-print-overlay .ipg-page:last-child,#ip-print-overlay .rpg-page:last-child{page-break-after:auto;break-after:auto}',
@@ -12081,6 +11869,8 @@ function rpSubLabel(sys){ const meta=SYS_META[sys.sysKey]||{}; if(sys.subType &&
 function rpBuildPages(c){
   c = normChecklist(c);
   const cust=(state.customers||[]).find(function(x){ return x.id===c.customerId; });
+  const RP_TITLE=({bakim:'PERİYODİK BAKIM RAPORU', ariza:'ARIZA / SERVİS CHECKLIST', devreye:'TEST / DEVREYE ALMA CHECKLIST'})[c.formType]||'CHECKLIST';
+  const isBakim=c.formType==='bakim';
   const systems=(c.systems||[]).filter(function(s){ return s.sysKey; });
   const tech=(c.staffSign&&c.staffSign.name)||'';
   const sysNames=systems.map(function(s){ const m=SYS_META[s.sysKey]||{l:s.sysKey}; const sl=rpSubLabel(s); return m.l+(sl?(' ('+sl+')'):''); });
@@ -12117,8 +11907,8 @@ function rpBuildPages(c){
   const cell=function(lab,val,cls){ return '<div class="'+(cls||'')+'"><span>'+lab+'</span><b>'+val+'</b></div>'; };
   const di=function(l1,v1,l2,v2){ return '<tr><td class="l">'+l1+'</td><td class="v" style="width:38%">'+v1+'</td><td class="l">'+l2+'</td><td class="v">'+v2+'</td></tr>'; };
   const info='<table class="ipg-di"><tbody>'
-    +di('İşveren','<b>'+_ipEsc(cust?cust.firmName:'')+'</b>','Bakım tarihi',ipFmt(c.createdAt||today())+(c.visitLabel?(' · '+_ipEsc(c.visitLabel)):''))
-    +di('Proje / iş adı',_ipEsc(c.siteName||''),'Teknik servis ilgilisi','<b>'+_ipEsc(tech||'—')+'</b>')
+    +di(isBakim?'İşveren':'Müşteri','<b>'+_ipEsc(cust?cust.firmName:'')+'</b>',isBakim?'Bakım tarihi':'Tarih',ipFmt(c.createdAt||today())+(c.visitLabel?(' · '+_ipEsc(c.visitLabel)):''))
+    +di(isBakim?'Proje / iş adı':'Saha / bina',_ipEsc(c.siteName||''),isBakim?'Teknik servis ilgilisi':'A-PRO yetkilisi','<b>'+_ipEsc(tech||'—')+'</b>')
     +'<tr><td class="l">Sistem tipi</td><td class="v" colspan="3">'+_ipEsc(sysNames.join(' · ')||'—')+'</td></tr>'
     +'<tr><td class="l">Uygulanan standart</td><td class="v" colspan="3">'+_ipEsc(stds.join(' · ')||'NFPA 25')+'</td></tr>'
     +'</tbody></table>';
@@ -12141,45 +11931,24 @@ function rpBuildPages(c){
     +'<div class="rpg-box"><h5>TESPİT EDİLEN EKSİKLİKLER / UYGUN OLMAYAN MADDELER</h5>'+(findings.length?('<ol>'+findings.slice(0,10).map(function(f){ return '<li><b>'+_ipEsc(f.sys)+':</b> '+_ipEsc(f.label)+(f.note?(' — <i>'+_ipEsc(f.note)+'</i>'):'')+'</li>'; }).join('')+(findings.length>10?('<li>… ve '+(findings.length-10)+' madde daha (tabloya bakınız)</li>'):'')+'</ol>'):'<div style="padding:3px 8px;font-size:9px;color:#15803d">Uygun olmayan madde tespit edilmemiştir.</div>')+'</div>'
     +workBoxHtml
     +(notes.length?('<div class="rpg-box"><h5>EK NOTLAR</h5><div style="padding:3px 8px;font-size:9px;line-height:1.4">'+notes.map(_ipEsc).join('<br>')+'</div></div>'):'')
-    +'<div class="ipg-sign" style="margin-top:14px">'+sigBox('Teknik servis ilgilisi (A-PRO)',tech,'Teknik Servis',c.staffSign)+sigBox('Müşteri ilgilisi',c.custSign&&c.custSign.name,'İşveren Yetkilisi'+(c.custPhone?(' · Tel: '+c.custPhone):''),c.custSign)+'</div>'
+    +'<div class="ipg-sign" style="margin-top:14px">'+sigBox(isBakim?'Teknik servis ilgilisi (A-PRO)':'A-PRO yetkilisi',tech,'Teknik Servis',c.staffSign)+sigBox('Müşteri ilgilisi',c.custSign&&c.custSign.name,'İşveren Yetkilisi'+(c.custPhone?(' · Tel: '+c.custPhone):''),c.custSign)+'</div>'
     +'<div class="rpg-std">Bu rapor, '+_ipEsc(stds.join(', ')||'NFPA 25')+' standartları kapsamındaki periyodik muayene, test ve bakım maddelerine göre hazırlanmıştır. Standart metni: NFPA 25 (2026) — link.nfpa.org/free-access/publications/25/2026</div>';
   return pages.map(function(pg,pi){
     const isLast=pi===total-1;
     return '<div class="rpg-page">'+logoHdr
-      +'<div class="ipg-title">PERİYODİK BAKIM RAPORU</div><div class="ipg-sub">Rapor tarihi: '+ipFmt(today())+' · NFPA standartlarına göre periyodik muayene, test ve bakım</div>'
+      +'<div class="ipg-title">'+RP_TITLE+'</div><div class="ipg-sub">Rapor tarihi: '+ipFmt(today())+(c.formType==='bakim'?' · NFPA standartlarına göre periyodik muayene, test ve bakım':' · NFPA temelli kontrol listesi')+'</div>'
       +(pi===0?info:'')
       +pg.map(rowHTML).join('')
       +(isLast?tail:'')
-      +'<div class="ipg-ft"><span>A-PRO Mühendislik Ltd. Şti. — Periyodik Bakım Raporu · '+_ipEsc(c.siteName||'')+'</span><span>www.a-pro.com.tr</span><span>Sayfa '+(pi+1)+' / '+total+'</span></div></div>';
+      +'<div class="ipg-ft"><span>A-PRO Mühendislik Ltd. Şti. — '+_ipEsc(RP_TITLE.charAt(0)+RP_TITLE.slice(1).toLowerCase())+' · '+_ipEsc(c.siteName||'')+'</span><span>www.a-pro.com.tr</span><span>Sayfa '+(pi+1)+' / '+total+'</span></div></div>';
   });
 }
 function rpOpenPrint(c, autoPdf){
   const pages=rpBuildPages(c);
   if(!pages.length){ showToast('⚠️ Önce en az bir sistem ekleyin.','#dc2626'); return; }
-  ipEnsureStyle();
-  const old=document.getElementById('ip-print-overlay'); if(old) old.remove();
-  const ov=document.createElement('div'); ov.id='ip-print-overlay';
-  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:#cbd5e1;display:flex;flex-direction:column;';
-  const tb=document.createElement('div'); tb.className='ip-tb';
-  tb.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 18px;background:#1e2d4a;color:#fff;flex-shrink:0;flex-wrap:wrap;';
-  tb.innerHTML='<div style="font-weight:800;font-size:15px">📋 Periyodik Bakım Raporu — '+_ipEsc(c.siteName||'')+' ('+pages.length+' sayfa)</div>';
-  const bw=document.createElement('div'); bw.style.cssText='display:flex;gap:8px;';
-  const mk=function(txt,bg,fn){ const b=document.createElement('button'); b.textContent=txt; b.style.cssText='padding:8px 16px;background:'+bg+';color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer'; b.onclick=fn; return b; };
-  const wrap=document.createElement('div'); wrap.className='ip-wrap'; wrap.style.cssText='flex:1;overflow:auto;padding:14px 0;';
-  const fit=function(){ wrap.style.zoom=String(Math.min(1,(window.innerWidth-24)/794)); };
-  const fname='Periyodik-Bakim-Raporu_'+ipSlug(c.siteName)+'_'+(c.createdAt||today());
-  const doPdf=function(){ wrap.style.zoom='1'; ipExportPDF({title:c.siteName}, '', wrap, {orient:'portrait', name:fname}).then(fit,fit); };
-  bw.appendChild(mk('🖨️ Yazdır','linear-gradient(135deg,#2563eb,#1d4ed8)',function(){
-    const ps=document.createElement('style'); ps.id='rp-page-style'; ps.textContent='@media print{@page{size:A4 portrait;margin:0}}'; document.head.appendChild(ps);
-    document.body.classList.add('ip-printing'); setTimeout(function(){ window.print(); },50);
-  }));
-  bw.appendChild(mk('⬇️ PDF indir','linear-gradient(135deg,#16a34a,#15803d)',doPdf));
-  bw.appendChild(mk('📖 NFPA 25','#7c3aed',function(){ window.open(NFPA25_URL,'_blank','noopener'); }));
-  bw.appendChild(mk('✕ Kapat','#dc2626',function(){ ov.remove(); document.body.classList.remove('ip-printing'); const s=document.getElementById('rp-page-style'); if(s) s.remove(); }));
-  tb.appendChild(bw); ov.appendChild(tb);
-  wrap.innerHTML=pages.join('');
-  ov.appendChild(wrap); document.body.appendChild(ov); fit();
-  window.addEventListener('afterprint', function(){ document.body.classList.remove('ip-printing'); const s=document.getElementById('rp-page-style'); if(s) s.remove(); }, {once:true});
+  const nm=({bakim:'Periyodik Bakım Raporu', ariza:'Arıza / Servis Checklist', devreye:'Test / Devreye Alma Checklist'})[c.formType]||'Checklist';
+  const doPdf=docShowOverlay(pages, '📋 '+nm+' — '+(c.siteName||''), nm.replace(/[ \/]+/g,'-')+'_'+ipSlug(c.siteName)+'_'+(c.createdAt||today()),
+    c.formType==='bakim' ? [{label:'📖 NFPA 25', bg:'#7c3aed', fn:function(){ window.open(NFPA25_URL,'_blank','noopener'); }}] : [{label:'📖 NFPA', bg:'#7c3aed', fn:function(){ window.open(NFPA25_URL,'_blank','noopener'); }}]);
   if(autoPdf) setTimeout(doPdf, 300);
 }
 // Periyodik bakım ziyareti: "İcrayı başlat" → o ziyaretin raporunu (NFPA checklist) hazır maddelerle açar.
@@ -12199,6 +11968,173 @@ function maintOpenVisitReport(m){
     clLoadItems(c, sys); c.systems.push(sys);
   });
   setState({modal:{type:'checklist', item:c}});
+}
+
+// ═══ GENEL BELGE SAYFALAYICI (dikey A4, teklif tasarımlı antet/altbilgi) — Servis Formu, Saha Raporu vb. ortak ═══
+// Blok listesi verilir ({k:'html',html} | {k:'sec',title} | {k:'table',cols,head,rows}); bloklar GERÇEK yükseklikleriyle ölçülüp sayfalara dizilir,
+// tablolar satır sınırında bölünür ve başlık her sayfada tekrarlanır. Başlık (kırmızı bant) tablonun/öğenin ilk satırıyla birlikte tutulur.
+function docLetterheadHTML(){
+  return '<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00<br>E-posta: info@a-pro.com.tr<br>www.a-pro.com.tr</div></div>';
+}
+function docTableHTML(b, rowsHtml){
+  return '<table class="dc-tbl"><colgroup>'+b.cols.map(function(w){ return '<col'+(w?(' style="width:'+w+'px"'):'')+'>'; }).join('')+'</colgroup><thead><tr>'+b.head.map(function(t){ return '<th>'+t+'</th>'; }).join('')+'</tr></thead><tbody>'+rowsHtml+'</tbody></table>';
+}
+function docPaginate(blocks, docName){
+  ipEnsureStyle();
+  const holder=document.createElement('div'); holder.className='rpg-page';
+  holder.style.cssText='position:absolute;left:-10000px;top:0;height:auto;overflow:visible;visibility:hidden;box-shadow:none;margin:0';
+  document.body.appendChild(holder);
+  const measure=function(html){ const d=document.createElement('div'); d.className='dc-a'; d.innerHTML=html; holder.appendChild(d); const h=d.offsetHeight; holder.removeChild(d); return h; };
+  const hdrH=measure(docLetterheadHTML());
+  const CAP=1123-22-hdrH-48;   // üst dolgu + antet + altbilgi payı
+  // atomlara aç
+  const atoms=[];
+  blocks.forEach(function(b){
+    if(b.k==='table'){
+      // satır yüksekliklerini tabloyu bütün çizerek ölç
+      const holderT=document.createElement('div'); holderT.className='dc-a'; holderT.innerHTML=docTableHTML(b, b.rows.join('')); holder.appendChild(holderT);
+      const trs=holderT.querySelectorAll('tbody tr'); const headH=holderT.querySelector('thead').offsetHeight;
+      const rh=[].map.call(trs,function(t){ return t.offsetHeight; });
+      holder.removeChild(holderT);
+      b.rows.forEach(function(r,i){ atoms.push({k:'row', tbl:b, html:r, h:rh[i]||18, headH:headH, first:i===0, keep:i===0 && b.keepWith}); });
+    } else {
+      atoms.push({k:b.k, html:b.k==='sec'?('<div class="dc-sec">'+b.title+'</div>'):b.html, h:measure(b.k==='sec'?('<div class="dc-sec">'+b.title+'</div>'):b.html), keep:b.k==='sec'});
+    }
+  });
+  document.body.removeChild(holder);
+  // sayfalara diz
+  const pages=[]; let cur=[], used=0, openTbl=null;
+  const newPage=function(){ pages.push(cur); cur=[]; used=0; openTbl=null; };
+  for(let i=0;i<atoms.length;i++){
+    const a=atoms[i];
+    const starts=function(){ return a.k==='row' && (!openTbl || openTbl.tbl!==a.tbl); };
+    let need=a.h+7+(starts()?a.headH+4:0);
+    if(a.keep){ const nx=atoms[i+1]; if(nx) need+=nx.h+7+((nx.k==='row')?(nx.headH+4):0); }   // başlık bandı sonraki öğeyle birlikte
+    if(used+need>CAP && cur.length) newPage();
+    if(a.k==='row'){
+      if(starts()){ openTbl={tbl:a.tbl, rows:[]}; cur.push({k:'tbl', ref:openTbl}); used+=a.headH+4+7; }
+      openTbl.rows.push(a.html); used+=a.h;
+    } else { openTbl=null; cur.push({k:'h', html:a.html}); used+=a.h+7; }
+  }
+  if(cur.length || !pages.length) pages.push(cur);
+  const total=pages.length;
+  return pages.map(function(pg,pi){
+    return '<div class="rpg-page">'+docLetterheadHTML()
+      +pg.map(function(seg){ return seg.k==='tbl' ? ('<div class="dc-a">'+docTableHTML(seg.ref.tbl, seg.ref.rows.join(''))+'</div>') : ('<div class="dc-a">'+seg.html+'</div>'); }).join('')
+      +'<div class="ipg-ft"><span>A-PRO Mühendislik Ltd. Şti. — '+_ipEsc(docName||'')+'</span><span>www.a-pro.com.tr</span><span>Sayfa '+(pi+1)+' / '+total+'</span></div></div>';
+  });
+}
+// Ortak çıktı ekranı: 🖨️ Yazdır, ⬇️ PDF indir, (ek düğmeler), ✕ Kapat
+function docShowOverlay(pages, heading, fname, extraBtns){
+  ipEnsureStyle();
+  const old=document.getElementById('ip-print-overlay'); if(old) old.remove();
+  const ov=document.createElement('div'); ov.id='ip-print-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:#cbd5e1;display:flex;flex-direction:column;';
+  const tb=document.createElement('div'); tb.className='ip-tb';
+  tb.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 18px;background:#1e2d4a;color:#fff;flex-shrink:0;flex-wrap:wrap;';
+  tb.innerHTML='<div style="font-weight:800;font-size:15px">'+_ipEsc(heading)+' ('+pages.length+' sayfa)</div>';
+  const bw=document.createElement('div'); bw.style.cssText='display:flex;gap:8px;';
+  const mk=function(txt,bg,fn){ const b=document.createElement('button'); b.textContent=txt; b.style.cssText='padding:8px 16px;background:'+bg+';color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer'; b.onclick=fn; return b; };
+  const wrap=document.createElement('div'); wrap.className='ip-wrap'; wrap.style.cssText='flex:1;overflow:auto;padding:14px 0;';
+  const fit=function(){ wrap.style.zoom=String(Math.min(1,(window.innerWidth-24)/794)); };
+  const doPdf=function(){ wrap.style.zoom='1'; ipExportPDF({title:heading}, '', wrap, {orient:'portrait', name:fname}).then(fit,fit); };
+  bw.appendChild(mk('🖨️ Yazdır','linear-gradient(135deg,#2563eb,#1d4ed8)',function(){
+    const ps=document.createElement('style'); ps.id='rp-page-style'; ps.textContent='@media print{@page{size:A4 portrait;margin:0}}'; document.head.appendChild(ps);
+    document.body.classList.add('ip-printing'); setTimeout(function(){ window.print(); },50);
+  }));
+  bw.appendChild(mk('⬇️ PDF indir','linear-gradient(135deg,#16a34a,#15803d)',doPdf));
+  (extraBtns||[]).forEach(function(x){ bw.appendChild(mk(x.label,x.bg||'#7c3aed',x.fn)); });
+  bw.appendChild(mk('✕ Kapat','#dc2626',function(){ ov.remove(); document.body.classList.remove('ip-printing'); const s=document.getElementById('rp-page-style'); if(s) s.remove(); }));
+  tb.appendChild(bw); ov.appendChild(tb);
+  wrap.innerHTML=pages.join('');
+  ov.appendChild(wrap); document.body.appendChild(ov); fit();
+  window.addEventListener('afterprint', function(){ document.body.classList.remove('ip-printing'); const s=document.getElementById('rp-page-style'); if(s) s.remove(); }, {once:true});
+  return doPdf;
+}
+function docInfoTable(rows){   // rows: [[lbl1,val1,lbl2,val2], ...] (lbl2/val2 boş olabilir → val1 tüm genişliği alır)
+  return '<table class="ipg-di"><tbody>'+rows.map(function(r){
+    return r.length>=4 ? ('<tr><td class="l">'+r[0]+'</td><td class="v" style="width:38%">'+r[1]+'</td><td class="l">'+r[2]+'</td><td class="v">'+r[3]+'</td></tr>')
+                       : ('<tr><td class="l">'+r[0]+'</td><td class="v" colspan="3">'+r[1]+'</td></tr>');
+  }).join('')+'</tbody></table>';
+}
+function docSignBoxes(left, right){   // {title,name,unvan,sign}
+  const box=function(x){ const sg=x.sign||{};
+    return '<div class="ipg-sb"><h4>'+_ipEsc(x.title)+'</h4><div class="bd"><p><b>Ad Soyad:</b> '+_ipEsc(x.name||sg.name||'')+'</p><p><b>Ünvan:</b> '+_ipEsc(x.unvan||'')+'</p><p><b>Tarih:</b> '+_ipEsc(sg.at?ipFmt(sg.at):'')+'</p>'
+      +(sg.dataURL?'<img alt="" src="'+sg.dataURL+'" style="position:absolute;right:12px;top:4px;height:56px;max-width:55%">':'')+'<div class="sg">İmza (ıslak / dijital)</div></div></div>'; };
+  return '<div class="ipg-sign" style="margin-top:10px">'+box(left)+(right?box(right):'')+'</div>';
+}
+// ── Arıza / Devreye Alma / Bakım SERVİS FORMU ──
+function printServiceForm(sf){
+  sf = normServiceForm(sf);
+  const cust=(state.customers||[]).find(function(x){ return x.id===sf.customerId; });
+  const proj=sf.projectId ? (state.opportunities||[]).find(function(x){ return x.id===sf.projectId; }) : null;
+  const title=SF_DOCTYPE_META[sf.docType]||'Servis-Devreye Alma Formu';
+  const sysLabels=(sf.systemsPresent||[]).map(function(k){ return (SYS_META[k]&&SYS_META[k].l)||k; });
+  const blocks=[
+    {k:'html', html:'<div class="ipg-title">'+_ipEsc(title.toUpperCase())+'</div><div class="ipg-sub">Hizmet teslim formu</div>'},
+    {k:'html', html:docInfoTable([
+      ['Müşteri','<b>'+_ipEsc(cust?cust.firmName:'—')+'</b>','Tarih',ipFmt(sf.createdAt||today())],
+      ['Saha / bina',_ipEsc(sf.siteName||'—'),'Referans',_ipEsc(String(sf.id).slice(-8).toUpperCase())],
+      ['Proje',_ipEsc(proj?(proj.title||'—'):'—'),'Hizmet türü',_ipEsc(title)] ])},
+    {k:'sec', title:'Tesisteki sistemler'},
+    {k:'html', html:'<div class="dc-badges">'+(sysLabels.length?sysLabels.map(function(l){ return '<span>'+_ipEsc(l)+'</span>'; }).join(''):'<span style="color:#999;font-weight:400">Belirtilmedi</span>')+'</div>'},
+    {k:'sec', title:'Yapılan hizmet'},
+    {k:'html', html:'<div class="dc-p">'+_ipEsc(sf.description||'—')+'</div>'},
+    {k:'sec', title:'Taraflar'},
+    {k:'html', html:'<div class="dc-two"><div><b>Servis personeli</b><br>'+_ipEsc(sf.staffContact.name||'—')+(sf.staffContact.phone?(' · '+_ipEsc(sf.staffContact.phone)):'')+'</div><div><b>Müşteri ilgilisi</b><br>'+_ipEsc(sf.custContact.name||'—')+(sf.custContact.phone?(' · '+_ipEsc(sf.custContact.phone)):'')+'</div></div>'},
+    {k:'sec', title:'Onay / imza'},
+    {k:'html', html:docSignBoxes({title:'A-PRO yetkilisi',sign:sf.staffSign,unvan:'Servis Personeli'},{title:'Müşteri ilgilisi',sign:sf.custSign,unvan:'İşveren Yetkilisi'})+'<div class="rpg-std">Bu belge dijital ve ıslak imza ile geçerlidir.</div>'}
+  ];
+  const pages=docPaginate(blocks, title+' · '+(sf.siteName||''));
+  docShowOverlay(pages, '📝 '+title, 'Servis-Formu_'+ipSlug(sf.siteName||title)+'_'+(sf.createdAt||today()));
+}
+// ── SAHA RAPORU ──
+function printFieldReport(fr, photos){
+  photos=Array.isArray(photos)?photos:[];
+  fr=normFieldReport(fr);
+  const proj=fr.projectId?(state.opportunities||[]).find(function(x){ return x.id===fr.projectId; }):null;
+  const cust=fr.customerId?(state.customers||[]).find(function(x){ return x.id===fr.customerId; }):null;
+  const weather=(FR_WEATHER.find(function(w){ return w.v===fr.weather; })||{}).l||fr.weather||'—';
+  const crew=(fr.crewUsers||[]).map(function(n){ const u=(state.users||[]).find(function(x){ return x.displayName===n; }); return {name:n, role:(u&&DEPT_LABEL[u.department])||'Saha'}; }).concat(fr.personnelOnSite||[]);
+  const blocks=[
+    {k:'html', html:'<div class="ipg-title">SAHA RAPORU</div><div class="ipg-sub">Saha imalat raporu</div>'},
+    {k:'html', html:docInfoTable([
+      ['Proje','<b>'+_ipEsc(proj?(proj.title||'—'):'—')+'</b>','Tarih',ipFmt(fr.reportDate||today())],
+      ['İşveren',_ipEsc(cust?(cust.firmName||'—'):'—'),'Referans',_ipEsc(String(fr.id).slice(-8).toUpperCase())],
+      ['Hava durumu',_ipEsc(weather),'Sıcaklık',_ipEsc(fr.temperature?(fr.temperature+' °C'):'—')] ])}
+  ];
+  blocks.push({k:'sec', title:'Sahada bulunan personel'});
+  if(crew.length || fr.workerCount){
+    blocks.push({k:'table', cols:[26,0,150], head:['#','Ad soyad','Görevi'], rows:crew.map(function(p,i){ return '<tr><td>'+(i+1)+'</td><td>'+_ipEsc(p.name||'')+'</td><td>'+_ipEsc(p.role||'')+'</td></tr>'; }).concat(fr.workerCount?['<tr><td></td><td colspan="2"><b>Toplam kişi sayısı: '+_ipEsc(String(fr.workerCount))+'</b></td></tr>']:[])});
+  } else blocks.push({k:'html', html:'<div class="dc-p" style="color:#888">Personel girilmemiş.</div>'});
+  blocks.push({k:'sec', title:'Yapılan işler'});
+  if((fr.workItems||[]).length) blocks.push({k:'table', cols:[26,0,60,46,52,130], head:['#','İş tanımı','Miktar','Birim','% bitti','Not'], rows:fr.workItems.map(function(w,i){ return '<tr><td>'+(i+1)+'</td><td>'+_ipEsc(w.desc||'')+'</td><td>'+_ipEsc(w.quantity||'')+'</td><td>'+_ipEsc(w.unit||'')+'</td><td>'+_ipEsc(w.pct?(w.pct+' %'):'')+'</td><td>'+_ipEsc(w.note||'')+'</td></tr>'; })});
+  else blocks.push({k:'html', html:'<div class="dc-p" style="color:#b45309;font-weight:700">'+(fr.noWork?'Bugün sahada çalışma yapılmamıştır.':'İş girilmemiş.')+'</div>'});
+  blocks.push({k:'sec', title:'Kullanılan malzeme'});
+  if((fr.materialsUsed||[]).length) blocks.push({k:'table', cols:[26,0,70,56], head:['#','Malzeme','Miktar','Birim'], rows:fr.materialsUsed.map(function(m,i){ return '<tr><td>'+(i+1)+'</td><td>'+_ipEsc(m.name||'')+'</td><td>'+_ipEsc(m.quantity||'')+'</td><td>'+_ipEsc(m.unit||'')+'</td></tr>'; })});
+  else blocks.push({k:'html', html:'<div class="dc-p" style="color:#888">Malzeme girilmemiş.</div>'});
+  blocks.push({k:'sec', title:'İş güvenliği'});
+  if(fr.safetyOk) blocks.push({k:'html', html:'<div class="dc-p" style="color:#15803d;font-weight:700">✔ Uygunsuzluk yok</div>'});
+  else if((fr.safetyIncidents||[]).length) blocks.push({k:'table', cols:[26,0,90], head:['#','Açıklama','Seviye'], rows:fr.safetyIncidents.map(function(s,i){ return '<tr><td>'+(i+1)+'</td><td>'+_ipEsc(s.desc||'')+'</td><td>'+_ipEsc(s.severity||'')+'</td></tr>'; })});
+  else blocks.push({k:'html', html:'<div class="dc-p" style="color:#888">Kayıt yok.</div>'});
+  if((fr.reworkItems||[]).length){
+    blocks.push({k:'sec', title:'Yeniden-iş'});
+    blocks.push({k:'table', cols:[26,0,120,150], head:['#','Açıklama','Kaynağı','Not'], rows:fr.reworkItems.map(function(r,i){ return '<tr><td>'+(i+1)+'</td><td>'+_ipEsc(r.desc||'')+'</td><td>'+_ipEsc((FR_REWORK_CAUSES.find(function(c){ return c.v===(r.cause||'uygulama'); })||{}).l||'')+'</td><td>'+_ipEsc(r.reason||'')+'</td></tr>'; })});
+  }
+  if(fr.budgetSpent){ blocks.push({k:'sec', title:'Harcama'}); blocks.push({k:'html', html:'<div class="dc-p">'+_ipEsc(eur(fr.budgetSpent))+'</div>'}); }
+  if(fr.generalNotes){ blocks.push({k:'sec', title:'Genel notlar'}); blocks.push({k:'html', html:'<div class="dc-p">'+_ipEsc(fr.generalNotes)+'</div>'}); }
+  if(fr.nextDayPlan){ blocks.push({k:'sec', title:'Ertesi gün planı'}); blocks.push({k:'html', html:'<div class="dc-p">'+_ipEsc(fr.nextDayPlan)+'</div>'}); }
+  const okPh=photos.filter(function(p){ return p && typeof p.dataURL==='string' && p.dataURL.indexOf('data:image/jpeg;base64,')===0; });
+  if(okPh.length){
+    blocks.push({k:'sec', title:'Fotoğraflar'});
+    for(let i=0;i<okPh.length;i+=2){
+      blocks.push({k:'html', html:'<div class="dc-ph">'+okPh.slice(i,i+2).map(function(p){ return '<div class="ph" style="background-image:url('+p.dataURL+')"></div>'; }).join('')+'</div>'});
+    }
+  }
+  blocks.push({k:'sec', title:'Onay / imza'});
+  blocks.push({k:'html', html:docSignBoxes({title:'Saha sorumlusu',sign:fr.staffSign,unvan:'Şantiye / Saha Sorumlusu'})+'<div class="rpg-std">Bu belge dijital ve ıslak imza ile geçerlidir.</div>'});
+  const pages=docPaginate(blocks, 'Saha Raporu · '+(proj?proj.title:''));
+  docShowOverlay(pages, '📋 Saha Raporu', 'Saha-Raporu_'+ipSlug(proj?proj.title:'')+'_'+(fr.reportDate||today()));
 }
 
 function buildIsProgramiBlock(o, isAdmin, closed){
