@@ -10110,11 +10110,16 @@ async function projRollback(o){
 }
 // İcrayı iptal et: proje aktif listeden çıkar; fırsat kaydı ve görevler KALIR (silinmez).
 async function projCancelExec(o){
-  if(!confirm('Proje icrası iptal edilsin mi?\n\nFırsat kaydı ve bağlı görevler KALIR; proje yalnızca aktif listeden çıkar. (Daha sonra "İcraya başlat" ile tekrar başlatılabilir.)')) return;
-  const upd=Object.assign({}, o, { execActive:false });
+  if(!(state.currentUser && state.currentUser.isAdmin)){ showToast('⚠️ İcrayı yalnız yönetici iptal edebilir.','#d97706'); return; }
+  const reason=prompt('Proje icrası İPTAL edilecek.\n\nFırsat kaydı ve bağlı görevler KALIR; proje aktif listeden çıkar, otomatik hakediş / iş programı görevleri durur. (Sonra "İcraya başlat" ile yeniden başlatılabilir.)\n\nİptal nedeni (zorunlu):','');
+  if(reason===null) return;
+  if(!String(reason).trim()){ showToast('⚠️ İptal nedeni zorunludur.','#dc2626'); return; }
+  const me=(state.currentUser&&state.currentUser.displayName)||'';
+  const entry={ at:today(), by:me, reason:String(reason).trim(), stage:projStage(o) };
+  const upd=Object.assign({}, o, { execActive:false, execCancelledAt:entry.at, execCancelledBy:me, execCancelReason:entry.reason, execCancelLog:[...(o.execCancelLog||[]), entry] });
   await personelSaveDoc('opportunities', upd);
   setState({modal:null});
-  showToast('✅ İcra iptal edildi (kayıt korundu).');
+  showToast('✅ İcra iptal edildi — neden kaydedildi (kayıt korundu).');
 }
 // Projeyi tamamen sil: fırsat kaydı + bağlı görevler (otomatik + manuel) kaldırılır.
 async function projDelete(o){
@@ -12121,7 +12126,7 @@ function buildProjeModal(oppId, tabOverride){
   if(!closed && idx===PROJECT_STAGES.length-1) acts.push(btn('✓ Projeyi kapat',async()=>{await projClose(o); render();},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'}));
   if(isAdmin && (closed || idx>0)) acts.push(btn(closed?'↺ Yeniden aç':'← Geri al',async()=>{await projRollback(o); render();},'#fef3c7','#92400e','8px 14px',{fontSize:'13px'}));
   acts.push(btn('+ Bu aşamaya görev öner',async()=>{await suggestStageTasks(o, st, {manual:true, silent:true}); render();},'#eef2ff','#4338ca','8px 14px',{fontSize:'13px'}));
-  acts.push(btn('⏹ İcra iptal',()=>projCancelExec(o),'#fff7ed','#c2410c','8px 14px',{fontSize:'13px',border:'1px solid #fed7aa'}));
+  if(isAdmin) acts.push(btn('⏹ İcra iptal',()=>projCancelExec(o),'#fff7ed','#c2410c','8px 14px',{fontSize:'13px',border:'1px solid #fed7aa'}));   // yalnız yönetici (Sil ile aynı yetki)
   if(isAdmin) acts.push(btn('🗑 Sil',()=>projDelete(o),'#fef2f2','#dc2626','8px 14px',{fontSize:'13px',border:'1px solid #fecaca'}));
   const actBar=h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'14px'}}, ...acts);
 
@@ -12244,7 +12249,9 @@ function renderProjeler(){
   const awaitingBox = awaiting.length ? h('div',{style:{marginBottom:'16px'}},
     h('div',{style:{fontWeight:'700',color:'#b45309',fontSize:'14px',marginBottom:'8px'}},'⏳ İcra bekleyen (kazanıldı)'),
     ...awaiting.map(o=>h('div',{style:{background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'}},
-      h('div',{style:{flex:'1',minWidth:'160px',fontWeight:'700',color:'#0f2040'}},o.title||'(başlıksız)'),
+      h('div',{style:{flex:'1',minWidth:'160px'}},
+        h('div',{style:{fontWeight:'700',color:'#0f2040'}},o.title||'(başlıksız)'),
+        (o.execCancelLog&&o.execCancelLog.length) ? (function(){ const c=o.execCancelLog[o.execCancelLog.length-1]; return h('div',{style:{fontSize:'11px',color:'#b45309',marginTop:'2px'}},'⏹ İcra iptal edilmişti: '+_toTR(c.at)+' · '+(c.by||'-')+' · '+(c.reason||'')); })() : h('span')),
       btn('🏗 İcraya başlat',()=>projStart(o),'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'})
     ))
   ) : h('span');
