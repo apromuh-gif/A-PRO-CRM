@@ -28,7 +28,7 @@ node -e "
 const fs=require('fs');
 const html=fs.readFileSync('index.html','utf8');
 const scripts=[...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
-const main=scripts.filter(s=>s[1].length>1000).pop();
+const main=scripts.sort((a,b)=>b[1].length-a[1].length)[0];   // ANA betik = en büyük <script> (son script küçük bir yardımcıdır)
 const vm=require('vm');
 try{new vm.Script(main[1]);console.log('✅ SYNTAX OK');}
 catch(e){console.log('❌',e.message);}
@@ -107,3 +107,11 @@ A-PRO CRM/
 3. `new Date("ISO")` → UTC sorunu → `_toDate()` kullan
 4. `async/await` IIFE dışında → function'ı `async` yap
 5. CSS `!important` inline style'ı ezemez → JS'de kontrol et
+
+## FORM / PENCERE KURALLARI (ZORUNLU — bundan sonra açılacak TÜM form ve pencereler için)
+Kullanıcı kararı (18 Kasım 2026): yeni yazılan her form/modal/açılır pencere şu kurallara uyar; eski kodda görürsen düzelt.
+1. **Boşluğa (arka plana) tıklayınca KAPANMAZ.** Pencere yalnız Kaydet / İptal / Vazgeç / ✕ ile kapanır. `bg.addEventListener('click', …)` ile kapatma YAZMA. Yeni pencere için daima `modal(title, content, onClose, maxWidth)` kullan (kendi `position:fixed` overlay'ini yazma; yazarsan da boşluk tıklaması kapatmaz).
+2. **Esc tuşu pencereyi/formu KAPATMAZ** (`keydown` + `Escape` ile kapatma yazma). (Yalnız küçük açılır menüler/bildirim paneli dış tıklama veya Esc ile kapanabilir; bunlar form değildir.)
+3. **Doğrulama uyarısı formu sıfırlamaz.** Uyarı için `showToast(...)` kullan (pencere açıkken yeniden çizim yapmaz). Form açıkken `setState/render()` ile yeniden çizim tetikleme; yeniden çizim gerekiyorsa taslağı `PMOD`/üst kapsamda tut ki girilen bilgiler kaybolmasın. Kaydet başarısız olursa (hata) form AÇIK ve DOLU kalır, hata kırmızı uyarıyla gösterilir.
+4. **Eksik/hatalı alan** adıyla söylenir ("… girilmelidir"); doğrulama Kaydet'e basınca yapılır, girilenler silinmez.
+5. Yazdır / PDF ekranları da aynı: yalnız ✕ Kapat ile kapanır.

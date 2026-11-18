@@ -11587,13 +11587,14 @@ function hkSummary(o){
 // İcraya geçen projede proje sorumlusuna (saha sorumlusu) "İş programı hazırla" görevi açılır; program her 15 günde bir şantiye ilerleyişine göre
 // revize edilir. Revizyonlar fırsat belgesinde `isProgramiRevs` dizisinde (Rev 0 = ilk program). Revizyon kaydedilmeden görev kapanmaz.
 const IP_REVIZYON_GUN = 15, IP_ONCE_ACILIS_GUN = 3, IP_ILK_PROGRAM_GUN = 7;
+const IP_OZELLIK_TARIHI = '2026-11-18';   // özelliğin devreye girdiği gün: bu tarihten önce icraya başlamış projelerin ilk program vadesi bu günden sayılır
 function ipApplies(o){ return !!o && projIsActive(o) && o.salesType!=='servis' && o.salesType!=='bakim'; }
 function ipList(o){ return (Array.isArray(o&&o.isProgramiRevs)?o.isProgramiRevs:[]).slice().sort(function(a,b){ return (a.no||0)-(b.no||0); }); }
 function ipLabel(n){ return n===0 ? 'İlk program' : ('Rev '+n); }
 // Sıradaki revizyonun vadesi: son revizyon + 15 gün (ilk program yoksa icra başlangıcı + 7 gün).
 function ipNextDue(o){
   const l=ipList(o);
-  if(!l.length) return _addDays(String(o.execStartedAt||today()).slice(0,10), IP_ILK_PROGRAM_GUN);
+  if(!l.length){ const st=String(o.execStartedAt||today()).slice(0,10); return _addDays(st>IP_OZELLIK_TARIHI?st:IP_OZELLIK_TARIHI, IP_ILK_PROGRAM_GUN); }
   return _addDays(String(l[l.length-1].date).slice(0,10), IP_REVIZYON_GUN);
 }
 function ipTaskKey(oppId, n){ return 'is_programi_'+oppId+'_'+n; }
@@ -11603,9 +11604,14 @@ async function projectScheduleSync(){
   (state.opportunities||[]).filter(ipApplies).forEach(async function(o){
     const n=ipList(o).length, due=ipNextDue(o), key=ipTaskKey(o.id,n);
     if(n>0 && _diffDays(due) > IP_ONCE_ACILIS_GUN) return;
-    if((state.tasks||[]).some(function(t){ return t.dedupeKey===key; })) return;
-    const lead=await ensureSiteLead(o); const cn=_custName(o.customerId);
     const bizDue=_ymd(_taxBizDay(_toDate(due)));
+    const ex=(state.tasks||[]).map(normTask).find(function(t){ return t.dedupeKey===key; });
+    if(ex){
+      // Özellikten önce açılmış ilk program görevi eski (geçmiş) vadeyle kalmışsa yeni vadeye çek.
+      if(n===0 && ex.status!=='tamamlandi' && ex.status!=='onaylandi' && String(ex.dueDate||'')<bizDue) await personelSaveDoc('tasks', Object.assign({}, ex, { dueDate:bizDue, ...stamp() }));
+      return;
+    }
+    const lead=await ensureSiteLead(o); const cn=_custName(o.customerId);
     autoCreateTask({ id:key, dedupeKey:key,
       title:'\u{1F4C6} İş programı '+(n===0?'hazırla':('revizyonu ('+ipLabel(n)+')'))+' — '+(o.title||'Proje')+(cn?' — '+cn:''),
       desc:(n===0?'Projenin iş programını hazırlayın.':'Şantiye ilerleyişine göre iş programını revize edin.')+' Projeler → proje → "İş Programı" bölümünden revizyonu kaydedin (tarih, fiziksel ilerleme %, planlanan bitiş, program bağlantısı). Program her '+IP_REVIZYON_GUN+' günde bir revize edilir.',
@@ -11892,15 +11898,14 @@ async function ipSaveRevisionFromPlan(oppId){
   const ok=await ipSaveRevision(oppId, { date:today(), progress:String(ipProgress(plan)), planEnd:plan.end, link:'', note:note, plan:JSON.parse(JSON.stringify(Object.assign({}, plan, {oppId:undefined}))) });
   if(ok){ showToast('✅ '+ipLabel(ipList(_hkCur(oppId)).length-1)+' kaydedildi (genel ilerleme %'+ipProgress(plan)+').'); render(); }
 }
-function buildIsProgramiModal(oppId){
+function buildIsProgramiPanel(oppId){
   const o=_hkCur(oppId);
-  const back=function(){ setState({modal:{type:'proje', oppId:oppId}}); };
-  if(!o) return modal('İş Programı', h('div',{},'Proje bulunamadı.'), back, '900px');
+  if(!o) return h('div',{},'Proje bulunamadı.');
   if(!PMOD.ipPlanDraft || PMOD.ipPlanDraft.oppId!==oppId) PMOD.ipPlanDraft={ oppId:oppId, plan:ipNormPlan(o) };
   const plan=PMOD.ipPlanDraft.plan, closed=!!o.execClosedAt;
   const cust=(state.customers||[]).find(function(c){ return c.id===o.customerId; });
   const saved=JSON.stringify(ipNormPlan(o)), dirty=JSON.stringify(plan)!==saved;
-  const rerender=function(){ setState({modal:{type:'isprogrami', oppId:oppId}}); };
+  const rerender=function(){ render(); };   // proje penceresi (İş Programı sekmesi) yeniden çizilir; taslak PMOD.ipPlanDraft'ta korunur
   const lastRev=ipLastRevWithPlan(o), prevPlan=lastRev?lastRev.plan:null;
   const lbl=function(t){ return h('div',{style:{fontSize:'11px',fontWeight:'800',color:'#1e2d4a',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'3px'}},t); };
   const ro=function(v){ return h('div',{style:{padding:'9px 12px',background:'#e2e8f0',borderRadius:'8px',fontSize:'14px',fontWeight:'700',color:'#0f1f35'}},v||'—'); };
@@ -11964,12 +11969,11 @@ function buildIsProgramiModal(oppId){
     btn('📌 Revizyon olarak kaydet',function(){ ipSaveRevisionFromPlan(oppId); },'linear-gradient(135deg,#7c3aed,#6d28d9)','#fff','10px 18px',{fontSize:'14px'}),
     btn('🖨️ Yazdır',function(){ if(!ipValidatePlan(plan)) return; ipOpenPrint(o, plan, 'Taslak', prevPlan, false); },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','10px 18px',{fontSize:'14px'}),
     btn('⬇️ PDF indir',function(){ if(!ipValidatePlan(plan)) return; ipOpenPrint(o, plan, 'Taslak', prevPlan, true); },'linear-gradient(135deg,#16a34a,#15803d)','#fff','10px 18px',{fontSize:'14px'}),
-    btn('Kapat',back,'#e8eef7','#2a5080','10px 18px',{fontSize:'14px'}),
     dirty ? h('span',{style:{background:'#fef3c7',color:'#b45309',borderRadius:'20px',padding:'4px 12px',fontSize:'12px',fontWeight:'800'}},'⚠ Kaydedilmemiş değişiklik') : h('span',{style:{color:'#16a34a',fontSize:'12px',fontWeight:'700'}},'✓ kaydedildi'),
     h('span',{style:{marginLeft:'auto',fontSize:'12px',fontWeight:'700',color:'#0f1f35'}},'Genel ilerleme: %'+ipProgress(plan)));
   const content=h('div',{}, infoRow, rowsTbl, rowBtns, holBox, acts, prev,
     h('div',{style:{fontSize:'11px',color:T4,marginTop:'8px'}},'Haftalar proje başlangıcından 7\'şer günlük dilimlerdir. Renk = faz; koyu kısım gerçekleşen ilerleme. Resmî tatil haftaları başlıkta kırmızı (●), tatilde çalışılacak haftalar turuncu (⚒). Her revizyon kaydı, önceki revizyondaki konumu gri izle gösterir.'));
-  return modal('📋 İş Programı Formu — '+(o.title||'Proje'), content, back, '1180px');
+  return content;
 }
 
 function buildIsProgramiBlock(o, isAdmin, closed){
@@ -11978,10 +11982,9 @@ function buildIsProgramiBlock(o, isAdmin, closed){
   if(!PMOD.ipDraft || PMOD.ipDraft.oppId!==o.id) PMOD.ipDraft={ oppId:o.id, open:false, date:today(), progress:'', planEnd:'', link:'', note:'' };   // taslak proje bazlı
   const d=PMOD.ipDraft;
   const head=h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap',marginBottom:'8px'}},
-    h('span',{style:{fontWeight:'800',fontSize:'14px',color:'#0f766e'}},'📆 İş Programı'),
+    h('span',{style:{fontWeight:'800',fontSize:'14px',color:'#0f766e'}},'📆 Revizyon takibi'),
     h('span',{style:{fontSize:'12px',color:late?'#dc2626':T3,fontWeight:late?'800':'600'}},
       closed ? 'Proje kapandı' : (l.length ? ('Sonraki revizyon: '+_toTR(due)+(late?(' — '+Math.abs(_diffDays(due))+' gün gecikti'):'')) : ('İlk program vadesi: '+_toTR(due)+(late?' — gecikti':'')))),
-    btn('📋 İş Programı Formu (düzenle / PDF)', function(){ setState({modal:{type:'isprogrami', oppId:o.id}}); }, 'linear-gradient(135deg,#14b8a6,#0f766e)','#fff','5px 12px',{fontSize:'12px'}),
     closed ? h('span') : btn(d.open?'✕ Vazgeç':('+ '+(l.length?('Revizyon ekle ('+ipLabel(l.length)+')'):'İlk programı kaydet')), function(){ d.open=!d.open; if(d.open){ d.date=today(); } render(); }, '#ccfbf1','#0f766e','5px 11px',{fontSize:'12px',border:'1px solid #5eead4'}));
   const rows=l.map(function(r){
     return h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'10px',padding:'8px 11px',marginBottom:'6px'}},
@@ -12055,7 +12058,7 @@ function buildHakedisBlock(o, isAdmin, closed){
     list.length ? h('div',{style:{fontSize:'12px',fontWeight:'700',color:'#0f1f35',marginTop:'6px'}},'Toplam hakediş: '+tl(S.total)+' · Tahsil edilen: '+tl(S.paid)+' · Bekleyen: '+tl(S.pending)) : h('span')
   );
 }
-function buildProjeModal(oppId){
+function buildProjeModal(oppId, tabOverride){
   const cu=state.currentUser; const isAdmin=!!(cu&&cu.isAdmin); const myName=cu&&cu.displayName;
   const o=(state.opportunities||[]).find(x=>x.id===oppId);
   if(!o) return modal('Proje', h('div',{},'Proje bulunamadı.'), ()=>setState({modal:null}), '640px');
@@ -12098,19 +12101,41 @@ function buildProjeModal(oppId){
   const siteLeadBar=h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'10px',fontSize:'13px',color:T3}},
     h('span',{style:{fontWeight:'700'}},'👷 Saha sorumlusu:'),
     isAdmin ? sel(_slOpts, _sl, v=>projSetSiteLead(o, v), {maxWidth:'300px',padding:'6px 10px',fontSize:'13px'}) : h('span',{style:{fontWeight:'700',color:'#0f1f35'}}, _sl||'—'));
+  // SEKMELER: Görevler | İş Programı | Hakediş | Formlar (başlık, aşama şeridi ve işlem düğmeleri hep görünür).
+  const _tabs=['gorevler','isprogrami','hakedis','formlar'];
+  const tab=_tabs.indexOf(tabOverride||(state.modal&&state.modal.tab))>=0 ? (tabOverride||state.modal.tab) : 'gorevler';
+  const _openTab=function(k){ setState({modal:{type:'proje', oppId:o.id, tab:k}}); };
+  const _ipApply=ipApplies(o)||!!closed, _ipL=ipList(o);
+  const tabDefs=[
+    ['gorevler','✅ Görevler', projTotalOpenCount(o)?(' ('+projTotalOpenCount(o)+')'):''],
+    _ipApply?['isprogrami','📆 İş Programı', _ipL.length?(' · '+ipLabel(_ipL[_ipL.length-1].no)):' · yok']:null,
+    ['hakedis','📑 Hakediş', (!closed && !hkDay(o))?' ⚠':''],
+    ['formlar','📋 Formlar','']
+  ].filter(Boolean);
+  const tabBar=h('div',{style:{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'12px',borderBottom:'2px solid #e2e8f0',paddingBottom:'8px'}},
+    ...tabDefs.map(function(d){ const on=d[0]===tab;
+      return btn(d[1]+d[2],function(){ _openTab(d[0]); },on?'linear-gradient(135deg,#1e3a6e,#0f1f35)':'#e8eef7',on?'#fff':'#2a5080','8px 15px',{fontSize:'13px',fontWeight:'700'}); }));
+  let body;
+  if(tab==='isprogrami' && _ipApply){
+    body=h('div',{}, buildIsProgramiPanel(o.id), buildIsProgramiBlock(o, isAdmin, closed));
+  } else if(tab==='hakedis'){
+    body=h('div',{}, buildHakedisGunBar(o, closed), buildHakedisBlock(o, isAdmin, closed));
+  } else if(tab==='formlar'){
+    body=h('div',{},
+      clListBlock({ linkType:'project', linkId:o.id, newOpts:{ formType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }),
+      sfListBlock({ linkType:'project', linkId:o.id, newOpts:{ docType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }),
+      frListBlock({ linkType:'project', linkId:o.id, newOpts:{ customerId:o.customerId||'', projectId:o.id, linkType:'project', linkId:o.id } }));
+  } else {
+    body=tasksBox;
+  }
   const content=h('div',{},
     cust?h('div',{style:{fontSize:'13px',color:T3,marginBottom:'10px'}},'👤 '+(cust.firmName||cust.name||'')):h('span'),
     siteLeadBar,
-    buildHakedisGunBar(o, closed),
     strip, actBar,
-    h('div',{style:{borderTop:'1px solid #e2e8f0',paddingTop:'12px'}}, tasksBox)
+    tabBar,
+    body
   );
-  content.appendChild(buildHakedisBlock(o, isAdmin, closed));
-  content.appendChild(buildIsProgramiBlock(o, isAdmin, closed));
-  content.appendChild(clListBlock({ linkType:'project', linkId:o.id, newOpts:{ formType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
-  content.appendChild(sfListBlock({ linkType:'project', linkId:o.id, newOpts:{ docType:'devreye', customerId:o.customerId||'', siteName:o.title||((cust&&cust.firmName)||''), projectId:o.id, linkType:'project', linkId:o.id } }));
-  content.appendChild(frListBlock({ linkType:'project', linkId:o.id, newOpts:{ customerId:o.customerId||'', projectId:o.id, linkType:'project', linkId:o.id } }));
-  return modal((o.title||'Proje')+' — İcra', content, ()=>setState({modal:null}), '720px');
+  return modal((o.title||'Proje')+' — İcra', content, ()=>setState({modal:null}), tab==='isprogrami' ? '1180px' : '780px');
 }
 function projFilterMgr(list, isAdmin){
   if(isAdmin && PMOD.projDept) list = list.filter(o=>{
@@ -12129,14 +12154,13 @@ function projListRow(o, isAdmin){
       cust?h('div',{style:{fontSize:'12px',color:T3}},'👤 '+(cust.name||cust.firmName||'')):h('span')
     ),
     h('span',{style:{background:meta.color+'18',color:meta.color,border:'1px solid '+meta.color+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},meta.icon+' '+meta.l),
-    (!o.execClosedAt && !hkDay(o))?h('span',{style:{background:'#dc2626',color:'#fff',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800'}},'⚠ Hakediş günü yok'):h('span'),
+    (!o.execClosedAt && !hkDay(o))?(function(){ const c=h('span',{title:'Hakediş sekmesini aç',style:{background:'#dc2626',color:'#fff',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800',cursor:'pointer'}},'⚠ Hakediş günü yok'); c.addEventListener('click',function(e){ e.stopPropagation(); setState({modal:{type:'proje', oppId:o.id, tab:'hakedis'}}); }); return c; })():h('span'),
     ipApplies(o) ? (function(){
       const l=ipList(o), due=ipNextDue(o), late=_diffDays(due)<0;
-      const chip=h('span',{style:{background:late?'#fee2e2':'#ccfbf1',color:late?'#b91c1c':'#0f766e',border:'1px solid '+(late?'#fca5a5':'#5eead4'),borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800',whiteSpace:'nowrap'}},
-        '📆 '+(l.length ? (ipLabel(l[l.length-1].no)+' · sonraki '+ipFmtShort(due)) : 'İlk program bekleniyor')+(late?' (gecikti)':''));
-      const bt=btn('📆 İş Programı',function(){ setState({modal:{type:'isprogrami', oppId:o.id}}); },'linear-gradient(135deg,#14b8a6,#0f766e)','#fff','6px 12px',{fontSize:'12px'});
-      bt.addEventListener('click',function(e){ e.stopPropagation(); });   // satırın "proje aç" tıklamasını tetiklemesin
-      return h('span',{style:{display:'inline-flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},chip,bt);
+      const chip=h('span',{title:'İş Programı sekmesini aç',style:{background:late?'#fee2e2':'#ccfbf1',color:late?'#b91c1c':'#0f766e',border:'1px solid '+(late?'#fca5a5':'#5eead4'),borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'800',whiteSpace:'nowrap',cursor:'pointer'}},
+        '📆 '+(l.length ? (ipLabel(l[l.length-1].no)+' · sonraki '+ipFmtShort(due)) : ('İlk program · vade '+ipFmtShort(due)))+(late?' (gecikti)':''));
+      chip.addEventListener('click',function(e){ e.stopPropagation(); setState({modal:{type:'proje', oppId:o.id, tab:'isprogrami'}}); });
+      return chip;
     })() : h('span'),
     open?h('span',{style:{background:'#fef2f2',color:'#dc2626',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},open+' açık görev'):h('span',{style:{color:'#16a34a',fontSize:'12px',fontWeight:'700'}},'✓ temiz')
   );
@@ -12733,7 +12757,7 @@ function render() {
     if(type==='customer') m=buildCustomerModal(item);
     else if(type==='supplier') m=buildSupplierModal(item);
     else if(type==='proje') m=buildProjeModal(state.modal.oppId);
-    else if(type==='isprogrami') m=buildIsProgramiModal(state.modal.oppId);
+    else if(type==='isprogrami') m=buildProjeModal(state.modal.oppId, 'isprogrami');   // eski çağrılar: proje penceresinin İş Programı sekmesi
     else if(type==='taskcheck') m=buildTaskCheckModal();
     else if(type==='ariza') m=buildArizaModal(state.modal.serviceId);
     else if(type==='bakim') m=buildBakimModal(state.modal.maintId);
