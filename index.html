@@ -3507,9 +3507,11 @@ function maintSysSection(f){
     const scheduleBlock = !schedule.length ? h('span')
       : (doneCount>=schedule.length ? h('div',{style:{fontSize:'11px',color:'#0f5132',marginTop:'3px',fontWeight:'700'}},'✅ Sözleşme kapsamındaki tüm bakımlar tamamlandı')
          : h('div',{style:{fontSize:'11px',color:'#166534',marginTop:'3px',paddingLeft:'2px'}}, ...scheduleItems));
+    const _subs=(SYS_META[s.sysKey]&&SYS_META[s.sysKey].subs)||[];
+    const selSub=_subs.length ? sel([{v:'',l:'Alt-tip seçin…'}].concat(_subs), s.subType||'', v=>{ f.mtSystems[i].subType=v; rerender(); }, {marginTop:'4px',padding:'6px 10px',fontSize:'12px'}) : null;
     return h('div',{style:{marginBottom:'8px'}},
       h('div',{style:{display:'flex',gap:'6px',alignItems:'center'}},
-        h('div',{style:{flex:'2'}}, selSys),
+        h('div',{style:{flex:'2'}}, selSys, selSub||h('span')),
         h('div',{style:{flex:'1.3'}}, selFreq),
         h('div',{style:{flex:'1.2',display:'flex',alignItems:'center'}}, dueInp, driftBadge),
         btn('✕',()=>{ f.mtSystems.splice(i,1); rerender(); },'#fee2e2','#b91c1c','6px 10px',{fontSize:'12px'})
@@ -7183,7 +7185,8 @@ async function clSave(c){
   if(missing.length){ showToast('⚠️ Eksik alanlar var, kaydedilmedi: '+missing.join(', '), '#d97706'); return; }
   c.status = 'tamam';
   c.completedAt = today();          // Y2: imza tarihi — tazelik kontrolü bunu okur, createdAt'ı değil
-  await _clPersist(c, '✅ Checklist kaydedildi');
+  await _clPersist(c, c.formType==='bakim' ? '✅ Periyodik Bakım Raporu kaydedildi' : '✅ Checklist kaydedildi');
+  if(c.formType==='bakim') rpOpenPrint(c);   // rapor ekranı: ⬇️ PDF indir / 🖨️ Yazdır
 }
 async function clSaveDraft(c){
   c.status = 'taslak';
@@ -7964,9 +7967,7 @@ function clLoadItems(c, sys){
   if(c.formType==='bakim' && sys.visitFreq){ sys.nextDue = clComputeNextDue(c.createdAt||today(), sys.visitFreq); }
 }
 function clAddSystem(c){
-  var used = (c.systems||[]).map(function(s){ return s.sysKey; });
-  var avail = Object.keys(SYS_META).filter(function(k){ return used.indexOf(k)<0; });
-  if(!avail.length){ showToast('Tüm sistemler eklendi', '#d97706'); return; }
+  // Aynı sistem birden çok kez eklenebilir (örn. Islak + Kuru borulu sprinkler; iki pompa odası) — her kartın kendi alt-tipi ve maddeleri olur.
   // Boş satır ekle; sistem clSystemCard içindeki açılır listeden seçilir.
   c.systems = c.systems || [];
   c.systems.push({sysKey:'', subType:'', visitFreq:'', items:[], extraNotes:'', nextDue:''});
@@ -7989,9 +7990,8 @@ function clItemRow(c, sys, it){
 function clSystemCard(c, sys, idx){
   // Sistem henüz seçilmemişse: açılır listeden seçtir.
   if(!sys.sysKey){
-    var used = (c.systems||[]).map(function(s){ return s.sysKey; });
     var pickOpts = [{v:'',l:'Sistem seçin…'}].concat(
-      Object.keys(SYS_META).filter(function(k){ return used.indexOf(k)<0; }).map(function(k){ return {v:k, l:SYS_META[k].l}; }));
+      Object.keys(SYS_META).map(function(k){ return {v:k, l:SYS_META[k].l}; }));
     return h('div',{style:{border:'1px dashed #94a3b8',borderRadius:'12px',padding:'12px',marginBottom:'12px',background:'#f8fafc',display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
       h('div',{style:{flex:'1 1 200px'}}, _clSelect(pickOpts, '', function(v){ if(!v) return; sys.sysKey=v; sys.subType=''; sys.visitFreq=''; sys.items=[]; sys.nextDue=''; _clRerender(); })),
       btn('✕', function(){ c.systems.splice(idx,1); _clRerender(); }, '#dc2626', '#fff', '7px 11px', {fontSize:'12px'}));
@@ -8502,6 +8502,7 @@ function renderMaintenances() {
       ),
       h('span',{style:{background:c+'18',color:c,border:'1px solid '+c+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},dl<0?Math.abs(dl)+' gün gecikti':dl+' gün kaldı'),
       maintPrimaryBtn(m),
+      maintReportsBtn(m,'7px 12px'),
       btn('📅 Randevu',()=>maintNewAppt(m),'#f5f3ff','#6d28d9','7px 12px',{fontSize:'12px',border:'1px solid #c4b5fd'}),
       btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe'}),
       btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'12px',border:'1px solid #fecaca'})
@@ -8550,7 +8551,7 @@ function renderMaintenances() {
           h('span',{title:'Takip başlamaz: '+_mm.join(', ')+' eksik',style:{background:'#fee2e2',color:'#b91c1c',padding:'3px 9px',borderRadius:'20px',fontSize:'10.5px',fontWeight:'800',whiteSpace:'nowrap'}},'⚠ Eksik bilgi: '+_mm.join(', '))) : mainBadge;
       })()),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},m._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},m._editedBy),h('br'),h('span',{style:{color:T4}},m._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}},maintPrimaryBtn(m,'6px 10px'),btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(m.customerId)||c.name===m.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}},maintPrimaryBtn(m,'6px 10px'),maintReportsBtn(m,'6px 10px'),btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(m.customerId)||c.name===m.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
   });
   const maintHeaderRow=h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
@@ -8623,6 +8624,7 @@ function renderMaintenances() {
           maintIcraActive(m)?h('div',{style:{marginBottom:'8px'}},maintIcraChip(m)):h('span'),
           h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
             maintPrimaryBtn(m,'8px 12px'),
+            maintReportsBtn(m,'8px 12px'),
             btn('✏️',()=>setState({modal:{type:'maintenance',item:m}}),'#f0fdf4','#059669','8px 14px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px',flex:'1'}),
             btn('🗑️',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','8px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
@@ -10294,6 +10296,11 @@ function maintIcraChip(m){
   if(!maintIcraActive(m)) return h('span');
   return h('span',{title:(m.mtIcra.by||'')+' · '+_toTR(m.mtIcra.at||''), style:{background:'#ede9fe',color:'#6d28d9',border:'1px solid #c4b5fd',borderRadius:'20px',padding:'3px 9px',fontSize:'11px',fontWeight:'800',whiteSpace:'nowrap'}},'🚀 İcrada');
 }
+// Bakım raporları (geçmiş + PDF / yazdır): satırdaki 📋 Rapor düğmesi.
+function maintReportsBtn(m, pad){
+  const n=(state.checklists||[]).filter(function(x){ return x.linkType==='maintenance' && x.linkId===m.id && x.formType==='bakim'; }).length;
+  return btn('📋 Rapor'+(n?(' ('+n+')'):''),function(){ setState({modal:{type:'bakimformlar', maintId:m.id}}); },'#f5f3ff','#6d28d9',pad||'6px 12px',{fontSize:'12px',border:'1px solid #c4b5fd'});
+}
 // Satırın ana düğmesi: icrada değilse "İcrayı başlat", icradaysa "Tamamla".
 function maintPrimaryBtn(m, pad, fs){
   if(!maintIsTracked(m)) return h('span');
@@ -11752,43 +11759,38 @@ function ipEnsureStyle(){
   if(document.getElementById('ip-style')) return;
   const st=document.createElement('style'); st.id='ip-style';
   st.textContent = [
-    '.ipg-page{width:1123px;height:793px;background:#fff;padding:24px 30px 0;position:relative;box-sizing:border-box;overflow:hidden;font-family:Inter,Arial,Helvetica,sans-serif;color:#111;margin:0 auto 14px;box-shadow:0 2px 12px rgba(0,0,0,.25)}',
+    '.ipg-page{width:1123px;height:793px;background:#fff;padding:22px 30px 0;position:relative;box-sizing:border-box;overflow:hidden;font-family:"Helvetica Neue",Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0 auto 14px;box-shadow:0 2px 12px rgba(0,0,0,.25)}',
     '.ipg-page *{box-sizing:border-box}',
-    '.ipg-hd{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #c00000;padding-bottom:7px}.ipg-hd img{height:44px}',
-    '.ipg-addr{text-align:right;font-size:8.5px;color:#555;line-height:1.55}.ipg-addr b{display:block;font-size:10px;color:#111}',
-    '.ipg-title{margin:9px 0 1px;font-size:17px;font-weight:800;letter-spacing:.06em;color:#0f1f35}.ipg-sub{font-size:10px;color:#64748b;margin-bottom:7px}',
-    '.ipg-info{display:flex;border:1.5px solid #1e2d4a;margin-bottom:8px}.ipg-info>div{border-right:1px solid #1e2d4a;min-width:0}.ipg-info>div:last-child{border-right:0}',
-    '.ipg-info span{display:block;background:#1e2d4a;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;padding:4px 8px}',
-    '.ipg-info b{display:block;font-size:12px;color:#0f1f35;padding:6px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-    '.ipg-t{border-collapse:collapse;width:100%;table-layout:fixed;font-size:9px}.ipg-t th,.ipg-t td{border:1px solid #cbd5e1;padding:0;height:22px;overflow:hidden}',
-    '.ipg-t th{background:#1e2d4a;color:#fff;font-size:8px;font-weight:700;height:16px;text-align:center}',
-    '.ipg-t th.hol{background:#b91c1c}.ipg-t th.work{background:#d97706}',
-    '.ipg-t td.no{text-align:center;font-weight:800;color:#0f1f35}.ipg-t td.nm{padding:0 6px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}',
-    '.ipg-t td.dt{text-align:center;font-size:8px;color:#475569}.ipg-t td.pc{text-align:center;font-weight:800}',
+    '.ipg-hd{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #c00000;padding:0 0 10px;margin:0 0 10px;gap:16px}.ipg-hd img{height:78px;width:auto;display:block;flex-shrink:0}',
+    '.ipg-addr{text-align:right;font-size:8.5px;color:#555;line-height:1.7;flex-grow:1}.ipg-addr b{display:block;color:#c00000;font-size:11px;font-weight:800;margin:0 0 3px;letter-spacing:.2px;line-height:1.1}',
+    '.ipg-title{margin:0 0 1px;font-size:15px;font-weight:800;letter-spacing:.06em;color:#c00000}.ipg-sub{font-size:9.5px;color:#666;margin-bottom:6px}',
+    '.ipg-di{width:100%;border-collapse:collapse;margin-bottom:10px}.ipg-di td{padding:4px 8px;border:1px solid #d4d4d4;font-size:9.5px;vertical-align:top}',
+    '.ipg-di td.l{background:#f5f5f5;font-weight:700;color:#333;white-space:nowrap;border-left:3px solid #c00000;width:120px}.ipg-di td.v{color:#111;font-weight:500}',
+    '.ipg-t{border-collapse:collapse;width:100%;table-layout:fixed;font-size:9px}.ipg-t th,.ipg-t td{border:1px solid #e0e0e0;padding:0;height:22px;overflow:hidden}',
+    '.ipg-t th{background:#e9e9e9;color:#111;font-size:8px;font-weight:800;height:16px;text-align:center;border:1px solid #d0d0d0;border-bottom:2px solid #333}',
+    '.ipg-t th.hol{background:#c00000;color:#fff}.ipg-t th.work{background:#d97706;color:#fff}',
+    '.ipg-t td.no{text-align:center;font-weight:800;color:#333}.ipg-t td.nm{padding:0 6px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}',
+    '.ipg-t td.dt{text-align:center;font-size:8px;color:#555}.ipg-t td.pc{text-align:center;font-weight:800}',
     '.ipg-t td.ph{height:17px;font-size:8.5px;font-weight:800;letter-spacing:.08em;padding:0 8px}',
     '.ipg-t td.wk{padding:0}.ipg-t td.hl{background:#fef2f2}.ipg-t td.gh{background:#e5e7eb;border:1px dashed #9ca3af}.ipg-t td.td{border-left:2px solid #dc2626}',
     '.ipg-bar{height:14px;margin:3px 0;display:flex;overflow:hidden;border:1px solid}.ipg-bar i{display:block;height:100%}',
-    '.ipg-lg{display:flex;gap:12px;margin-top:6px;font-size:8.5px;color:#334155;align-items:center;flex-wrap:wrap}.ipg-lg i{display:inline-block;width:13px;height:9px;vertical-align:middle;margin-right:4px;border:1px solid #cbd5e1}',
-    '.ipg-hl{margin-top:6px;font-size:8.5px;color:#b91c1c;font-weight:600;line-height:1.45}',
-    '.ipg-sign{display:flex;gap:22px;margin-top:22px}.ipg-sb{flex:1;border:1.5px solid #1e2d4a}',
-    '.ipg-sb h4{margin:0;background:#1e2d4a;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.08em;padding:5px 10px;text-transform:uppercase}',
-    '.ipg-sb .bd{height:72px;padding:6px 10px;font-size:9px;color:#475569;position:relative}.ipg-sb .bd p{margin:0 0 3px}',
-    '.ipg-sb .sg{position:absolute;left:10px;right:10px;bottom:6px;border-top:1px solid #94a3b8;padding-top:2px;font-size:8px;color:#94a3b8}',
-    '.ipg-ft{position:absolute;left:30px;right:30px;bottom:12px;display:flex;justify-content:space-between;border-top:1.5px solid #c00000;padding-top:4px;font-size:8px;color:#999}',
-    '.rpg-page{width:794px;height:1123px;background:#fff;padding:24px 28px 0;position:relative;box-sizing:border-box;overflow:hidden;font-family:Inter,Arial,Helvetica,sans-serif;color:#111;margin:0 auto 14px;box-shadow:0 2px 12px rgba(0,0,0,.25)}',
-    '.rpg-page *{box-sizing:border-box}',
-    '.rpg-info{display:grid;grid-template-columns:1.2fr 1fr 1fr;border-top:1.5px solid #1e2d4a;border-left:1.5px solid #1e2d4a;margin-bottom:9px}',
-    '.rpg-info>div{border-right:1.5px solid #1e2d4a;border-bottom:1.5px solid #1e2d4a;min-width:0}.rpg-info .w2{grid-column:span 2}.rpg-info .w3{grid-column:span 3}',
-    '.rpg-info span{display:block;background:#1e2d4a;color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px}',
-    '.rpg-info b{display:block;font-size:11px;color:#0f1f35;padding:5px 8px;line-height:1.3}',
-    '.rpg-band{margin-top:6px;background:#1e2d4a;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.05em;padding:0 8px;height:20px;line-height:20px;display:flex;justify-content:space-between;text-transform:uppercase}.rpg-band i{font-style:normal;font-weight:600;opacity:.85}',
-    '.rpg-r{display:flex;border-bottom:1px solid #cbd5e1;border-left:1px solid #cbd5e1;border-right:1px solid #cbd5e1;font-size:8.5px;line-height:1.25;min-height:20px;align-items:stretch}.rpg-r.two{min-height:32px}',
-    '.rpg-r span{padding:3px 5px;border-right:1px solid #e2e8f0;display:flex;align-items:center;overflow:hidden}.rpg-r span:last-child{border-right:0}',
-    '.rpg-h{background:#e8eef7;font-weight:800;font-size:7.5px;color:#1e2d4a;min-height:18px}',
+    '.ipg-lg{display:flex;gap:12px;margin-top:6px;font-size:8.5px;color:#333;align-items:center;flex-wrap:wrap}.ipg-lg i{display:inline-block;width:13px;height:9px;vertical-align:middle;margin-right:4px;border:1px solid #d0d0d0}',
+    '.ipg-hl{margin-top:6px;font-size:8.5px;color:#c00000;font-weight:600;line-height:1.45}',
+    '.ipg-sign{display:flex;gap:22px;margin-top:20px}.ipg-sb{flex:1;border:1px solid #d4d4d4;border-left:3px solid #c00000}',
+    '.ipg-sb h4{margin:0;background:#c00000;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.3px;padding:5px 10px;text-transform:uppercase}',
+    '.ipg-sb .bd{height:72px;padding:6px 10px;font-size:9px;color:#333;position:relative}.ipg-sb .bd p{margin:0 0 3px}',
+    '.ipg-sb .sg{position:absolute;left:10px;right:10px;bottom:6px;border-top:1px solid #aaa;padding-top:2px;font-size:8px;color:#999}',
+    '.ipg-ft{position:absolute;left:30px;right:30px;bottom:12px;display:flex;justify-content:space-between;border-top:2px solid #c00000;padding-top:5px;font-size:8px;color:#999}',
+    '.rpg-page{width:794px;height:1123px;background:#fff;padding:22px 28px 0;position:relative;box-sizing:border-box;overflow:hidden;font-family:"Helvetica Neue",Arial,Helvetica,sans-serif;color:#1a1a1a;margin:0 auto 14px;box-shadow:0 2px 12px rgba(0,0,0,.25)}',
+    '.rpg-page *{box-sizing:border-box}.rpg-page .ipg-ft{left:28px;right:28px}',
+    '.rpg-band{margin-top:8px;background:#c00000;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.3px;padding:0 8px;height:20px;line-height:20px;display:flex;justify-content:space-between;text-transform:uppercase}.rpg-band i{font-style:normal;font-weight:600;opacity:.9}',
+    '.rpg-r{display:flex;border-bottom:1px solid #e0e0e0;border-left:1px solid #e0e0e0;border-right:1px solid #e0e0e0;font-size:8.5px;line-height:1.25;min-height:20px;align-items:stretch}.rpg-r.two{min-height:32px}',
+    '.rpg-r span{padding:3px 5px;border-right:1px solid #e0e0e0;display:flex;align-items:center;overflow:hidden}.rpg-r span:last-child{border-right:0}',
+    '.rpg-h{background:#e9e9e9;font-weight:800;font-size:7.5px;color:#111;min-height:18px;border-bottom:2px solid #333}',
     '.rpg-r .c1{width:26px;justify-content:center}.rpg-r .c2{flex:1;min-width:0}.rpg-r .c3{width:54px;justify-content:center;font-size:7.5px}.rpg-r .c4{width:46px;justify-content:center;text-align:center}.rpg-r .c5{width:130px}',
-    '.rpg-sum{margin-top:10px;font-size:9px;padding:5px 8px;background:#f1f5f9;border:1px solid #cbd5e1}',
-    '.rpg-box{margin-top:8px;border:1px solid #cbd5e1}.rpg-box h5{margin:0;background:#e8eef7;color:#1e2d4a;font-size:8.5px;font-weight:800;padding:3px 8px;letter-spacing:.05em}.rpg-box ol{margin:3px 0;padding-left:26px;font-size:9px;line-height:1.4}',
-    '.rpg-std{margin-top:10px;font-size:7.5px;color:#64748b;line-height:1.4}',
+    '.rpg-sum{margin-top:10px;font-size:9px;padding:5px 8px;background:#f5f5f5;border:1px solid #d4d4d4;border-left:3px solid #c00000}',
+    '.rpg-box{margin-top:8px;border:1px solid #e0e0e0;border-left:3px solid #c00000}.rpg-box h5{margin:0;color:#c00000;font-size:8.5px;font-weight:700;padding:4px 8px 0;letter-spacing:.3px;text-transform:uppercase}.rpg-box ol{margin:3px 0;padding-left:26px;font-size:9px;line-height:1.4}',
+    '.rpg-std{margin-top:10px;font-size:7.5px;color:#666;line-height:1.4}',
     '@media print{body.ip-printing>*:not(#ip-print-overlay){display:none!important}#ip-print-overlay{position:static!important;background:#fff!important;overflow:visible!important}',
     '#ip-print-overlay .ip-tb{display:none!important}#ip-print-overlay .ip-wrap{zoom:1!important;padding:0!important}',
     '#ip-print-overlay .ipg-page,#ip-print-overlay .rpg-page{margin:0!important;box-shadow:none!important;page-break-after:always;break-after:page}#ip-print-overlay .ipg-page:last-child,#ip-print-overlay .rpg-page:last-child{page-break-after:auto;break-after:auto}',
@@ -11798,7 +11800,7 @@ function ipEnsureStyle(){
 }
 // Sayfalara bölme: ilk/orta sayfa ~21 birim, imza + lejant bulunan SON sayfa ~13 birim (iş satırı=1, faz bandı=0.8).
 function ipPaginate(items){
-  const CAP=21, LAST=13, pages=[]; let cur=[], u=0;
+  const CAP=21, LAST=15, pages=[]; let cur=[], u=0;
   items.forEach(function(it){ const w=it.band?0.8:1; if(u+w>CAP+0.001){ pages.push(cur); cur=[]; u=0; } cur.push(it); u+=w; });
   pages.push(cur);
   const units=function(a){ return a.reduce(function(s,x){ return s+(x.band?0.8:1); },0); };
@@ -11857,9 +11859,15 @@ function ipBuildPages(o, plan, revLabel, prevPlan){
     const s0=sel.length?ipFmtShort(_ipIso(weeks[sel[0]].a)):'', e0=sel.length?ipFmtShort(_ipIso(weeks[sel[sel.length-1]].b)):'';
     return '<tr><td class="no">'+it.no+'</td><td class="nm" title="'+_ipEsc(r.name)+'">'+_ipEsc(r.name)+'</td><td class="dt">'+s0+'</td><td class="dt">'+e0+'</td><td class="pc" style="color:'+c+'">%'+(Number(r.pct)||0)+'</td>'+cells+'</tr>';
   };
-  const logoHdr='<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00 | info@a-pro.com.tr | www.a-pro.com.tr</div></div>';
+  const logoHdr='<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00<br>E-posta: info@a-pro.com.tr<br>www.a-pro.com.tr</div></div>';
   const lead=o.execSiteLead||'';
-  const info='<div class="ipg-info"><div style="flex:1.5"><span>Proje adı</span><b>'+_ipEsc(o.title||'')+'</b></div><div style="flex:1"><span>İşveren</span><b>'+_ipEsc(cust?cust.firmName:'')+'</b></div><div style="flex:1.1"><span>Proje başlangıç – bitiş</span><b>'+ipFmt(plan.start)+' — '+ipFmt(plan.end)+'</b></div><div style="flex:1"><span>Şantiye / saha sorumlusu</span><b>'+_ipEsc(lead)+'</b></div></div>';
+  const di=function(l1,v1,l2,v2){ return '<tr><td class="l">'+l1+'</td><td class="v" style="width:38%">'+v1+'</td><td class="l">'+l2+'</td><td class="v">'+v2+'</td></tr>'; };
+  const info='<table class="ipg-di"><tbody>'
+    +di('Proje adı','<b>'+_ipEsc(o.title||'')+'</b>','Revizyon',_ipEsc(revLabel||'Taslak'))
+    +di('İşveren',_ipEsc(cust?cust.firmName:''),'Hazırlanma tarihi',ipFmt(today()))
+    +di('Proje başlangıç – bitiş',ipFmt(plan.start)+' — '+ipFmt(plan.end),'Genel ilerleme','%'+ipProgress(plan))
+    +di('Şantiye / saha sorumlusu',_ipEsc(lead),'Süre',W+' hafta')
+    +'</tbody></table>';
   const used={}; rows.forEach(function(r){ used[r.phase]=1; });
   const legend='<div class="ipg-lg">'+IP_PH_KEYS.filter(function(k){ return used[k]; }).map(function(k){ return '<span><i style="background:'+IP_PH[k][1]+'"></i>'+IP_PH[k][0]+'</span>'; }).join('')+'</div>'
     +'<div class="ipg-lg" style="margin-top:3px"><span><i style="background:#334155"></i>Koyu = gerçekleşen</span><span><i style="background:#33415533;border-color:#33415599"></i>Açık = planlanan (kalan)</span><span><i style="background:#e5e7eb;border:1px dashed #9ca3af"></i>Önceki revizyondaki konum</span><span>◆ Kilometre taşı</span><span><i style="background:#b91c1c"></i>Resmî tatil haftası ●</span><span><i style="background:#d97706"></i>Tatilde çalışılacak ⚒</span>'+(todayW>=0?'<span style="color:#dc2626"><b>|</b> Bugün</span>':'')+'</div>';
@@ -11876,7 +11884,7 @@ function ipBuildPages(o, plan, revLabel, prevPlan){
     if(body.length && !body[0].band){ const r=body[0].row; body.unshift({band:true, phase:r.phase, cont:true}); }
     const tbl = chunk.length ? '<table class="ipg-t">'+colgroup+head+body.map(rowHTML).join('')+'</table>' : '';
     pages.push('<div class="ipg-page">'+logoHdr
-      +'<div class="ipg-title">İŞ PROGRAMI</div><div class="ipg-sub">'+_ipEsc(revLabel||'Taslak')+' · Hazırlanma tarihi: '+ipFmt(today())+' · Genel ilerleme %'+ipProgress(plan)+' · Şantiye ilerleyişine göre 15 günde bir revize edilir</div>'
+      +'<div class="ipg-title">İŞ PROGRAMI</div><div class="ipg-sub">Şantiye ilerleyişine göre 15 günde bir revize edilir</div>'
       +(pi===0 ? info : '')+tbl+(isLast ? legend+sign : '')
       +'<div class="ipg-ft"><span>A-PRO Mühendislik Ltd. Şti. — İş Programı · '+_ipEsc(o.title||'')+' · '+_ipEsc(revLabel||'Taslak')+'</span><span>www.a-pro.com.tr</span><span>Sayfa '+(pi+1)+' / '+np+'</span></div></div>');
   });
@@ -12105,12 +12113,15 @@ function rpBuildPages(c){
   const tailU=17+Math.min(findings.length,10)*0.75+(notes.length?2.5:0)+((c.workDesc&&String(c.workDesc).trim())?(2+Math.ceil(String(c.workDesc).length/110)):0);
   if(used+tailU>cap+0.001) pages.push([]);
   const total=pages.length;
-  const logoHdr='<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00 | info@a-pro.com.tr | www.a-pro.com.tr</div></div>';
+  const logoHdr='<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00<br>E-posta: info@a-pro.com.tr<br>www.a-pro.com.tr</div></div>';
   const cell=function(lab,val,cls){ return '<div class="'+(cls||'')+'"><span>'+lab+'</span><b>'+val+'</b></div>'; };
-  const info='<div class="rpg-info">'
-    +cell('İşveren',_ipEsc(cust?cust.firmName:''))+cell('Proje / iş adı',_ipEsc(c.siteName||''))+cell('Bakım tarihi',ipFmt(c.createdAt||today())+(c.visitLabel?(' · '+_ipEsc(c.visitLabel)):''))
-    +cell('Sistem tipi',_ipEsc(sysNames.join(' · ')||'—'),'w2')+cell('Teknik servis ilgilisi',_ipEsc(tech||'—'))
-    +cell('Uygulanan standart',_ipEsc(stds.join(' · ')||'NFPA 25'),'w3')+'</div>';
+  const di=function(l1,v1,l2,v2){ return '<tr><td class="l">'+l1+'</td><td class="v" style="width:38%">'+v1+'</td><td class="l">'+l2+'</td><td class="v">'+v2+'</td></tr>'; };
+  const info='<table class="ipg-di"><tbody>'
+    +di('İşveren','<b>'+_ipEsc(cust?cust.firmName:'')+'</b>','Bakım tarihi',ipFmt(c.createdAt||today())+(c.visitLabel?(' · '+_ipEsc(c.visitLabel)):''))
+    +di('Proje / iş adı',_ipEsc(c.siteName||''),'Teknik servis ilgilisi','<b>'+_ipEsc(tech||'—')+'</b>')
+    +'<tr><td class="l">Sistem tipi</td><td class="v" colspan="3">'+_ipEsc(sysNames.join(' · ')||'—')+'</td></tr>'
+    +'<tr><td class="l">Uygulanan standart</td><td class="v" colspan="3">'+_ipEsc(stds.join(' · ')||'NFPA 25')+'</td></tr>'
+    +'</tbody></table>';
   const resMark=function(r,k){ return r===k ? (k==='uygun'?'<b style="color:#15803d">✔</b>':k==='uygundegil'?'<b style="color:#b91c1c">✗</b>':'<b style="color:#475569">N/A</b>') : ''; };
   const rowHTML=function(x){
     if(x.t==='band'){
@@ -12184,7 +12195,7 @@ function maintOpenVisitReport(m){
   const c=normChecklist({ id:genId(), formType:'bakim', customerId:m.customerId||'', siteName:m.jobName||((cust&&cust.firmName)||''), linkType:'maintenance', linkId:m.id, createdAt:today(), status:'taslak',
     visitLabel:(maintOccurrenceLabel(m)||''), staffSign:{name:m.serviceContact||'', dataURL:'', at:''}, systems:[] });
   dueSys.forEach(function(s){
-    const sys={ sysKey:s.sysKey, subType:'', visitFreq:s.freq||'', items:[], extraNotes:'', nextDue:'' };
+    const sys={ sysKey:s.sysKey, subType:s.subType||'', visitFreq:s.freq||'', items:[], extraNotes:'', nextDue:'' };
     clLoadItems(c, sys); c.systems.push(sys);
   });
   setState({modal:{type:'checklist', item:c}});
