@@ -7902,7 +7902,7 @@ function clSystemCard(c, sys, idx){
     (meta.subs && meta.subs.length) ? h('div',{style:{flex:'0 0 150px'}}, _clSelect(
       [{v:'',l:'Alt-tip seçin…'}].concat(meta.subs), sys.subType, function(v){ sys.subType=v; clLoadItems(c,sys); _clRerender(); })) : '',
     (c.formType==='bakim') ? h('div',{style:{flex:'0 0 140px'}}, _clSelect(
-      [{v:'',l:'Ziyaret frekansı…'},{v:'haftalik',l:'Haftalık'},{v:'aylik',l:'Aylık'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'}],
+      [{v:'',l:'Ziyaret frekansı…'},{v:'haftalik',l:'Haftalık'},{v:'aylik',l:'Aylık'},{v:'3aylik',l:'3 Aylık'},{v:'6aylik',l:'6 Aylık'},{v:'yillik',l:'Yıllık'},{v:'3yillik',l:'3 Yıllık (kapsamlı)'},{v:'5yillik',l:'5 Yıllık (kapsamlı)'},{v:'10yillik',l:'10 Yıllık (kapsamlı)'}],
       sys.visitFreq, function(v){ sys.visitFreq=v; clLoadItems(c,sys); _clRerender(); })) : '',
     btn('✓ Tümü uygun', function(){ (sys.items||[]).forEach(function(it){ if(!it.result) it.result='uygun'; }); _clRerender(); }, '#16a34a', '#fff', '7px 12px', {fontSize:'12px'}),
     btn('↻ Maddeler', function(){ clLoadItems(c,sys); _clRerender(); }, '#0891b2', '#fff', '7px 12px', {fontSize:'12px'}),
@@ -10143,7 +10143,7 @@ const SYS_META = {
   gazli:        { l: 'Gazlı Söndürme',               std: 'NFPA 2001',  subs: [] },
   davlumbaz:    { l: 'Davlumbaz / Mutfak Söndürme',  std: 'NFPA 96/17A',subs: [] }
 };
-const FREQ_META = { haftalik:'Haftalık', aylik:'Aylık', '3aylik':'3 Aylık', '6aylik':'6 Aylık', yillik:'Yıllık', '5yillik':'5 Yıllık', '10yillik':'10 Yıllık' };
+const FREQ_META = { haftalik:'Haftalık', aylik:'Aylık', '3aylik':'3 Aylık', '6aylik':'6 Aylık', yillik:'Yıllık', '3yillik':'3 Yıllık', '5yillik':'5 Yıllık', '10yillik':'10 Yıllık' };
 const FORMTYPE_META = { ariza:'Arıza / Servis Formu', devreye:'Test / Devreye Alma Formu', bakim:'Periyodik Bakım Raporu' };
 
 // Şablon verisi fonksiyon-sarmalı (Node test harness yalnız function çıkarabilir).
@@ -10158,7 +10158,11 @@ function _clTemplates(){ return {
       {kod:'spr_a6', label:'Ana drenaj (main drain) testi ile sistem doğrulandı'},
       {kod:'spr_a7', label:'Alarm / akış anahtarı fonksiyonu tekrar test edildi'},
       {kod:'spr_a8', label:'Sistem servise alındı; vanalar açık ve mühürlü'},
-      {kod:'spr_a9', label:'Devre dışı bırakma / geri alma (impairment) kaydı: ilgili taraflar bilgilendirildi'}
+      {kod:'spr_a9', label:'Devre dışı bırakma / geri alma (impairment) kaydı: ilgili taraflar bilgilendirildi'},
+      {kod:'spr_a10', label:'Onarım sonrası test (NFPA 25 Tablo 5.5.1): en fazla 20 sprinkleri etkileyen boru işinde çalışma basıncında kaçak kontrolü, 20 üzerinde hidrostatik test yapıldı'},
+      {kod:'spr_a11', label:'Yerine takılan sprinkler yeni ve listeli; stil, orifis / K faktörü, sıcaklık sınıfı, kaplama ve deflektör tipi aynı (5.4.1)'},
+      {kod:'spr_a12', label:'Yedek sprinkler stoğu tamamlandı; yangında etkilenen sprinklerler değiştirildi (5.4.1.1, 5.4.1.6)'},
+      {kod:'spr_a13', label:'Değiştirilen alarm / akış / vana denetim cihazı pano ve test bağlantısı ile fonksiyon testine tabi tutuldu (Tablo 5.5.1)'}
     ],
     pompa: [
       {kod:'pmp_a1', label:'Arıza / alarm sebebi teyit edildi'},
@@ -10166,42 +10170,60 @@ function _clTemplates(){ return {
       {kod:'pmp_a3', label:'Pano gösterge / arıza lambaları incelendi'},
       {kod:'pmp_a4', label:'Salmastra / conta / rulman durumu kontrol edildi'},
       {kod:'pmp_a5', label:'Arıza giderildi; değişen parça kaydedildi'},
-      {kod:'pmp_a6', label:'Test çalıştırması ile pompa doğrulandı'}
+      {kod:'pmp_a6', label:'Test çalıştırması ile pompa doğrulandı'},
+      {kod:'pmp_a7', label:'Değiştirilen / onarılan bileşene göre NFPA 25 Tablo 8.6.1 testi (haftalık, yıllık veya kabul testi) yapıldı'},
+      {kod:'pmp_a8', label:'Basınç, devir ve akım değerleri kaydedildi; eğri en az %95, %150 debide sistem talebi karşılanıyor (8.3.7.2.3)'},
+      {kod:'pmp_a9', label:'Pompa servis dışı kaldıysa Bölüm 15 devre dışı (impairment) prosedürü uygulandı; itfaiye ve sigorta bilgilendirildi'}
     ],
     hidrant_dolap: [
       {kod:'hyd_a1', label:'Arıza konusu (kaçak / basınç / donanım) teyit edildi'},
       {kod:'hyd_a2', label:'Hortum, lans ve vana durumu kontrol edildi'},
       {kod:'hyd_a3', label:'Arıza giderildi; değişen malzeme kaydedildi'},
-      {kod:'hyd_a4', label:'Akış / basınç ile fonksiyon doğrulandı'}
+      {kod:'hyd_a4', label:'Akış / basınç ile fonksiyon doğrulandı'},
+      {kod:'hyd_a5', label:'Onarım sonrası Tablo 6.5.1 / 7.5.1 gereği hidrostatik / akış testi ve drenaj kontrolü yapıldı'},
+      {kod:'hyd_a6', label:'Hortum vanası, hidrant ve FDC çıkışlarında kaçak, diş hasarı ve kapak eksiği giderildi'}
     ],
     su_deposu: [
       {kod:'tnk_a1', label:'Arıza konusu (seviye / kaçak / ısıtma) teyit edildi'},
       {kod:'tnk_a2', label:'Su seviyesi ve göstergeler kontrol edildi'},
-      {kod:'tnk_a3', label:'Arıza giderildi; müdahale kaydedildi'}
+      {kod:'tnk_a3', label:'Arıza giderildi; müdahale kaydedildi'},
+      {kod:'tnk_a4', label:'Seviye göstergesi / ısıtma sistemi / seviye alarmı onarımı sonrası fonksiyon testi yapıldı (9.3)'}
     ],
     kopuk: [
       {kod:'fom_a1', label:'Arıza konusu teyit edildi'},
       {kod:'fom_a2', label:'Köpük konsantre seviyesi ve oranlayıcı kontrol edildi'},
-      {kod:'fom_a3', label:'Arıza giderildi; değişen malzeme kaydedildi'}
+      {kod:'fom_a3', label:'Arıza giderildi; değişen malzeme kaydedildi'},
+      {kod:'fom_a4', label:'Oranlayıcı / konsantre pompası / tank onarımı sonrası oran (konsantre yüzdesi) testi yapıldı (11.3)'}
     ],
     algilama: [
       {kod:'alr_a1', label:'Panelde arıza / alarm kaydı teyit edildi'},
       {kod:'alr_a2', label:'İlgili dedektör / buton / siren test edildi'},
       {kod:'alr_a3', label:'Arıza giderildi; değişen cihaz kaydedildi'},
-      {kod:'alr_a4', label:'Panel normal duruma alındı; olay kaydı temizlendi'}
+      {kod:'alr_a4', label:'Panel normal duruma alındı; olay kaydı temizlendi'},
+      {kod:'alr_a5', label:'Onarım sonrası NFPA 72 Tablo 14.4.2: eklenen / değiştirilen cihaz için fonksiyon testi yapıldı; kontrol ünitesi donanımı değiştiyse ilgili testler tekrarlandı'},
+      {kod:'alr_a6', label:'Devre izleme: açık devre ve toprak kaçağı arızası giderildi, panelde arıza sinyalinin silindiği doğrulandı'},
+      {kod:'alr_a7', label:'Arıza sırasında devre dışı kalan alanlar için Bölüm 15 / devre dışı (impairment) prosedürü uygulandı; ilgililere bilgi verildi'},
+      {kod:'alr_a8', label:'Yazılım değişikliği yapıldıysa etkilenen fonksiyonların %100 ve etkilenmeyen cihazların %10 u (en çok 50) test edildi; kayıt güncellendi (14.4.2.4)'}
     ],
     gazli: [
       {kod:'gas_a1', label:'Arıza / alarm sebebi teyit edildi'},
       {kod:'gas_a2', label:'Tüp basıncı ve tartım değerleri kontrol edildi'},
       {kod:'gas_a3', label:'Boşaltma devresi (blok) durumu kontrol edildi'},
       {kod:'gas_a4', label:'Arıza giderildi; sistem tekrar devreye alındı'},
-      {kod:'gas_a5', label:'Devre dışı süresince manuel/otomatik mod ve blokaj durumu kayıt altına alındı'}
+      {kod:'gas_a5', label:'Devre dışı süresince manuel/otomatik mod ve blokaj durumu kayıt altına alındı'},
+      {kod:'gas_a6', label:'Ajan miktarı ve tüp basıncı kontrol edildi; halokarbon kaybı %5 / basınç kaybı %10 sınırlarını, inert gazda basınç kaybı %5 sınırını aştıysa dolum / değişim yapıldı (NFPA 2001 11.3)'},
+      {kod:'gas_a7', label:'Boşaltma sonrası: sistem yeniden dolduruldu, boru hattı ve nozullar kontrol edildi, tüp etiketi güncellendi (NFPA 2001 11.3.6)'},
+      {kod:'gas_a8', label:'Servis sırasında tüp bırakma mekanizması devre dışı / fonksiyon cihazı ile değiştirilerek test edildi; test sonrası geri alındı ve sistem tam çalışır duruma döndürüldü (NFPA 2001 10.7.1.4, 10.7.5)'},
+      {kod:'gas_a9', label:'Alarm izleme merkezi, itfaiye ve ilgili kişiler bilgilendirildi; sistemin tekrar devrede olduğu bildirildi (NFPA 2001 10.7.5.2, 12.6)'}
     ],
     davlumbaz: [
       {kod:'kit_a1', label:'Arıza konusu teyit edildi'},
       {kod:'kit_a2', label:'Nozul, tüp ve tetik mekanizması kontrol edildi'},
       {kod:'kit_a3', label:'Arıza giderildi; değişen parça kaydedildi'},
-      {kod:'kit_a4', label:'Manuel tetik / gaz kesme entegrasyonu doğrulandı'}
+      {kod:'kit_a4', label:'Manuel tetik / gaz kesme entegrasyonu doğrulandı'},
+      {kod:'kit_a5', label:'Boşaltma sonrası: sistem yeniden dolduruldu, boru hattı azot / kuru hava ile üflenip nozullardan çıkış doğrulandı, tüpe doğrulama halkası takıldı (NFPA 17A 8.4.1, 8.6)'},
+      {kod:'kit_a6', label:'Tüketilen eriyen bağlantı / cam fanus elemanı aynı sıcaklık değerinde listeli yenisiyle değiştirildi; etikete üretim yılı ve takma tarihi yazıldı (NFPA 17A 8.3.4)'},
+      {kod:'kit_a7', label:'Onarım sonrası bakım etiketi güncellendi; sistem devre dışı kaldıysa işveren ve yetkili makam bir sonraki iş günü sonuna kadar bilgilendirildi (NFPA 17A 8.3.3.5)'}
     ]
   },
   devreye: {
@@ -10216,6 +10238,8 @@ function _clTemplates(){ return {
       {kod:'spr_d8', label:'Su akış alarmı 90 sn içinde çalıştı'},
       {kod:'spr_d9', label:'Yedek sprinkler başlığı ve anahtarı temin edildi'},
       {kod:'spr_d10',label:'İşveren eğitimi verildi; devreye alma tutanağı imzalandı'},
+      {kod:'spr_d11',label:'Hidrolik bilgi levhası, genel bilgi levhası ve (antifriz varsa) antifriz levhası takıldı; vanalar tanımlama levhalı'},
+      {kod:'spr_d12',label:'Başlangıç referans kayıtları (ana drenaj statik/rezidüel basınç, alarm süresi) NFPA 25 periyodik test kıyası için teslim edildi'},
       {kod:'spr_dk1', sub:'kuru', label:'Kuru sistem hava testi (25 psi / 24 saat) yapıldı'},
       {kod:'spr_dk2', sub:'kuru', label:'Kuru vana trip testi yapıldı'},
       {kod:'spr_dp1', sub:'ontepkili', label:'Algılama-vana entegrasyonu (release) test edildi'}
@@ -10228,7 +10252,8 @@ function _clTemplates(){ return {
       {kod:'pmp_d5', label:'Otomatik start basınç ayarı doğrulandı'},
       {kod:'pmp_d6', label:'Dizel: yakıt, akü, egzoz ve soğutma kontrol edildi'},
       {kod:'pmp_d7', label:'Jokey pompa çalışma aralığı ayarlandı'},
-      {kod:'pmp_d8', label:'Devreye alma tutanağı imzalandı'}
+      {kod:'pmp_d8', label:'Devreye alma tutanağı imzalandı'},
+      {kod:'pmp_d9', label:'Kabul testi kayıtları (churn / %100 / %150, pompa eğrisi, voltaj-akım, başlama-durma süreleri) işverene teslim edildi; NFPA 25 haftalık / yıllık test programı anlatıldı'}
     ],
     hidrant_dolap: [
       {kod:'hyd_d1', label:'Yerleşim ve erişilebilirlik projeye uygun'},
@@ -10236,7 +10261,8 @@ function _clTemplates(){ return {
       {kod:'hyd_d3', label:'Akış testi (flow test) yapıldı ve kaydedildi'},
       {kod:'hyd_d4', label:'Hortum, lans ve nozul mevcut ve sağlam'},
       {kod:'hyd_d5', label:'Devreye alma tutanağı imzalandı'},
-      {kod:'hyd_d6', label:'Dikey boru hattı hidrostatik basınç testi (200 psi / 2 saat) yapıldı'}
+      {kod:'hyd_d6', label:'Dikey boru hattı hidrostatik basınç testi (200 psi / 2 saat) yapıldı'},
+      {kod:'hyd_d7', label:'Standpipe hidrolik tasarım levhası takıldı; hidrant / dolap çevresi engelsiz ve yansıtıcı işaretli'}
     ],
     su_deposu: [
       {kod:'tnk_d1', label:'Kapasite ve malzeme proje ile uyumlu'},
@@ -10258,7 +10284,11 @@ function _clTemplates(){ return {
       {kod:'alr_d3', label:'Manuel butonlar ve sirenler test edildi'},
       {kod:'alr_d4', label:'Çevre birim entegrasyonları (asansör, damper, gaz) doğrulandı'},
       {kod:'alr_d5', label:'Sesli / ışıklı uyarı ses seviyesi ölçüldü'},
-      {kod:'alr_d6', label:'Devreye alma tutanağı ve as-built imzalandı'}
+      {kod:'alr_d6', label:'Devreye alma tutanağı ve as-built imzalandı'},
+      {kod:'alr_d7', label:'Kabul testi (NFPA 72 14.4.1): tüm yeni cihaz ve devreler onaylı çizim ve kurulum standardına göre muayene ve test edildi; yetkili makama önceden haber verildi'},
+      {kod:'alr_d8', label:'Kontrol ünitesi giriş / çıkış, devre gözetimi (açık devre, toprak kaçağı, kısa devre), ana ve yedek güç (yük altında) testi yapıldı; devre direnci ve yalıtım ölçüldü'},
+      {kod:'alr_d9', label:'Duman dedektörleri duman girişi ve hassasiyet aralığı testi yapıldı; ses basıncı ve görsel bildirim cihazı çizime uygunluğu ölçüldü'},
+      {kod:'alr_d10', label:'Uzak izleme istasyonuna iletim ve acil kontrol fonksiyonları test edildi; kalıcı kayıtlar, yazılım yedeği, çalışma sırası (sequence of operation) işverene teslim edildi (14.6.1)'}
     ],
     gazli: [
       {kod:'gas_d1', label:'Gaz tipi / miktarı hesap raporu ile uyumlu'},
@@ -10267,101 +10297,260 @@ function _clTemplates(){ return {
       {kod:'gas_d4', label:'Manuel / otomatik tetik ve abort butonu test edildi'},
       {kod:'gas_d5', label:'Uyarı ve blokaj sinyalleri doğrulandı'},
       {kod:'gas_d6', label:'Devreye alma tutanağı imzalandı'},
-      {kod:'gas_d7', label:'Tüp hidrostatik test tarihleri geçerli ve etiketli'}
+      {kod:'gas_d7', label:'Tüp hidrostatik test tarihleri geçerli ve etiketli'},
+      {kod:'gas_d8', label:'Boru hattı basınç testi (azot / kuru gaz, en az 40 psi) 10 dk sonunda en az %80 koruma ve akış testi yapıldı (NFPA 2001 10.4.14)'},
+      {kod:'gas_d9', label:'Tüp bırakma mekanizması devre dışı / fonksiyon cihazı ile değiştirilerek tüm dedektörler, ön alarm, gecikme ve abort anahtarı (ölü adam tipi) tek tek test edildi (NFPA 2001 10.7)'},
+      {kod:'gas_d10', label:'Gerçek mahal boyutları çizimle kıyaslandı ve ajan miktarı doğrulandı; kapı fan testinde mahal tutma süresi sağlandı (NFPA 2001 10.2.3, 10.5)'},
+      {kod:'gas_d11', label:'Elektrik bileşenleri ve yedek güç (en az 24 saat) kontrol edildi; manuel bırakma iki ayrı hareketle çalışıyor, kumanda 1,07-1,22 m yükseklikte (NFPA 2001 10.6)'},
+      {kod:'gas_d12', label:'Kabul testi raporları, tutanaklar ve eğitim işverene teslim edildi; sistem tam çalışır duruma döndürülüp izleme merkezi bilgilendirildi (NFPA 2001 10.7.5, 10.8, 10.9)'}
     ],
     davlumbaz: [
       {kod:'kit_d1', label:'Nozul tipi / konumu ocak yerleşimi ile uyumlu'},
       {kod:'kit_d2', label:'Boşaltma testi (fonksiyon) yapıldı'},
       {kod:'kit_d3', label:'Gaz / elektrik otomatik kesme entegrasyonu doğrulandı'},
       {kod:'kit_d4', label:'Manuel tetik istasyonu erişilebilir ve etiketli'},
-      {kod:'kit_d5', label:'Devreye alma tutanağı imzalandı'}
+      {kod:'kit_d5', label:'Devreye alma tutanağı imzalandı'},
+      {kod:'kit_d6', label:'Boru hattı azot / kuru hava ile (normal çalışma basıncını geçmeden) üflenip her nozuldan çıkış doğrulandı; boru hidrostatik teste tabi tutulmadı (NFPA 17A 7.4)'},
+      {kod:'kit_d7', label:'Sabit sıcaklık algılama elemanları listeli, doğru sıcaklıkta ve takma yılı etiketli; nozul kapakları (blowoff cap) takılı (NFPA 17A 7.4)'},
+      {kod:'kit_d8', label:'Kontrol paneli (varsa) ayrı devreden beslenip etiketli ve yetkisiz erişime kapalı; alarm izleme merkezine ve işverene tamamlandı bildirimi yapıldı (NFPA 17A 7.4.9, 7.4.10)'},
+      {kod:'kit_d9', label:'Kurulumcu kabul testi raporunu imzaladı; işverene üretici tasarım, kurulum ve bakım kılavuzu ve eğitim verildi (NFPA 17A 7.4.10.3, 7.4.10.4)'}
     ]
   },
   bakim: {
     sprinkler: [
-      {kod:'spr_m1',  freq:'aylik',   label:'Kontrol vanaları açık, kilitli / denetim anahtarlı'},
-      {kod:'spr_m2',  freq:'aylik',   label:'Manometreler iyi durumda, normal basınç gösteriyor'},
-      {kod:'spr_m3',  freq:'3aylik',  label:'Su akış alarm cihazları test edildi (test vanası)'},
-      {kod:'spr_m4',  freq:'3aylik',  label:'Denetim (supervisory) anahtarları test edildi'},
-      {kod:'spr_m5',  freq:'yillik',  label:'Hidrolik bilgi levhası mevcut ve okunur'},
-      {kod:'spr_m6',  freq:'yillik',  label:'Sprinkler başlıkları: korozyon / boya / yük / sızıntı yok'},
-      {kod:'spr_m7',  freq:'yillik',  label:'Boru ve bağlantılar: hasar / korozyon / kaçak yok, hizada'},
-      {kod:'spr_m8',  freq:'yillik',  label:'Askı ve sismik destekler sağlam'},
-      {kod:'spr_m9',  freq:'yillik',  label:'Ana drenaj (main drain) tam akış testi yapıldı'},
-      {kod:'spr_m10', freq:'yillik',  label:'Yangın pompası / su kaynağı bağlantısı doğrulandı'},
+      {kod:'spr_m1', freq:'aylik', label:'Kontrol vanaları açık, kilitli / denetim anahtarlı'},
+      {kod:'spr_m1b', freq:'haftalik', label:'Kilitli veya elektrikle denetlenmeyen kontrol vanaları açık, erişilebilir ve mühürlü (13.3.2.1)'},
+      {kod:'spr_m2', freq:'aylik', label:'Manometreler iyi durumda, normal basınç gösteriyor'},
+      {kod:'spr_m3', freq:'3aylik', label:'Mekanik alarm cihazı (su motorlu gong) test edildi; akış süresince sesli alarm veriyor (13.2.3.1)'},
+      {kod:'spr_m3b', freq:'6aylik', label:'Basınç şalterli / kanatlı (vane) su akış alarm cihazı test edildi; en küçük sprinkler akışında 90 sn içinde alarm (13.2.3.2)'},
+      {kod:'spr_m4', freq:'6aylik', label:'Vana denetim (tamper) anahtarları test edildi; vana hareketinde sinyal veriyor (13.3.3.5)'},
+      {kod:'spr_m18', freq:'3aylik', label:'Alarm vanası / sistem check valfi dıştan: göstergeler normal, hasar yok, geciktirme odası sızdırmıyor, vanalar doğru konumda (13.4.1.1)'},
+      {kod:'spr_m5', freq:'yillik', label:'Hidrolik bilgi levhası mevcut ve okunur'},
+      {kod:'spr_m17', freq:'yillik', label:'Genel bilgi levhası, boru çizelgesi (pipe schedule) levhası ve antifriz levhası (varsa) mevcut, sabit ve okunur (5.2.5, 5.2.7, 5.2.8)'},
+      {kod:'spr_m16', freq:'yillik', label:'Her kontrol vanasında sistem tanımlama levhası var; birden çok vanası olan sistemde uyarı levhaları mevcut (13.3.1)'},
+      {kod:'spr_m6', freq:'yillik', label:'Sprinkler başlıkları: korozyon / boya / yük / sızıntı yok'},
+      {kod:'spr_m6b', freq:'yillik', label:'Başlıklarda sıvı kaybı (cam fanus), yanlış yön, eksik rozet/kapak yok; hasarlı başlıklar yenisiyle değiştirildi (5.2.1.1)'},
+      {kod:'spr_m6c', freq:'yillik', label:'Sprinkler koruma kafesleri sağlam; depolama - deflektör mesafesi korunuyor (genelde en az 457 mm; ESFR/CMSA ve lastik depolamada en az 914 mm) (5.2.1.2)'},
+      {kod:'spr_m6d', freq:'yillik', label:'Yedek sprinkler dolabı: tip ve sıcaklık sınıfı uygun, adet yeterli (300 altı: 6, 300-1000: 12, 1000 üstü: 24), sprinkler anahtarı ve listesi var (5.4.1.6)'},
+      {kod:'spr_m6e', freq:'yillik', label:'Sprinkler yaşı kontrol edildi; numune testi / değişim planlandı (hızlı tepkili 25 yıl, ESFR-CMSA 20 yıl, standart 50 yıl, kuru 20 yıl, korozif ortam 5 yıl) (5.3.1)'},
+      {kod:'spr_m7', freq:'yillik', label:'Boru ve bağlantılar: hasar / korozyon / kaçak yok, hizada'},
+      {kod:'spr_m7b', freq:'yillik', label:'Boru ve askılar sisteme ait olmayan yükleri (kablo, kanal, ekipman) taşımıyor (5.2.2.2)'},
+      {kod:'spr_m8', freq:'yillik', label:'Askı ve sismik destekler sağlam'},
+      {kod:'spr_m9', freq:'yillik', label:'Ana drenaj (main drain) tam akış testi yapıldı'},
+      {kod:'spr_m9b', freq:'yillik', label:'Ana drenaj testinde statik ve rezidüel basınç kaydedildi; önceki testle kıyaslandı (%10 ve üzeri düşüş araştırılır) (13.2.2.3)'},
+      {kod:'spr_m9c', freq:'3aylik', label:'Tek su kaynağı geri akış önleyici / basınç düşürücü üzerindeyse ana drenaj testi üç ayda bir yapıldı (13.2.2.2)'},
+      {kod:'spr_m10', freq:'yillik', label:'Yangın pompası / su kaynağı bağlantısı doğrulandı'},
+      {kod:'spr_m15', freq:'yillik', label:'Kontrol vanaları tam kursta çalıştırılıp normal konuma alındı; PIV vanalar çeyrek tur geri alındı; vana milleri yağlandı (13.3.3, 13.3.4)'},
+      {kod:'spr_m12b', freq:'yillik', label:'Basınç düşürücü vana (PRV): kısmi akış testi ve tam hareket (aç-kapa) testi yapıldı (13.5.1.2, 13.5.1.3)'},
+      {kod:'spr_m12d', freq:'3aylik', label:'Basınç düşürücü vana ve cihazlar: açık konumda, sızıntı yok, çıkış basıncı tasarım değerinde (13.5.1.1)'},
+      {kod:'spr_m12c', freq:'5yillik', label:'Basınç düşürücü vana tam akış testi yapıldı ve önceki sonuçlarla karşılaştırıldı (13.5.1.4)'},
+      {kod:'spr_m13', freq:'3aylik', label:'İtfaiye bağlantısı (FDC): görünür-erişilebilir, kapak/tapa ve conta yerinde, rakorlar dönüyor, kaçak ve tıkanma yok, otomatik drenaj çalışıyor (13.8.1)'},
+      {kod:'spr_m13b', freq:'yillik', label:'İtfaiye bağlantısı iç muayenesi (kilitli kapak/tapa varsa) yapıldı; yabancı madde yok (13.8.2)'},
+      {kod:'spr_m21', freq:'yillik', label:'Geri akış önleyici (backflow): yıllık ileri akış testi yapıldı (13.7.2.1)'},
+      {kod:'spr_m23', freq:'haftalik', label:'Basınç düşürücü tipli geri akış önleyicide tahliye portu sürekli deşarj etmiyor (13.7.1.1)'},
       {kod:'spr_m11', freq:'5yillik', label:'Boru iç muayenesi (yabancı madde / tıkanma) yapıldı'},
-      {kod:'spr_m12', freq:'5yillik', label:'Gate valf iç aksam muayenesi'},
-      {kod:'spr_m12b',freq:'yillik',  label:'Basınç azaltma vanası (PRV) tam akış testi'},
-      {kod:'spr_m13', freq:'3aylik',  label:'İtfaiye bağlantısı (FDC): kapak, kaçak, tıkanma kontrolü'},
+      {kod:'spr_m12', freq:'5yillik', label:'Alarm vanası ve check valflerin iç muayenesi; süzgeç, filtre ve orifisler temizlendi (13.4.1.2, 13.4.2.1)'},
+      {kod:'spr_m22', freq:'5yillik', label:'Geri akış önleyici iç muayenesi (tüm parçalar çalışıyor) yapıldı (13.7.1.3)'},
+      {kod:'spr_m13c', freq:'5yillik', label:'İtfaiye bağlantısı - check valf arası boru 10 bar (150 psi) / 2 saat hidrostatik teste tabi tutuldu (13.8.5)'},
       {kod:'spr_m14', freq:'5yillik', label:'Manometreler test / kalibre edildi veya değiştirildi (5 yıl)'},
       {kod:'spr_w1', sub:'islak', freq:'aylik', label:'Islak sistem: ısıtma sağlanıyor, donma riski yok (min 4°C)'},
+      {kod:'spr_w2', sub:'islak', freq:'yillik', label:'Antifriz kullanılıyorsa donma noktası / özgül ağırlık testi yapıldı (ısıtma sezonu öncesi, en uzak nokta ve su bağlantısında) (5.3.4)'},
+      {kod:'spr_w3', sub:'islak', freq:'yillik', label:'Isı izleme (heat tracing) ve donma koruması imalatçı talimatına göre kontrol edildi (5.2.6)'},
       {kod:'spr_k1', sub:'kuru', freq:'haftalik', label:'Kuru sistem hava / azot basıncı normal aralıkta'},
-      {kod:'spr_k2', sub:'kuru', freq:'3aylik',   label:'Kuru vana priming su seviyesi kontrol edildi'},
-      {kod:'spr_k3', sub:'kuru', freq:'yillik',   label:'Kuru vana trip testi (kısmi akış) yapıldı'},
-      {kod:'spr_k4', sub:'kuru', freq:'yillik',   label:'Düşük nokta drenajları (soğuk hava öncesi) boşaltıldı'},
-      {kod:'spr_p1', sub:'ontepkili', freq:'aylik',  label:'Ön tepkili panel gösterge / arıza lambaları normal'},
-      {kod:'spr_p2', sub:'ontepkili', freq:'yillik', label:'Deluge / ön tepkili vana full trip testi yapıldı'},
-      {kod:'spr_p3', sub:'ontepkili', freq:'yillik', label:'Algılama-vana entegrasyonu (release) test edildi'}
+      {kod:'spr_k5', sub:'kuru', freq:'aylik', label:'Kuru boru vanası dıştan: hasar yok, trim vanaları doğru konumda, ara oda (intermediate chamber) sızdırmıyor (13.4.5.1.2)'},
+      {kod:'spr_k12', sub:'kuru', freq:'aylik', label:'Hava kompresörü / azot jeneratörü çalışıyor; yağ, kayış ve basınç anahtarı normal (13.10.2)'},
+      {kod:'spr_k2', sub:'kuru', freq:'3aylik', label:'Kuru vana priming su seviyesi kontrol edildi'},
+      {kod:'spr_k7', sub:'kuru', freq:'3aylik', label:'Hızlı açılış cihazı (accelerator / exhauster) test edildi (13.4.5.2.4)'},
+      {kod:'spr_k14', sub:'kuru', freq:'6aylik', label:'Azot kullanılıyorsa azot saflığı en az %98 olarak doğrulandı (13.4.5.2.10)'},
+      {kod:'spr_k3', sub:'kuru', freq:'yillik', label:'Kuru vana trip testi (kısmi akış) yapıldı'},
+      {kod:'spr_k9', sub:'kuru', freq:'yillik', label:'Trip testi sıcak mevsimde yapıldı; hava basıncı 30 dk içinde normale döndü, su geçiş süresi kaydedildi, vanaya tarih/isim etiketi takıldı (13.4.5.2)'},
+      {kod:'spr_k6', sub:'kuru', freq:'yillik', label:'Kuru boru vanası iç muayenesi yapıldı; sızdırmazlık yüzeylerine gres sürülmedi (13.4.5.1.3, 13.4.5.2.3)'},
+      {kod:'spr_k8', sub:'kuru', freq:'yillik', label:'Düşük / yüksek hava basıncı alarmı ve otomatik hava bakım cihazı test edildi (13.4.5.2.6, 13.4.5.2.8)'},
+      {kod:'spr_k4', sub:'kuru', freq:'yillik', label:'Düşük nokta drenajları (soğuk hava öncesi) boşaltıldı'},
+      {kod:'spr_k15', sub:'kuru', freq:'yillik', label:'Vana kabinindeki düşük sıcaklık alarmı ısıtma sezonu öncesi test edildi (13.4.5.2.7)'},
+      {kod:'spr_k10', sub:'kuru', freq:'3yillik', label:'Kuru vana tam akış (full flow) trip testi yapıldı, kontrol vanası tam açık (13.4.5.2.2.2)'},
+      {kod:'spr_k11', sub:'kuru', freq:'3yillik', label:'Hava kaçak testi: 40 psi / 2 saat, basınç kaybı en fazla 3 psi (veya 4 saat kompresörsüz) (13.4.5.2.9)'},
+      {kod:'spr_p1', sub:'ontepkili', freq:'aylik', label:'Ön tepkili panel gösterge / arıza lambaları normal'},
+      {kod:'spr_p4', sub:'ontepkili', freq:'aylik', label:'Preaction / deluge vana dıştan: hasar yok, trim vanaları doğru konumda, sızıntı yok, elektrik bileşenler servisde (13.4.3.1.1, 13.4.4.1.1)'},
+      {kod:'spr_p6', sub:'ontepkili', freq:'3aylik', label:'Solenoid gözetim sinyali, düşük / yüksek hava basıncı alarmı ve priming su seviyesi test edildi (13.4.3.2, 13.4.4.2.14)'},
+      {kod:'spr_p2', sub:'ontepkili', freq:'yillik', label:'Deluge vana yıllık tam akış (trip) testi yapıldı; en uzak nozul ve vana basınçları kaydedildi (13.4.4.2.3, 13.4.4.2.7)'},
+      {kod:'spr_p9', sub:'ontepkili', freq:'yillik', label:'Preaction vana yıllık trip testi yapıldı; sonrası vana temizlenip servise alındı (13.4.3.2.2, 13.4.3.2.8)'},
+      {kod:'spr_p3', sub:'ontepkili', freq:'yillik', label:'Algılama-vana entegrasyonu (release) test edildi'},
+      {kod:'spr_p10', sub:'ontepkili', freq:'yillik', label:'Manuel devreye alma (acil açma) cihazları çalıştırıldı (13.4.3.2.7, 13.4.4.2.9)'},
+      {kod:'spr_p12', sub:'ontepkili', freq:'yillik', label:'Deluge: açık nozul / sprinklerler tıkalı değil, yönü ve boşaltma deseni doğru (13.4.4.2.4)'},
+      {kod:'spr_p13', sub:'ontepkili', freq:'yillik', label:'Vana kabini düşük sıcaklık alarmı ve otomatik hava bakım cihazı test edildi (13.4.3.2.12, 13.4.3.2.14)'},
+      {kod:'spr_p8', sub:'ontepkili', freq:'3yillik', label:'Preaction vana tam akış (full flow) trip testi yapıldı (13.4.3.2.2)'},
+      {kod:'spr_p11', sub:'ontepkili', freq:'3yillik', label:'Preaction sistemde hava kaçak testi yapıldı (40 psi / 2 saat, kayıp en fazla 3 psi) (13.4.3.2.6)'}
     ],
     pompa: [
-      {kod:'pmp_m1', freq:'haftalik', label:'Elektrikli pompa çalıştırma (no-flow) testi yapıldı'},
+      {kod:'pmp_m14', freq:'haftalik', label:'Pompa odası: ısı yeterli (min 4°C; dizelde ısıtıcısız 21°C), havalandırma kepenkleri serbest, zeminde su yok, kaplin koruyucusu yerinde (8.2.2)'},
+      {kod:'pmp_m15', freq:'haftalik', label:'Emiş / basma ve bypass vanaları tam açık, boru sızıntısı yok, emiş deposu seviyesi yeterli, debi test vanaları kapalı (8.2.2)'},
+      {kod:'pmp_m1', freq:'haftalik', label:'Elektrikli pompa çalıştırma (no-flow) testi yapıldı (haftalık veya risk analizine göre aylık; min 10 dk) (8.3.1.2)'},
       {kod:'pmp_m2', sub:'dizel', freq:'haftalik', label:'Dizel pompa çalıştırma testi (min 30 dk) yapıldı'},
       {kod:'pmp_m3', freq:'haftalik', label:'Emiş / basma basınçları normal aralıkta'},
       {kod:'pmp_m4', sub:'dizel', freq:'haftalik', label:'Yakıt seviyesi, akü ve şarj durumu kontrol edildi'},
-      {kod:'pmp_m5', freq:'aylik',   label:'Pompa dairesi sıcaklığı ve havalandırma uygun'},
-      {kod:'pmp_m6', freq:'aylik',   label:'Salmastra sızıntısı normal, titreşim / ses yok'},
-      {kod:'pmp_m7', freq:'yillik',  label:'Yıllık debi testi (churn / %100 / %150) yapıldı'},
-      {kod:'pmp_m8', freq:'yillik',  label:'Pompa eğrisi kabul değerleri ile karşılaştırıldı'},
+      {kod:'pmp_m16', sub:'elektrik', freq:'haftalik', label:'Panoda güç lambası yanıyor, ATS normal lambası yanıyor, izolasyon şalteri kapalı, faz ters alarmı sönük, jokey pompa beslemesi var (8.2.2)'},
+      {kod:'pmp_m17', sub:'dizel', freq:'haftalik', label:'Dizel: yakıt deposu en az 2/3 dolu, seçici şalter AUTO, iki akü voltajı ve şarj akımı normal, krank karteri yağı, soğutma suyu ve su ceketi ısıtıcısı normal, alarm lambaları sönük (8.2.2)'},
+      {kod:'pmp_m5', freq:'haftalik', label:'Pompa dairesi sıcaklığı ve havalandırma uygun'},
+      {kod:'pmp_m6', freq:'haftalik', label:'Salmastra hafif sızdırıyor (kuru çalışmıyor), titreşim / ses / yatak ısınması yok (8.3.2.9)'},
+      {kod:'pmp_m11', freq:'aylik', label:'Otomatik / manuel start testi ve çalışma süresi kaydedildi'},
+      {kod:'pmp_m23', sub:'dizel', freq:'3aylik', label:'Dizel: krank kutusu havalandırması, yakıt deposu şamandıra / aralık (interstitial) gözetim sinyali kontrol edildi (8.1.1.2.12, 8.1.1.2.7)'},
+      {kod:'pmp_m7', freq:'yillik', label:'Yıllık debi testi (churn / %100 / %150) yapıldı'},
+      {kod:'pmp_m8', freq:'yillik', label:'Pompa eğrisi kabul değerleri ile karşılaştırıldı (her noktada en az %95) (8.3.7.2.3)'},
+      {kod:'pmp_m18', freq:'yillik', label:'Pompa-sürücü hizalaması ve şaft boşluğu (endplay) kontrol edildi (8.1.1.2.1, 8.3.6.4)'},
+      {kod:'pmp_m19', freq:'yillik', label:'Kontrol panosu: elektrik bağlantıları, kart (PCB) korozyonu, kablo yalıtımı, pano içi/dışı tesisat sızıntısı kontrol edildi (8.1.1.2.2 - 8.1.1.2.6)'},
+      {kod:'pmp_m20', freq:'yillik', label:'Pompa ve motor yatakları ile kaplin yağlandı (8.1.1.2.3)'},
+      {kod:'pmp_m21', freq:'yillik', label:'Test manometre / transdüser kalibrasyonu (en fazla %1 sapma, test cihazı etiketli) ve debimetre kalibrasyonu (%3) geçerli; saha göstergeleri %5 sapmayı aşmıyor (8.1.1.2.23, 8.3.3.5)'},
       {kod:'pmp_m9', sub:'dizel', freq:'yillik', label:'Dizel: yakıt filtresi, kayış, egzoz bakımı yapıldı'},
+      {kod:'pmp_m22', sub:'dizel', freq:'yillik', label:'Dizel: yağ ve yağ filtresi (50 çalışma saati veya yıllık), yakıt filtresi, dolaşım suyu filtresi ve sacrificial anot kontrol / değiştirildi (8.1.1.2.17 - 8.1.1.2.22)'},
+      {kod:'pmp_m24', sub:'dizel', freq:'yillik', label:'Dizel: egzoz, kondens tuzağı, susturucu, esnek hortum ve bağlantılar, yakıt deposu havalandırma / taşma hattı ve depoda su kontrolü, motor geri basıncı ölçüldü (8.1.1.2.9 - 8.1.1.2.14)'},
       {kod:'pmp_m10', freq:'yillik', label:'Basınç tahliye (relief) vanası ve dönüş hattı kontrol edildi'},
-      {kod:'pmp_m11', freq:'aylik',  label:'Otomatik / manuel start testi ve çalışma süresi kaydedildi'},
+      {kod:'pmp_m25', freq:'yillik', label:'Sirkülasyon tahliye vanası churn testinde su akıtıyor ve test sonunda kapanıyor; ana tahliye vanası doğru ayarlı (8.2.3, 8.2.4)'},
       {kod:'pmp_m12', sub:'dizel', freq:'yillik', label:'Dizel yakıt kalite testi yapıldı (ASTM standardına göre)'},
-      {kod:'pmp_m13', freq:'yillik', label:'Akü kapasite / yük (load) testi yapıldı'}
+      {kod:'pmp_m13', freq:'yillik', label:'Akü kapasite / yük (load) testi yapıldı'},
+      {kod:'pmp_m26', freq:'yillik', label:'Otomatik transfer şalteri (ATS): güç kesintisi simülasyonu ile tepe yükte yedek kaynağa geçiş (min 2 dk) ve geri dönüş test edildi; sigorta/şalter açmadı (8.3.3.13)'},
+      {kod:'pmp_m27', freq:'yillik', label:'Pompa alarm sinyalleri (çalışıyor, güç kaybı, faz ters, arıza vb.) benzetilerek doğrulandı; yüksek soğutma suyu sıcaklığı gözetim sinyali test edildi (8.3.3.14, 8.1.1.2.8)'},
+      {kod:'pmp_m28', freq:'yillik', label:'Emiş süzgeçleri (screen) kontrol edildi, debi testi sonrası temizlendi (8.3.3.16)'},
+      {kod:'pmp_m29', freq:'yillik', label:'Yazılı pompa test raporu (ham veriler, sistem talebi, eksiklikler, başlama-durma süreleri, önceki testle kıyas) hazırlanıp işverene verildi (8.4)'},
+      {kod:'pmp_m30', freq:'5yillik', label:'Sürücü güç aktarım elemanları (elastomerik / torsiyonel kaplin) 5 yılda bir veya imalatçı süresine göre değiştirildi (8.1.1.2.24)'}
     ],
     hidrant_dolap: [
-      {kod:'hyd_m1', freq:'aylik',  label:'Yangın dolapları erişilebilir, hortum ve lans yerinde'},
+      {kod:'hyd_m1', freq:'aylik', label:'Yangın dolapları erişilebilir, hortum ve lans yerinde'},
       {kod:'hyd_m2', freq:'3aylik', label:'Hidrant kapakları, çıkışlar ve vanalar sızıntısız'},
+      {kod:'hyd_m19', freq:'3aylik', label:'Hortum vanaları ve bağlantıları: kapak / diş koruması, conta, sızıntı yok, kolay çalışıyor (13.6.1)'},
+      {kod:'hyd_m12', freq:'3aylik', label:'Hortum evleri (hose house): erişilebilir, hasarsız, ekipman eksiksiz (7.2.2.8)'},
+      {kod:'hyd_m27', freq:'3aylik', label:'İtfaiye su alma bağlantısı (FDC): görünür, kapak/conta yerinde, rakor dönüyor, kaçak ve tıkanma yok (13.8.1)'},
+      {kod:'hyd_m10', freq:'6aylik', label:'Monitör nozullar: sızıntı, fiziksel hasar, korozyon yok (7.2.2.7)'},
       {kod:'hyd_m3', freq:'yillik', label:'Hidrant akış / basınç testi yapıldı ve kaydedildi'},
-      {kod:'hyd_m4', freq:'yillik', label:'Hortumlar görsel olarak gözden geçirildi'},
-      {kod:'hyd_m4b',freq:'5yillik',label:'Hortumlar hidrostatik basınç testine tabi tutuldu'},
-      {kod:'hyd_m5', freq:'yillik', label:'Kuru hidrant tahliyesi yapıldı (donma öncesi)'}
+      {kod:'hyd_m6', freq:'yillik', label:'Hidrant (kuru / ıslak gövde): erişilebilir, gövdede su / buz yok, drenaj düzgün, sızıntı-çatlak yok, çıkış kapakları sıkı, işletme somunu ve anahtar sağlam, korozyon yok (7.2.2.4, 7.2.2.5)'},
+      {kod:'hyd_m7', freq:'yillik', label:'Hidrant tam açılıp su temiz akana kadar (en az 1 dk) akıtıldı; kuru gövdede tahliye 60 dk içinde (7.3.2)'},
+      {kod:'hyd_m8', freq:'yillik', label:'Hidrant mil, kapak ve dişleri yağlandı; çevresi (en az 0,9 m) bitki / kar / engelden arındırıldı; yansıtıcı levha okunur (7.4.2, 7.2.2.6)'},
+      {kod:'hyd_m11', freq:'yillik', label:'Monitör nozul tam fonksiyon ve salınım (oscillate) testi yapıldı (7.3.3)'},
+      {kod:'hyd_m13', freq:'yillik', label:'Ana hat süzgeçleri (mainline strainer) çıkarılıp temizlendi; 50 mm üzeri akış sonrası kontrol edildi (7.2.2.3)'},
+      {kod:'hyd_m15', freq:'yillik', label:'Yangın dolabı kabini: korozyon / hasar yok, kapı tam açılıyor, kilit ve cam kırma düzeneği çalışıyor, önünde engel yok (6.2.9)'},
+      {kod:'hyd_m16', freq:'yillik', label:'Hortum rafı / sepeti: hortum doğru sarılı, lans klipsi yerinde, raf kabinden en az 90 derece dışarı dönüyor (6.2.8)'},
+      {kod:'hyd_m17', freq:'yillik', label:'Hortum nozulu: eksik, conta hasarı, tıkanma yok; sorunsuz çalışıyor (6.2.7)'},
+      {kod:'hyd_m4', freq:'yillik', label:'Hortumlar görsel olarak gözden geçirildi (küf, kesik, aşınma, kaplin dişi, conta, rakor) (6.2.6)'},
+      {kod:'hyd_m20', freq:'yillik', label:'Sınıf I / III hortum vanaları tam açılıp kapatıldı; zor çalışan / sızdıran vana onarıldı veya değiştirildi (13.6.2.1)'},
+      {kod:'hyd_m21', freq:'yillik', label:'Standpipe borusu, askı ve destekler hasarsız; sisteme ait olmayan yük taşımıyor (6.2.4, 6.2.5)'},
+      {kod:'hyd_m22', freq:'yillik', label:'Standpipe hidrolik tasarım levhası mevcut ve okunur (6.2.2)'},
+      {kod:'hyd_m25', freq:'yillik', label:'Otomatik su kaynaklı standpipe sistemlerinde ana drenaj testi yapıldı, basınç kaydedildi (6.3.1.6)'},
+      {kod:'hyd_m26', freq:'yillik', label:'Basınç düşürücü hortum vanası: tutamaç, çıkış dişi, kaçak ve kapak kontrolü; tam hareket testi yapıldı (13.5.2.1, 13.5.2.2)'},
+      {kod:'hyd_m5', freq:'yillik', label:'Kuru hidrant tahliyesi yapıldı (donma öncesi)'},
+      {kod:'hyd_m23', freq:'5yillik', label:'Standpipe akış testi: en uzak dikey için 500 gpm + her ek dikey için 250 gpm (Sınıf I/III) gerekli basınçla alındı (6.3.1)'},
+      {kod:'hyd_m24', freq:'5yillik', label:'Manuel / yarı otomatik kuru standpipe hidrostatik testi: 200 psi / 2 saat (kayıp en fazla 5 psi) (6.3.2)'},
+      {kod:'hyd_m4b', freq:'5yillik', label:'Hortumlar periyodik servis (hidrostatik) testine tabi tutuldu (periyot NFPA 1930 ve imalatçıya göre)'},
+      {kod:'hyd_m14', freq:'5yillik', label:'Yeraltı ve açıktaki özel yangın hattı akış testi yapıldı, önceki sonuçla karşılaştırıldı (7.3.1)'}
     ],
     su_deposu: [
-      {kod:'tnk_m1', freq:'aylik',  label:'Su seviyesi normal, otomatik dolum çalışıyor'},
-      {kod:'tnk_m2', freq:'aylik',  label:'Isıtma sistemi çalışıyor, donma riski yok'},
-      {kod:'tnk_m3', freq:'3aylik', label:'Seviye alarm / şalter fonksiyonu test edildi'},
+      {kod:'tnk_m1', freq:'aylik', label:'Su seviyesi normal, otomatik dolum çalışıyor (seviye alarmı uzaktan izlenmiyorsa aylık, izleniyorsa 3 aylık) (9.2.1)'},
+      {kod:'tnk_m2', freq:'aylik', label:'Isıtma sistemi çalışıyor, donma riski yok (ısıtma sezonu; denetimsiz alarmda günlük)'},
+      {kod:'tnk_m6', freq:'3aylik', label:'Depo dış yüzeyi, merdiven / platform, havalandırma (vent), temel ve destek yapısı hasar / zayıflama yok; yakın çevre yanıcı depo, buz, çalı, erozyondan arındırılmış (9.2.4)'},
+      {kod:'tnk_m7', freq:'3aylik', label:'Isıtma sezonunda su sıcaklığı en az 4°C ve kayıt altında; düşük sıcaklık alarmı sürekli izleme noktasına iletiliyor (9.2.3)'},
+      {kod:'tnk_m3', freq:'yillik', label:'Su seviyesi (yüksek / düşük) sinyalleri ve seviye alarmı test edildi (9.3.5)'},
+      {kod:'tnk_m8', freq:'yillik', label:'Genleşme derzleri sızıntı / çatlak yok; boyalı, kaplı veya yalıtımlı yüzeyler bozulma belirtisi göstermiyor (9.2.4)'},
+      {kod:'tnk_m9', freq:'yillik', label:'Kontrol ve çek vanaları çalıştırıldı, normal konumda (Bölüm 13)'},
+      {kod:'tnk_m10', freq:'yillik', label:'Isıtma sistemi, düşük su sıcaklığı alarmı ve yüksek sıcaklık limit şalteri ısıtma sezonu öncesi test edildi (9.3.2 - 9.3.4)'},
       {kod:'tnk_m4', freq:'yillik', label:'Depo iç / dış korozyon ve çökelti muayenesi yapıldı'},
-      {kod:'tnk_m5', freq:'5yillik',label:'Depo boşaltıldı, iç muayene ve temizlik yapıldı'}
+      {kod:'tnk_m12', freq:'3yillik', label:'Korozyon korumasız çelik depoda iç muayene yapıldı (9.2.5.1.1)'},
+      {kod:'tnk_m5', freq:'5yillik', label:'Depo boşaltıldı, iç muayene ve temizlik yapıldı'},
+      {kod:'tnk_m11', freq:'5yillik', label:'Seviye göstergeleri doğruluk ve serbest hareket açısından test edildi (9.3.1)'}
     ],
     kopuk: [
-      {kod:'fom_m1', freq:'aylik',   label:'Köpük konsantre seviyesi ve tank durumu kontrol edildi'},
-      {kod:'fom_m2', freq:'3aylik',  label:'Oranlayıcı ve vanalar fonksiyon kontrolü yapıldı'},
-      {kod:'fom_m3', freq:'yillik',  label:'Köpük numunesi kalite (laboratuvar) testine gönderildi'},
-      {kod:'fom_m4', freq:'yillik',  label:'Boşaltma / oran testi yapıldı ve kaydedildi'}
+      {kod:'fom_m1', freq:'aylik', label:'Köpük konsantre seviyesi ve tank durumu kontrol edildi'},
+      {kod:'fom_m13', freq:'aylik', label:'Köpük-su deşarj cihazlarının (spray nozul) konum ve yönü doğru; oranlayıcı sızıntısı ve vana konumları normal (11.2.4.1, 11.2.8)'},
+      {kod:'fom_m2', freq:'3aylik', label:'Oranlayıcı ve vanalar fonksiyon kontrolü yapıldı'},
+      {kod:'fom_m5', freq:'3aylik', label:'Sistem altındaki drenaj alanı kontrol edildi, dolu / tıkalı değil (11.2.7)'},
+      {kod:'fom_m3', freq:'yillik', label:'Köpük numunesi kalite (laboratuvar) testine gönderildi'},
+      {kod:'fom_m4', freq:'yillik', label:'Boşaltma / oran testi yapıldı ve kaydedildi'},
+      {kod:'fom_m6', freq:'yillik', label:'Boru, bağlantı, askı ve destekler korozyon / hasar yok; dolgu ve konsantre depolama alanı uygun (11.2.9, 11.2.11, 11.2.12)'},
+      {kod:'fom_m7', freq:'yillik', label:'Süzgeçler (konsantre, ana hat, deşarj cihazı) kontrol edilip temizlendi; kullanım sonrası da kontrol edilir (11.2.6)'},
+      {kod:'fom_m8', freq:'yillik', label:'Sabit köpük deşarj çıkışları, buhar contaları (vapor seal), köpük yapıcılar (pressure foam maker) ve patlama diskleri muayene edildi (11.2.4.2)'},
+      {kod:'fom_m9', freq:'yillik', label:'Monitörler, hortum hatları ve hortum nozulları kontrol edildi; osilasyonlu monitör hareket aralığı test edildi (11.3.7)'},
+      {kod:'fom_m10', freq:'yillik', label:'Köpük-su sprinkler sistemi operasyonel testi; deşarj cihazı konumu ve engeli kontrol edildi (11.3.10)'},
+      {kod:'fom_m11', freq:'yillik', label:'Manuel devreye alma cihazları çalıştırıldı (11.3.10.4)'},
+      {kod:'fom_m12', freq:'yillik', label:'İşletme talimatları güncel; operatör eğitimi verildi / tazelendi (11.2.17)'},
+      {kod:'fom_m14', freq:'yillik', label:'Bladder tankı çevresindeki köpük ile alan ve set / dike (fire dam) kontrol edildi (11.2.9.8)'},
+      {kod:'fom_m15', freq:'5yillik', label:'Basınç / vakum ventleri ve yüksek basınçlı silindirler periyodik kontrol edildi (11.4.4.6, 11.3.5.4)'},
+      {kod:'fom_m16', freq:'10yillik', label:'Bladder tankı ve konsantre tankı hidrostatik testi; yeraltı borulama kontrolü yapıldı (11.3.5.1, 11.2.11.8)'}
     ],
     algilama: [
-      {kod:'alr_m1', freq:'aylik',  label:'Panel normal durumda, arıza / alarm yok, batarya OK'},
+      {kod:'alr_m1', freq:'aylik', label:'Panel normal durumda, arıza / alarm yok, batarya OK'},
+      {kod:'alr_m7', freq:'aylik', label:'Panel sigortaları, arayüz cihazları, lamba ve LED, ana güç ve arıza sinyalleri normal durumda doğrulandı (Tablo 14.3.1)'},
+      {kod:'alr_m8', freq:'aylik', label:'Motorlu jeneratör (varsa) çalıştırma kontrolü yapıldı (Tablo 14.4.3.2 madde 6)'},
+      {kod:'alr_m9', freq:'6aylik', label:'Kontrol ünitesi arıza sinyalleri, uzak izleme istasyonu ve uzaktan gösterge panelleri muayene edildi'},
       {kod:'alr_m2', freq:'6aylik', label:'Panel fonksiyon testi (birincil/ikincil güç kaynağı) yapıldı'},
+      {kod:'alr_m10', freq:'6aylik', label:'Aküler: üretim tarihi etiketi okunur, terminal korozyonu ve şişme yok, şarj cihazı gerilimi ve hücre gerilimi (13,26 V altı değiştirilir) ölçüldü'},
+      {kod:'alr_m11', freq:'6aylik', label:'Sesli ve ışıklı bildirim cihazları, hoparlörler ve çıkış işaretli sirenler muayene edildi; konum ve durumları uygun'},
+      {kod:'alr_m12', freq:'6aylik', label:'Manuel alarm butonları, ısı dedektörleri, duman dedektörleri, ışın dedektörleri ve akış / vana denetim cihazları muayene edildi'},
+      {kod:'alr_m13', freq:'6aylik', label:'Yangın söndürme sistemi anahtarları (abort, release) ve elektromekanik bırakma cihazları test edildi'},
       {kod:'alr_m3', freq:'yillik', label:'Tüm dedektörler test / temizlik yapıldı'},
+      {kod:'alr_m14', freq:'yillik', label:'Kontrol ünitesi tüm girişler (alarm, gözetim, arıza), çıkışlar ve devre gözetimi test edildi; açık devre ve toprak kaçağı tespiti doğrulandı (Tablo 14.4.3.2 madde 2-3)'},
+      {kod:'alr_m15', freq:'yillik', label:'Ana güç kesilerek yedek güç (yük altında) testi yapıldı; genel alarm en az 5 dk, acil ses sistemi en az 15 dk çalıştı; ana güç geri alındı (madde 8)'},
       {kod:'alr_m4', freq:'yillik', label:'Aküler kapasite / gerilim testine tabi tutuldu'},
-      {kod:'alr_m5', freq:'yillik', label:'Çevre birim entegrasyonları (damper, asansör) doğrulandı'},
-      {kod:'alr_m6', freq:'yillik', label:'Duman dedektörü hassasiyet (sensitivity) testi yapıldı — NFPA 72'}
+      {kod:'alr_m16', freq:'yillik', label:'Panel iç temizlik ve fiziksel muayene; ek / değişiklik yapıldıysa yeniden kabul testi yapıldı (14.4.2)'},
+      {kod:'alr_m5', freq:'yillik', label:'Çevre birim entegrasyonları (damper, asansör, kapı bırakma, HVAC kapatma) doğrulandı'},
+      {kod:'alr_m17', freq:'yillik', label:'Acil kontrol fonksiyonu arayüzleri (asansör geri çağırma, kapı tutucu, damper) devreye alınıp devre dışı bırakılan cihazların geri alındığı doğrulandı (madde 24)'},
+      {kod:'alr_m18', freq:'yillik', label:'Sesli bildirim cihazlarında ses basıncı ölçüldü: genel modda ortam gürültüsünden en az 15 dB, özel modda en az 10 dB yüksek (madde 22)'},
+      {kod:'alr_m19', freq:'yillik', label:'Sesli anons / hoparlör (varsa): söz anlaşılırlığı ve acil anons doğrulandı (14.4.12)'},
+      {kod:'alr_m20', freq:'yillik', label:'Görsel bildirim (flaşör) cihazları çalışması ve onaylı çizime göre konum / candela değeri doğrulandı'},
+      {kod:'alr_m21', freq:'yillik', label:'Uzak izleme istasyonuna iletim (DACT, radyo vb.) testi: alarm, gözetim ve arıza sinyalleri 90 sn içinde alındı (madde 4)'},
+      {kod:'alr_m22', freq:'yillik', label:'Duman dedektörleri duman giriş (fonksiyon) testi dedektör başında yapıldı; manyetik test kabul edilmez (madde 17-7)'},
+      {kod:'alr_m23', freq:'yillik', label:'Kanal tipi dedektörlerde numune borusu ve hava akışı kontrol edildi; hava numune (aspirasyon) sistemi tüm portlardan test edildi'},
+      {kod:'alr_m24', freq:'yillik', label:'Isı dedektörleri üretici talimatına göre test edildi (sabit sıcaklık / oransal artış); kalıcı olmayan tip için 15 yıl sonra değişim planlanır'},
+      {kod:'alr_m25', freq:'yillik', label:'Çok sensörlü / çok kriterli dedektörlerde her sensör bağımsız test edildi ve sonuç kayıt altına alındı (madde 17-12)'},
+      {kod:'alr_m26', freq:'yillik', label:'Yangın söndürme (abort, çapraz bölge, matris tip, solenoid) devreleri sırayla test edildi; solenoid sırasında ajan boşaltılmaz (madde 18)'},
+      {kod:'alr_m27', freq:'yillik', label:'Devre bütünlüğü: her başlatma, bildirim ve sinyal hattında açık devre kuralı ile arıza göstergesi doğrulandı (madde 15)'},
+      {kod:'alr_m28', freq:'yillik', label:'Uzaktan gösterge panelleri, kablosuz haberleşme ve kontrol ünitesi yazılımı yedeği (backup) alındı'},
+      {kod:'alr_m6', freq:'yillik', label:'Duman dedektörü hassasiyet (sensitivity) testi yapıldı — NFPA 72 (ilk kurulumdan 1 yıl sonra, sonra 5 yıl içinde ve en az 5 yılda bir; 14.4.4.3)'},
+      {kod:'alr_m29', freq:'yillik', label:'Test ve muayene kayıtları hazırlandı; işverene teslim edildi, kayıtlar bir sonraki test ve 1 yıl sonrasına kadar saklanır (14.6.2)'},
+      {kod:'alr_m30', freq:'3yillik', label:'Aküler: yük (load) testi yapıldı veya değiştirildi; kapasite %85 altındaysa (veya %80 ve altı) değiştirilir (Tablo 14.4.3.2 madde 9-5)'}
     ],
     gazli: [
-      {kod:'gas_m1', freq:'aylik',  label:'Tüp basınç / seviye göstergeleri normal aralıkta'},
-      {kod:'gas_m2', freq:'3aylik', label:'Panel, tetik devresi ve uyarılar fonksiyon kontrolü'},
-      {kod:'gas_m3', freq:'6aylik', label:'Tüp tartımı yapıldı (ağırlık kaybı sınır içinde)'},
+      {kod:'gas_m1', freq:'aylik', label:'Kontrol paneli enerjili, gözetim, arıza ve alarm sinyali yok (11.2.2)'},
+      {kod:'gas_m6', freq:'aylik', label:'Manuel kumandalar (acil bırakma, abort) engelsiz, erişilebilir ve işaretli; koruma altındaki mahalde değişiklik yok (11.2.2)'},
+      {kod:'gas_m7', freq:'aylik', label:'Sistemde fiziksel hasar yok, tüp basınç göstergeleri çalışma aralığında, önceki eksiklikler giderildi; aylık kayıt işletme sahibince tutuldu (11.2.2, 11.2.5)'},
+      {kod:'gas_m2', freq:'6aylik', label:'Panel, tetik devresi ve uyarılar fonksiyon kontrolü; ajan miktarı ve tüp basıncı kontrol edildi (11.3)'},
+      {kod:'gas_m3', freq:'6aylik', label:'Halokarbon tüpü tartımı yapıldı: ajan kaybı %5 den fazlaysa veya basınç kaybı (sıcaklığa göre düzeltilmiş) %10 dan fazlaysa dolum / değişim (11.3.1)'},
+      {kod:'gas_m8', freq:'6aylik', label:'İnert gaz tüpü basıncı kontrol edildi: sıcaklığa göre düzeltilmiş kayıp %5 i aşarsa dolum / değişim (11.3.4)'},
+      {kod:'gas_m9', freq:'6aylik', label:'Tüp etiketi güncellendi: muayene tarihi, yapan kişi / firma, ajan tipi, brüt ve net ağırlık, basınç ve sıcaklık (11.3.6)'},
+      {kod:'gas_m10', freq:'yillik', label:'Tüm sistem yetkili personelce muayene, servis ve çalışma testine tabi tutuldu; servis raporu ve tavsiyeler işverene dosyalandı; boşaltma testi gerekmez (11.4)'},
       {kod:'gas_m4', freq:'yillik', label:'Boşaltma nozulları ve boru hattı muayene edildi'},
-      {kod:'gas_m5', freq:'yillik', label:'Mahal sızdırmazlık kontrolü ve tutanak güncellendi'},
-      {kod:'gas_m6', freq:'10yillik', label:'Tüp hidrostatik test / muayene tarihi kontrol edildi (etikette süre yoksa 10 yıl esas alınır)'}
+      {kod:'gas_m11', freq:'yillik', label:'Sistem hortumları hasar açısından muayene edildi; kusurlu hortum değiştirildi veya test edildi (11.4.4)'},
+      {kod:'gas_m12', freq:'yillik', label:'Korunan mahal (enclosure) bütünlüğü ve boyut değişikliği kontrol edildi; ajan konsantrasyonunu koruyamayacak değişiklik varsa giderildi; duvar / döşeme delikleri yangın dayanımına uygun mühürlendi (11.4.5, 11.5.4)'},
+      {kod:'gas_m5', freq:'yillik', label:'Mahal sızdırmazlık kontrolü ve tutanak güncellendi (gerekirse kapı fan testi)'},
+      {kod:'gas_m13', freq:'yillik', label:'Ön uyarı alarmı ve gecikme süresi, abort anahtarı (ölü adam tipi), tüm manuel bırakma (iki ayrı hareket) fonksiyon testi yapıldı; tüp bırakma mekanizması devre dışı bırakılarak test edildi (10.7, Tablo 14.4.3.2 madde 18)'},
+      {kod:'gas_m14', freq:'yillik', label:'Algılama: çapraz bölge / sıralı algılama devreleri, dedektörler, ana-yedek anahtarı ve yardımcı fonksiyonlar (havalandırma kapatma, güç kesme) test edildi (10.6, NFPA 72)'},
+      {kod:'gas_m15', freq:'yillik', label:'Sistem testi sonrası alarm izleme merkezi ve ilgili kişiler bilgilendirildi, sistem tam çalışır durumuna döndürüldü, test raporları işverene verildi (10.7.5, 10.8)'},
+      {kod:'gas_m16', freq:'yillik', label:'Yetkili personelin eğitimi ve tahliye talimatları gözden geçirildi (11.8, 10.9)'},
+      {kod:'gas_m17', freq:'5yillik', label:'Sürekli hizmetteki tüplerin tam dış görsel muayenesi yapıldı (CGA C-6); kayıt etiketi ve rapor hazırlandı (11.6.2)'},
+      {kod:'gas_m18', freq:'5yillik', label:'Tüm sistem hortumları hidrostatik teste tabi tutuldu (1,5 x azami tüp basıncı, 1 dk) veya değiştirildi; geçenler tarihle işaretlendi (11.7)'},
+      {kod:'gas_m6b', freq:'10yillik', label:'Tüp hidrostatik test / muayene tarihi kontrol edildi; yeniden test süresi (DOT, CTC veya muadili) dolmuş tüp testsiz doldurulmaz (11.6.1)'}
     ],
     davlumbaz: [
-      {kod:'kit_m1', freq:'aylik',  label:'Nozul kapakları takılı, yağ / tıkanma yok'},
-      {kod:'kit_m2', freq:'6aylik', label:'Sistem fonksiyon kontrolü ve tüp basıncı OK'},
-      {kod:'kit_m3', freq:'6aylik', label:'Gaz / elektrik otomatik kesme testi yapıldı'},
-      {kod:'kit_m4', freq:'yillik', label:'Tüp tartım / hidrostatik durumu kontrol edildi'},
-      {kod:'kit_m5', freq:'yillik', label:'Nozul temizlik / değişimi (imalatçı süresine göre) yapıldı'},
-      {kod:'kit_m6', freq:'yillik', label:'Fusible link elemanları üretici talimatına göre yıllık değiştirildi'}
+      {kod:'kit_m1', freq:'aylik', label:'Sistem yerinde, manuel kumandalar engelsiz, mühür ve tamper göstergeleri sağlam (8.2.2)'},
+      {kod:'kit_m7', freq:'aylik', label:'Bakım etiketi / sertifikası yerinde; basınç göstergesi (varsa) çalışma aralığında; fiziksel hasar yok (8.2.2)'},
+      {kod:'kit_m8', freq:'aylik', label:'Nozul kapakları (blowoff cap) takılı, yağ ve tıkanma yok; ocak ve ekipman yerleşimi / tehlike değişmedi (8.2.2)'},
+      {kod:'kit_m9', freq:'aylik', label:'Aylık muayene tarihi ve muayeneyi yapanın baş harfleri kaydedildi; eksiklikler işlenip giderildi (8.2.4, 8.2.5)'},
+      {kod:'kit_m2', freq:'6aylik', label:'Yetkili servis teknisyeni sistemi üretici kılavuzuna göre bakımdan geçirdi; sistem fonksiyon kontrolü yapıldı (8.3.2, 8.3.3)'},
+      {kod:'kit_m10', freq:'6aylik', label:'Tüm dedektörler, genleşme gazı tüpü, ajan tüpleri, bırakma düzenekleri, boru, hortum, nozullar ve sinyaller muayene edildi; basınçsız tüplerde sıvı seviyesi kontrol edildi (8.3.3.1)'},
+      {kod:'kit_m11', freq:'6aylik', label:'Boru hattı azot / kuru hava ile (normal çalışma basıncını geçmeden) üflendi; her nozuldan gaz çıkışı ve tıkanıklık olmadığı doğrulandı; boru hidrostatik teste tabi tutulmaz (8.3.3.1.1)'},
+      {kod:'kit_m3', freq:'6aylik', label:'Gaz / elektrik otomatik kesme, havalandırma ve yangın alarm panosu bağlantısı testi yapıldı (8.3.3.4)'},
+      {kod:'kit_m12', freq:'6aylik', label:'Sabit sıcaklık algılama elemanları (eriyen bağlantı / cam fanus) en az 6 ayda bir değiştirildi, listeli ve aynı sıcaklık değerinde, çıkanlar imha edildi; üretim yılı ve takma tarihi etikete yazıldı (8.3.4)'},
+      {kod:'kit_m13', freq:'6aylik', label:'Bakım etiketi güncellendi: bakım ay/yıl ve yapan kişi; yalnız güncel etiket yerinde (8.3.3.7)'},
+      {kod:'kit_m14', freq:'6aylik', label:'Genleşme gazı (expellant) miktarı / basıncı üretici yöntemiyle kontrol edildi (8.3.6)'},
+      {kod:'kit_m15', freq:'6aylik', label:'Bakım raporu ve tavsiyeler işverene verildi; kayıtlar sonraki bakımdan 1 yıl sonrasına kadar saklanır (8.3.3.6)'},
+      {kod:'kit_m4', freq:'yillik', label:'Tüp ve genleşme tüpü durumu kontrol edildi; korozyon, çukurlaşma, yangın hasarı varsa hidrostatik teste alınır veya değiştirilir (8.3.3.2)'},
+      {kod:'kit_m5', freq:'yillik', label:'Nozul temizlik / değişimi yapıldı; yağ filtre (davlumbaz, kanal) bağlantıları ve nozul yönü / konumu ocak yerleşimine uygun (8.3.7)'},
+      {kod:'kit_m6', freq:'yillik', label:'Eriyen bağlantı / cam fanus elemanları üretici talimatına göre yıllık değiştirildi, tarih etiketlendi (8.3.4)'},
+      {kod:'kit_m16', freq:'yillik', label:'Isıtmalı dedektörler: görsel muayene, fonksiyon testi, gerekirse kalibrasyon doğrulaması (8.3.5.1)'},
+      {kod:'kit_m17', freq:'yillik', label:'Tesis personelinin sistem ve taşınabilir yangın söndürücü kullanma eğitimi gözden geçirildi (8.2.2)'},
+      {kod:'kit_m18', freq:'yillik', label:'Yangın alarm sistemine bağlıysa bağlantı NFPA 72 e göre doğrulandı; kayıtlar saklandı (8.3.3.4.1)'},
+      {kod:'kit_m19', freq:'yillik', label:'Kullanım veya boşaltma sonrası: sistem yeniden dolduruldu, boru azot / kuru hava ile üflendi, normal duruma alındı (8.4.1)'},
+      {kod:'kit_m20', freq:'yillik', label:'Kimyasal (ıslak kimyasal) şarj ürünü üretici sınırları içinde saklanıyor; ambalajı sistem şarjına kadar açılmadı (8.4.2)'},
+      {kod:'kit_m21', freq:'yillik', label:'Tüp iç muayene / dolum yapıldıysa boynuna doğrulama (servis) halkası takıldı: ay-yıl ve servis veren firma (8.6)'},
+      {kod:'kit_m22', freq:'yillik', label:'Tüplerde sızıntı, çatlama veya hareket yok; 12 yılı aşan tüp / yardımcı basınç tüpü / hortumlar hidrostatik teste alınır (8.5)'},
+      {kod:'kit_m23', freq:'10yillik', label:'Islak kimyasal tüpleri, yardımcı basınç tüpleri ve hortumlar hidrostatik teste tabi tutuldu (aralık en çok 12 yıl; üretici ve DOT yeniden test süresi) (8.5.1)'}
     ]
   }
 }; }
@@ -10373,7 +10562,7 @@ function clItems(formType, sysKey, subType){
   return arr.filter(function(i){ return !i.sub || i.sub === subType; });
 }
 // Frekans sırası (sık→seyrek). Ziyaret frekansı F seçilince rank(item) <= rank(F) gösterilir.
-function clFreqRank(f){ return ({haftalik:0, aylik:1, '3aylik':2, '6aylik':3, yillik:4, '5yillik':5, '10yillik':6})[f]; }
+function clFreqRank(f){ return ({haftalik:0, aylik:1, '3aylik':2, '6aylik':3, yillik:4, '3yillik':5, '5yillik':6, '10yillik':7})[f]; }
 function clVisitItems(system){
   var items = clItems('bakim', system.sysKey, system.subType || '');
   var vf = system.visitFreq; if(vf === undefined || vf === '') return items;
@@ -10384,7 +10573,7 @@ function clVisitItems(system){
 function clComputeNextDue(baseISO, visitFreq){
   if(!baseISO) return '';
   if(visitFreq === 'haftalik') return _addDay(baseISO, 7);
-  var m = ({aylik:1, '3aylik':3, '6aylik':6, yillik:12})[visitFreq];
+  var m = ({aylik:1, '3aylik':3, '6aylik':6, yillik:12, '3yillik':36, '5yillik':60, '10yillik':120})[visitFreq];
   if(!m) return '';
   return _addMonth(baseISO, m);
 }

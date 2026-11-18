@@ -1136,3 +1136,28 @@ Kaldırılanlar ve sebepleri:
 - Satış/Proje Dashboard: yeni **Kazanılan Ciro** kutusu; "Hit Rate" → "Win Rate"; "Teklife Dönüşüm" kartı → "Win Rate — Sonuçlanan İşler".
 - Teklif bölümü "Teklif Takibi — Hazırlayana Göre": yalnız açık teklifler (Onaylandı/Kazanıldı/Reddedildi/Kaçtı hariç); kutular: Açık Teklif, Hazırlanmayı Bekleyen, Cevap Bekleyen, Süresi Geçen; Onaylanan/Hit Rate/Reddedilen kaldırıldı.
 - Dokunulmadı: Dashboard yazdırma çıktısı, AI analiz metni (eski "Hit Rate" etiketi orada kalır).
+- Durum: commit `e0515b3` push edildi, canlıda doğrulandı ("Teklif Takibi — Hazırlayana Göre" canlı sayfada).
+- Önceki çıktı-format geçişi (Servis Formu, Checklist, Saha Raporu, Prim Bordrosu, Performans Raporu → teklif stili): CRM `d16ffd4`, Teklif Programı `61c8b80`; ikisi de canlı (Vercel `success`).
+
+### Açık / izlenecek maddeler (18 Kasım 2026 sonu)
+- Her aktif projede hakediş günü seçilmeli (zorunlu alan).
+- PDF indirme canlı tarayıcıda kullanıcı tarafından henüz teyit edilmedi.
+- Dini bayram tarihleri 2028+ için tanımlı değil (iş programı tatilleri).
+- Canlı veritabanındaki eski görevler (Sipariş formu / Mobilizasyon / İSG) elle silinebilir.
+- NFPA şablonları (Sprinkler 6, Pompa 5 madde) yetersiz olabilir; gözden geçirilecek.
+- TP için `/api/version` endpoint'i eklenmedi (onay yok).
+- Eski açık işler: Vitra Karo/Bodrum Edition kayıtları, izin bilgisi yok, görev silme logu, TİCARİ CRM anahtar sorusu.
+
+## 18 Kasım 2026 — NFPA 25 (2026 ed.) madde taraması: Checklist ve Periyodik Bakım Raporu şablonları (yerelde; henüz commit/push edilmedi)
+- Kaynak: NFPA 25 2026 serbest erişim (Bölüm 5, 6, 7, 8, 9, 11, 13; Tablo 5.1.1.2, 6.1.1.2, 8.1.1.2, 9.1.1.2, 11.1.1.2, 13.1.1.2). Değişiklik `_clTemplates()` içinde; kayıtlı eski raporlar kendi madde metnini korur, yeni raporlar yeni listeyi yükler.
+- **Frekans:** `3yillik` eklendi (FREQ_META, `clFreqRank`, ziyaret frekansı listesi). Ziyaret frekansı listesine **3 / 5 / 10 Yıllık (kapsamlı)** seçenekleri eklendi: önceden 5 ve 10 yıllık maddeler hiçbir ziyaret frekansında görünmüyordu (yalnız frekans boşken).
+- **Düzeltilen frekanslar:** vana denetim anahtarı testi 3 aylık → 6 aylık; kanatlı/basınç şalterli alarm testi 6 aylık (mekanik gong 3 aylık); pompa odası ve salmastra kontrolü aylık → haftalık; su deposu seviye sinyali testi 3 aylık → yıllık; PRV yıllık kısmi akış + 5 yılda tam akış; "gate valf iç muayenesi" yerine alarm/check valf iç muayenesi (5 yıl).
+- **Eklenen bakım maddeleri:** Sprinkler 63 (önceden 25): kontrol vanası tam kurs/yağlama/levha, alarm vanası dış muayene, bilgi levhaları, sprinkler yedek dolabı adet kuralı (6/12/24), depolama mesafesi, sprinkler yaş/numune testi, ana drenaj basınç kıyası, FDC 5 yıllık hidrostatik, geri akış önleyici; kuru boru (iç muayene, hızlı açılış cihazı, kompresör, azot %98, tam akış trip 3 yıl, hava kaçağı 3 yıl); preaction/deluge (solenoid, manuel açma, tam akış, hava kaçağı); ıslak: antifriz testi. Pompa 30 (önceden 13): haftalık oda/vana/elektrik/dizel kontrol listesi, hizalama, panel/PCB/kablo, kalibrasyon, yağ-filtre-anot, egzoz/yakıt tankı, ATS güç kesintisi testi, alarm sinyalleri, emiş süzgeci, test raporu, 5 yıllık kaplin değişimi. Hidrant/dolap 26 (önceden 6): hidrant muayene/akıtma/yağlama, monitör nozul, hortum evi, ana hat süzgeci, 5 yıllık yeraltı hat akış testi, dolap kabini/hortum rafı/nozul/hortum/hortum vanası, standpipe akış (5 yıl) ve hidrostatik (200 psi/2 saat) testi. Su deposu 12 (önceden 5); Köpük 16 (önceden 4).
+- **Arıza ve Devreye Alma:** onarım sonrası test (Tablo 5.5.1/8.6.1), yedek sprinkler/yerine takılan sprinkler uygunluğu, pompa test değerleri, bilgi levhaları, başlangıç referans kayıtları eklendi.
+- **Kapsam dışı bırakıldı:** Algılama (NFPA 72), Gazlı (NFPA 2001), Davlumbaz (NFPA 96/17A) NFPA 25 kapsamında değil; dokunulmadı. Su püskürtme (Bölüm 10) ve su sisi (Bölüm 12) için CRM'de sistem türü yok.
+- Doğrulama: ana script sözdizimi temiz, kod tekrarı yok, tüm frekanslar geçerli. Uygulamada bir bakım raporu açılıp görsel/sayfalama kontrolü yapılmadı.
+
+## 18 Kasım 2026 — NFPA 72 ve NFPA 2001 bakım maddeleri (yerelde; commit/push yok)
+- **Algılama (NFPA 72, 2025, Bölüm 14 Tablo 14.3.1 ve 14.4.3.2):** bakım şablonu 6 → 30 madde (panel, batarya, bildirim cihazları, dedektör fonksiyon testleri, ses basıncı, iletim, söndürme arayüzü, kayıtlar, 3 yılda akü yük testi).
+- **Gazlı (NFPA 2001, 2025, Bölüm 10-11):** 6 → 19 madde (aylık, 6 aylık tartım/basınç eşikleri, yıllık servis, 5 yıl görsel muayene/hortum testi, 10 yıl tüp).
+- **19 Kasım:** Davlumbaz (NFPA 17A 2027, Bölüm 7-8) bakım 6 → 23 madde; Arıza ve Devreye Alma şablonları Algılama (NFPA 72), Gazlı (NFPA 2001) ve Davlumbaz (NFPA 17A) için güncellendi. Davlumbaz için 17A 6 aylık servis, 6 aylık eriyen bağlantı değişimi, 12 yıl hidrostatik kuralı esas alındı. Görsel/sayfalama testi yapılmadı.
