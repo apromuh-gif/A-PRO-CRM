@@ -5317,7 +5317,9 @@ function renderDashboardAdmin() {
   const lost = OF.filter(o=>LOST.includes(o.stage)).length;
   const totalCount = OF.length;
   const avgDeal = totalCount ? totalAll/totalCount : 0;
-  const winRate = totalCount ? Math.round(OF.filter(o=>o.stage==='KAZANILDI').length/totalCount*100) : 0;
+  const _wonN = OF.filter(o=>o.stage==='KAZANILDI').length;
+  const _resolvedN = _wonN + lost;   // sonuçlanan = kazanılan + kaybedilen
+  const winRate = _resolvedN ? Math.round(_wonN/_resolvedN*100) : 0;
   const _maintN=(state.maintenances||[]).filter(_maintCountsForYear).length;
   const serviceTotal = S.reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();   // servis kayıtları + bakım sözleşmeleri
   const compTarget = (state.targets&&state.targets.company)||0;
@@ -5326,9 +5328,9 @@ function renderDashboardAdmin() {
   // KPI Kartları
   const kpiGrid = h('div',{style:{display:'grid',gridTemplateColumns:window.innerWidth<=480?'1fr 1fr':'repeat(auto-fit,minmax(180px,1fr))',gap:window.innerWidth<=768?'10px':'14px',marginBottom:window.innerWidth<=768?'14px':'20px'}});
   [
-    {l:'Toplam Pipeline',v:eur(totalPipeline),s:OF.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').length+' aktif fırsat',c:'#2563eb',i:'🎯'},
-    {l:'Satış Tutarı',v:eur(won),s:'Kazanılan toplam ciro',c:'#7c3aed',i:'💰'},
-    {l:'Win Rate',v:winRate+'%',s:OF.filter(o=>o.stage==='KAZANILDI').length+' kazanılan / '+totalCount+' toplam',c:'#16a34a',i:'🏆'},
+    {l:'Açık Pipeline',v:eur(totalPipeline),s:OF.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').length+' aktif fırsat',c:'#2563eb',i:'🎯'},
+    {l:'Kazanılan Ciro',v:eur(won),s:_wonN+' kazanılan fırsat',c:'#7c3aed',i:'💰'},
+    {l:'Win Rate',v:winRate+'%',s:'Sonuçlanan '+_resolvedN+' işten '+_wonN+' kazanıldı',c:winRate>=50?'#16a34a':'#dc2626',i:'🏆'},
     {l:'Şirket Yıllık Hedef',v:eur(compTarget),s:'Hedefe ulaşma: '+(compTarget>0?targetPct+'%':'Hedef girilmedi'),c:'#0891b2',i:'🎯'},
     {l:'Kaybedilen Fırsat',v:String(lost),s:'KAÇTI + NO GO + ÖLDÜ',c:'#dc2626',i:'❌'},
     {l:'Teknik Servis Ciro',v:eur(serviceTotal),s:S.length+' servis · '+_maintN+' bakım sözleşmesi',c:'#ea580c',i:'🔧'},
@@ -5358,26 +5360,28 @@ function renderDashboardAdmin() {
   const repMap = {};
   OF.forEach(o=>{
     const n = o.assignedTo||'Atanmamış';
-    if(!repMap[n]) repMap[n]={tot:0,cnt:0,won:0,lost:0,wonVal:0};
+    if(!repMap[n]) repMap[n]={tot:0,cnt:0,won:0,lost:0,wonVal:0,pipe:0};
     repMap[n].tot += Number(o.value)||0;
     repMap[n].cnt++;
+    if(o.stage!=='KAZANILDI' && !LOST.includes(o.stage)) repMap[n].pipe += Number(o.value)||0;
     if(o.stage==='KAZANILDI'){ repMap[n].won++; repMap[n].wonVal += Number(o.value)||0; }
     if(LOST.includes(o.stage)) repMap[n].lost++;
   });
   // repMap zaten activeReps'ten geliyor - hasTarget filtreli
-  const repRows = Object.entries(repMap).sort((a,b)=>b[1].tot-a[1].tot).map(([n,d])=>[
+  const repRows = Object.entries(repMap).sort((a,b)=>b[1].wonVal-a[1].wonVal||b[1].pipe-a[1].pipe).map(([n,d])=>{
+    const _res=d.won+d.lost;
+    return [
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
       h('div',{style:{width:'26px',height:'26px',borderRadius:'50%',background:'linear-gradient(135deg,#2563eb,#7c3aed)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:'700',color:'#fff'}},n.split(' ').map(x=>x[0]).join('').slice(0,2)),
       h('span',{style:{fontWeight:'600',fontSize:'13px'}},n)
     ),
-    h('span',{style:{fontWeight:'700',color:'#2563eb'},title:'Atanmış tüm fırsatların (aktif + kazanılan + kaybedilen) tutar toplamı'},eur(d.tot)),
     h('span',{style:{fontWeight:'800',color:'#16a34a'},title:'Yalnız KAZANILDI aşamasındaki fırsatların toplamı'},eur(d.wonVal)),
-    h('span',{},String(d.cnt)),
+    h('span',{style:{fontWeight:'700',color:'#2563eb'},title:'Devam eden (kazanılmamış ve kaybedilmemiş) fırsatların toplamı'},eur(d.pipe)),
     h('span',{style:{color:'#16a34a',fontWeight:'700'}},String(d.won)),
     h('span',{style:{color:'#dc2626',fontWeight:'700'}},String(d.lost)),
-    h('span',{style:{fontWeight:'700',color:d.cnt?'#7c3aed':'#94a3b8'}},d.cnt?Math.round(d.won/d.cnt*100)+'%':'-')
-  ]);
-  const repTable = miniTable(['Satış Temsilcisi','Toplam Fırsat Tutarı','Kazanılan Ciro','Fırsat','Kazanılan','Kaybedilen','Win Rate'],repRows);
+    h('span',{style:{fontWeight:'700',color:_res?(d.won/_res>=0.5?'#16a34a':'#dc2626'):'#94a3b8'},title:'Kazanılan ÷ (kazanılan + kaybedilen)'},_res?Math.round(d.won/_res*100)+'%':'-')
+  ];});
+  const repTable = miniTable(['Satış Temsilcisi','Kazanılan Ciro','Açık Pipeline','Kazanılan','Kaybedilen','Win Rate'],repRows);
 
   // Kazanılan/Kaybedilen/Devam pasta
   const lostSegments = [
@@ -5643,8 +5647,9 @@ function renderDashboardSales() {
   // KPI
   const kpiGrid = h('div',{style:{display:'grid',gridTemplateColumns:window.innerWidth<=480?'1fr 1fr':'repeat(auto-fit,minmax(180px,1fr))',gap:window.innerWidth<=768?'10px':'14px',marginBottom:window.innerWidth<=768?'14px':'20px'}});
   [
-    {l:'Toplam Pipeline',v:eur(myPipeline),s:myO.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').length+' aktif fırsat',c:'#2563eb',i:'🎯'},
-    {l:'Hit Rate — Sonuçlanan İşlerin Satışa Dönme Oranı',v:hitRate+'%',s:'Sonuçlanan '+hitRateDenom+' işten '+myWon+' satışa dönüştü',c:hitRate>=50?'#16a34a':'#dc2626',i:'🏹'},
+    {l:'Kazanılan Ciro',v:eur(myWonVal),s:myWon+' kazanılan fırsat',c:'#16a34a',i:'💰'},
+    {l:'Açık Pipeline',v:eur(myPipeline),s:myO.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').length+' aktif fırsat',c:'#2563eb',i:'🎯'},
+    {l:'Win Rate — Sonuçlanan İşlerin Satışa Dönme Oranı',v:hitRate+'%',s:'Sonuçlanan '+hitRateDenom+' işten '+myWon+' satışa dönüştü',c:hitRate>=50?'#16a34a':'#dc2626',i:'🏹'},
     {l:'Bireysel Hedef',v:repTarget>0?eur(repTarget):'Hedef yok',s:repTarget>0?'Gerçekleşen: '+eur(myWonVal)+' ('+Math.min(100,Math.round(myWonVal/repTarget*100))+'%)':'Hedef girilmedi',c:'#7c3aed',i:'🎯'},
     {l:'Şirket Yıllık Hedef',v:eur(state.targets?.company||0),s:(()=>{const t=state.targets?.company||0;const w=O.filter(o=>o.stage==='KAZANILDI').reduce((a,o)=>a+(Number(o.value)||0),0);return t>0?'Hedefe ulaşma: '+Math.min(100,Math.round(w/t*100))+'%':'Hedef girilmedi'})(),c:'#0891b2',i:'🏢'},
     {l:'Devam Eden Fırsat',v:String(myO.filter(o=>!LOST.includes(o.stage)&&o.stage!=='KAZANILDI').length),s:'Pipeline\'da aktif',c:'#ea580c',i:'⏳'},
@@ -5677,7 +5682,7 @@ function renderDashboardSales() {
   // Teklif durumları
   const propSeg = Object.keys(PS).map(s=>({label:s,value:myP.filter(p=>p.status===s).reduce((a,p)=>a+(Number(p.amount)||0),0),color:PS[s]})).filter(s=>s.value>0);
 
-  // Hit Rate görsel
+  // Win Rate görsel
   const hitDiv = h('div',{style:{textAlign:'center',padding:'10px 0'}},
     h('div',{style:{fontSize:'56px',fontWeight:'900',color:hitRate>=50?'#16a34a':'#dc2626',lineHeight:'1'}},hitRate+'%'),
     h('div',{style:{fontSize:'12px',color:T4,marginBottom:'16px'}},`${hitRateDenom} sonuçlanan iş: ${myWon} Kazanıldı + ${myLostCount} Kaçtı`),
@@ -5696,7 +5701,7 @@ function renderDashboardSales() {
     salesDateBox,
     kpiGrid,
     h('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'16px',marginBottom:'16px'}},
-      card('🎯 Hit Rate — Teklife Dönüşüm Oranı', hitDiv),
+      card('🏆 Win Rate — Sonuçlanan İşler', hitDiv),
       card('📊 Kişisel Aşama & Ciro Dağılımı', myStageChart)
     ),
     h('div',{style:{marginBottom:'16px'}},
@@ -5704,7 +5709,7 @@ function renderDashboardSales() {
         needFollow.length ? {border:'2px solid #f97316'} : {})
     ),
     h('div',{style:{marginBottom:'16px'}},
-      card('📋 Hazırlayana Göre Teklif Performansı', (()=>{
+      card('📋 Teklif Takibi — Hazırlayana Göre', (()=>{
         const propDiv = h('div',{});
         const P = state.proposals;
         if(!P.length){
@@ -5717,9 +5722,9 @@ function renderDashboardSales() {
         const d10Str=d10.toISOString().slice(0,10);
         if(!state.perfFilters) state.perfFilters={dateFrom:'',dateTo:''};
         const pf2=state.perfFilters;
-        // PF = tüm teklifler (kişi bazlı performans tarih filtresinden etkilenmez)
+        // PF = açık teklifler (sonuçlananlar ciro/sonuç olarak fırsattan izlenir)
         // Tarih filtresi sadece "Süresi Geçen" hesabında validUntil'e göre uygulanır
-        const PF=P;
+        const PF=P.filter(p=>['Onaylandı','Kazanıldı','Reddedildi','Kaçtı'].indexOf(p.status)<0);   // yalnız açık (takip gereken) teklifler
         const prepMap = {};
         PF.forEach(p=>{
           const name = p.preparedBy || 'Bilinmiyor';
@@ -5763,13 +5768,11 @@ function renderDashboardSales() {
         propDiv.appendChild(filterDiv2);
 
         // KPI özet
-        propDiv.appendChild(h('div',{style:{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'8px',marginBottom:'20px'}},
-          h('div',{style:{background:'#eff6ff',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#2563eb'}},PF.length),h('div',{style:{fontSize:'11px',color:'#4a6080',marginTop:'2px'}},'Toplam')),
-          h('div',{style:{background:'#f0fdf4',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#16a34a'}},PF.filter(p=>p.status==='Onaylandı').length),h('div',{style:{fontSize:'11px',color:'#4a6080',marginTop:'2px'}},'Onaylanan')),
-          h('div',{style:{background:'#e0f2fe',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#0284c7'}},PF.filter(p=>p.status==='Gönderildi').length),h('div',{style:{fontSize:'11px',color:'#4a6080',marginTop:'2px'}},'Gönderildi')),
-          h('div',{style:{background:'#fffbeb',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#d97706'}},PF.filter(p=>p.status!=='Onaylandı'&&p.status!=='Reddedildi'&&p.status!=='Gönderildi').length),h('div',{style:{fontSize:'11px',color:'#4a6080',marginTop:'2px'}},'Bekleyen')),
+        propDiv.appendChild(h('div',{style:{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',marginBottom:'20px'}},
+          h('div',{style:{background:'#eff6ff',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#2563eb'}},PF.length),h('div',{style:{fontSize:'11px',color:'#4a6080',marginTop:'2px'}},'Açık Teklif')),
+          h('div',{style:{background:'#fffbeb',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#d97706'}},PF.filter(p=>p.status!=='Gönderildi').length),h('div',{style:{fontSize:'11px',color:'#4a6080',marginTop:'2px'}},'Hazırlanmayı Bekleyen')),
+          h('div',{style:{background:'#e0f2fe',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#0284c7'}},PF.filter(p=>p.status==='Gönderildi').length),h('div',{style:{fontSize:'11px',color:'#4a6080',marginTop:'2px'}},'Cevap Bekleyen')),
           h('div',{style:{background:'#fef2f2',borderRadius:'10px',padding:'10px',textAlign:'center'}},h('div',{style:{fontSize:'20px',fontWeight:'900',color:'#dc2626'}},PF.filter(p=>{
-            if(p.status==='Onaylandı'||p.status==='Reddedildi') return false;
             if(!p.validUntil) return false;
             const dl=_toDate(p.validUntil);
             if(dl>=today2) return false;
@@ -5806,11 +5809,11 @@ function renderDashboardSales() {
                 h('div',{style:{width:'34px',height:'34px',borderRadius:'50%',background:'linear-gradient(135deg,#6366f1,#8b5cf6)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:'700',color:'#fff',flexShrink:'0'}},initials),
                 h('div',{},
                   h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#1e2d4a'}},name),
-                  h('div',{style:{fontSize:'11px',color:'#4a6080'}},d.total+' teklif · Hit Rate: ',h('span',{style:{color:hrColor,fontWeight:'700'}},hitRate+'%'))
+                  h('div',{style:{fontSize:'11px',color:'#4a6080'}},d.total+' açık teklif')
                 )
               ),
               h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
-                h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#16a34a'}},eur(d.wonVal)),h('div',{style:{fontSize:'10px',color:'#4a6080'}},'Onaylanan')),
+                h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#1e2d4a'}},eur(d.sentVal+d.pendingVal)),h('div',{style:{fontSize:'10px',color:'#4a6080'}},'Açık Tutar')),
                 sentList.length>0
                   ?h('div',{style:{textAlign:'center',cursor:'pointer',background:'#e0f2fe',borderRadius:'7px',padding:'2px 8px'},title:'Tıkla: Gönderilen teklifleri gör',onClick:()=>setState({modal:{type:'proplist',title:name+' — Gönderilen Teklifler',items:sentList}})},h('div',{style:{fontSize:'14px',fontWeight:'800',color:'#0284c7'}},eur(d.sentVal)),h('div',{style:{fontSize:'10px',color:'#0284c7'}},'Gönderildi 🔍'))
                   :h('span'),
@@ -5822,28 +5825,23 @@ function renderDashboardSales() {
               )
             ),
             h('div',{style:{height:'12px',background:'#e2e8f0',borderRadius:'6px',overflow:'hidden',display:'flex'}},
-              wonPct ?h('div',{style:{width:wonPct+'%',background:'linear-gradient(90deg,#16a34a,#22c55e)',transition:'width .5s'}}):h('span'),
               sentPct?h('div',{style:{width:sentPct+'%',background:'linear-gradient(90deg,#0284c7,#38bdf8)',transition:'width .5s'}}):h('span'),
-              pendPct?h('div',{style:{width:pendPct+'%',background:'linear-gradient(90deg,#f59e0b,#fbbf24)',transition:'width .5s'}}):h('span'),
-              lostPct?h('div',{style:{width:lostPct+'%',background:'linear-gradient(90deg,#ef4444,#f87171)',transition:'width .5s'}}):h('span')
+              pendPct?h('div',{style:{width:pendPct+'%',background:'linear-gradient(90deg,#f59e0b,#fbbf24)',transition:'width .5s'}}):h('span')
             ),
             h('div',{style:{display:'flex',gap:'12px',marginTop:'6px',fontSize:'11px',flexWrap:'wrap'}},
-              h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'9px',height:'9px',borderRadius:'2px',background:'#16a34a'}}),h('span',{style:{color:'#4a6080'}},'Onaylı: '+d.won)),
-              d.sent?h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'9px',height:'9px',borderRadius:'2px',background:'#0284c7'}}),h('span',{style:{color:'#4a6080'}},'Gönderildi: '+d.sent)):h('span'),
-              h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'9px',height:'9px',borderRadius:'2px',background:'#f59e0b'}}),h('span',{style:{color:'#4a6080'}},'Bekleyen: '+d.pending)),
-              h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'9px',height:'9px',borderRadius:'2px',background:'#ef4444'}}),h('span',{style:{color:'#4a6080'}},'Reddedilen: '+d.lost))
+              d.sent?h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'9px',height:'9px',borderRadius:'2px',background:'#0284c7'}}),h('span',{style:{color:'#4a6080'}},'Cevap bekleyen: '+d.sent)):h('span'),
+              h('div',{style:{display:'flex',alignItems:'center',gap:'4px'}},h('div',{style:{width:'9px',height:'9px',borderRadius:'2px',background:'#f59e0b'}}),h('span',{style:{color:'#4a6080'}},'Hazırlanmayı bekleyen: '+d.pending))
             )
           ));
         });
 
         // Alt toplam
         propDiv.appendChild(h('div',{style:{background:'linear-gradient(135deg,#1e3a5f,#2563eb)',borderRadius:'12px',padding:'14px 18px',marginTop:'8px',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:'10px'}},
-          h('div',{style:{color:'rgba(255,255,255,.7)',fontSize:'12px'}},'Toplam Teklif Değeri'),
+          h('div',{style:{color:'rgba(255,255,255,.7)',fontSize:'12px'}},'Açık Teklif Değeri'),
           h('div',{style:{display:'flex',gap:'16px',flexWrap:'wrap'}},
-            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#4ade80'}},eur(totalWonVal)),h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,.6)'}},'Onaylanan')),
-            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#38bdf8'}},eur(totalSentVal)),h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,.6)'}},'Gönderildi')),
-            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#fbbf24'}},eur(totalPendVal)),h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,.6)'}},'Bekleyen')),
-            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#fff'}},eur(totalWonVal+totalSentVal+totalPendVal)),h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,.6)'}},'Toplam'))
+            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#38bdf8'}},eur(totalSentVal)),h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,.6)'}},'Cevap Bekleyen')),
+            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#fbbf24'}},eur(totalPendVal)),h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,.6)'}},'Hazırlanmayı Bekleyen')),
+            h('div',{style:{textAlign:'center'}},h('div',{style:{fontSize:'16px',fontWeight:'900',color:'#fff'}},eur(totalSentVal+totalPendVal)),h('div',{style:{fontSize:'10px',color:'rgba(255,255,255,.6)'}},'Toplam'))
           )
         ));
         return propDiv;
@@ -5951,7 +5949,7 @@ function renderDashboardSales() {
     ),
 
     cu?.isAdmin ? h('div',{style:{marginTop:'16px'}},
-      card('🏹 Satış Temsilcisi Bazlı Hit Rate', (()=>{
+      card('🏆 Satış Temsilcisi Bazlı Win Rate', (()=>{
         const div = h('div',{});
         state.users.filter(u=>u.active!==false&&u.hasTarget!==false).forEach(u=>{
           const repO = O.filter(o=>o.assignedTo===u.displayName);
