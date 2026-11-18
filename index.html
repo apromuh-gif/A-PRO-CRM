@@ -3414,7 +3414,7 @@ function buildMaintModal(item) {
     btn('📅 Randevu Oluştur',()=>maintNewAppt(item),'#f5f3ff','#6d28d9','8px 12px',{fontSize:'12px',flex:'1 1 150px',border:'1px solid #c4b5fd'}),
     btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','8px 12px',{fontSize:'12px',flex:'1 1 150px',border:'1px solid #fde68a'}),
     btn('🕘 Geçmiş'+(item&&maintHistory(item).length?(' ('+maintHistory(item).length+')'):''),()=>setState({modal:{type:'bakim',maintId:item.id}}),'#eff6ff','#1d4ed8','8px 12px',{fontSize:'12px',flex:'1 1 110px',border:'1px solid #bfdbfe'}),
-    btn('📋 Checklist & Servis Formu',()=>setState({modal:{type:'bakimformlar',maintId:item.id}}),'#f0fdf4','#15803d','8px 12px',{fontSize:'12px',flex:'1 1 170px',border:'1px solid #bbf7d0'})
+    btn('📋 Bakım Raporları',()=>setState({modal:{type:'bakimformlar',maintId:item.id}}),'#f0fdf4','#15803d','8px 12px',{fontSize:'12px',flex:'1 1 150px',border:'1px solid #bbf7d0'})
   );
   const content = h('div',{},
     field('İşin Adı *',fJob),
@@ -3706,7 +3706,7 @@ async function maintSyncTask(m, opts){
       const _who = m.serviceContact || leastBusyInDept('teknik');
       if(!_who) return;
       const t = normTask({
-        id: base+'_'+dueISO, title, desc:'Planlı periyodik bakımı gerçekleştir. Görev, bakım kaydında "Servis Hizmetini Tamamla" (Checklist + imzalı Servis Formu) ile kapanır.'+(m.serviceContact?'':' (Servis ilgilisi bakım kaydında girilmemişti; Teknik Servis\'e atandı.)'),
+        id: base+'_'+dueISO, title, desc:'Planlı periyodik bakımı gerçekleştir. Görev, bakım kaydında "Servis Hizmetini Tamamla" (imzalı Periyodik Bakım Raporu) ile kapanır.'+(m.serviceContact?'':' (Servis ilgilisi bakım kaydında girilmemişti; Teknik Servis\'e atandı.)'),
         assignedTo:_who, department:(dept||'teknik'),
         assignedBy:'sistem', context:'bakim', linkType:'maintenance', linkId:m.id, linkLabel:m.jobName||'',
         dueDate:dueISO, dueTime:'', startDate:'', status:'yapilacak', completedAt:null, priority:'orta',
@@ -3775,8 +3775,7 @@ async function maintVisitDone(m){
     if(!isAdmin){ showToast('⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(recordDue)+'). Erken tamamlama için admin onayı gerekir.','#d97706'); return; }
     if(!confirm('Bu ziyaretin vadesi '+_toTR(recordDue)+'. Erken tamamlanacak — admin onayıyla devam edilsin mi?')) return;
   }
-  if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
-  if(!sfHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
+  if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce Periyodik Bakım Raporu doldurulup teknik servis ilgilisi + müşteri imzasıyla tamamlanmalı (🚀 İcrayı başlat ile raporu açın).','#d97706'); return; }
   const dueList = mtSystemsDueOn(m.mtSystems, recordDue);
   const names = dueList.map(s=>SYS_META[s.sysKey]?SYS_META[s.sysKey].l:s.sysKey).join(', ');
   const note = prompt('Ziyaret tamamlandı ('+_toTR(recordDue)+')\nServis edilen sistemler: '+names+'\n\nYapılan işlem / not (opsiyonel):', '');
@@ -7328,7 +7327,7 @@ function sfListBlock(opts){
   return h('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #e2e8f0'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
       h('div',{style:{fontWeight:'800',fontSize:'14px',flex:'1',color:'#0f1f35'}}, '📝 Servis-Devreye Alma Formu'),
-      btn('+ Yeni Servis Formu', function(){ openServiceForm(opts.newOpts); }, '#dc2626', '#fff', '6px 13px', {fontSize:'12px'})),
+      opts.hideNew ? h('span') : btn('+ Yeni Servis Formu', function(){ openServiceForm(opts.newOpts); }, '#dc2626', '#fff', '6px 13px', {fontSize:'12px'})),
     rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#94a3b8'}}, 'Henüz servis formu yok.'));
 }
 function buildServiceFormModal(sf){
@@ -8065,6 +8064,12 @@ function buildChecklistModal(c){
       h('input',{type:'date', value:c.createdAt||today(), oninput:function(e){ c.createdAt=e.target.value; }, style:_clInputStyle()})));
   var systems = (c.systems||[]).map(function(sys,idx){ return clSystemCard(c, sys, idx); });
   var addBtn = h('div',{style:{marginBottom:'14px'}}, btn('+ Sistem Ekle', function(){ clAddSystem(c); }, '#2563eb'));
+  var workBox = (c.formType==='bakim') ? h('div',{style:{marginTop:'12px'}},
+      h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'6px',color:'#0f1f35'}},'Yapılan işlemlerin açıklaması'),
+      h('textarea',{placeholder:'Ziyarette yapılan işlemler, değiştirilen parça / öneriler…', oninput:function(e){ c.workDesc=e.target.value; }, style:Object.assign(_clInputStyle(),{minHeight:'64px',resize:'vertical'})}, c.workDesc||''),
+      h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginTop:'8px'}},
+        h('div',{style:{flex:'1 1 220px'}}, h('div',{style:{fontSize:'12px',color:'#64748b',marginBottom:'3px'}},'Müşteri ilgilisi telefon'),
+          h('input',{value:c.custPhone||'', placeholder:'Telefon', oninput:function(e){ c.custPhone=e.target.value; }, style:_clInputStyle()})))) : h('span');
   var signs = h('div',{style:{marginTop:'14px',paddingTop:'14px',borderTop:'2px solid #e2e8f0'}},
     h('div',{style:{fontWeight:'800',fontSize:'14px',marginBottom:'8px',color:'#0f1f35'}}, 'İmzalar (dijital + ıslak)'),
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'18px'}},
@@ -8079,10 +8084,10 @@ function buildChecklistModal(c){
     btn('Kapat', function(){ setState({modal:null}); }, '#64748b'));
   var tools = (c.formType==='bakim') ? h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'12px'}},
       btn('📖 NFPA 25 (açık erişim)', function(){ window.open(NFPA25_URL,'_blank','noopener'); }, '#7c3aed','#fff','7px 12px',{fontSize:'12px'}),
-      (c.linkType==='maintenance') ? btn('📝 Servis Formu →', async function(){ await clSaveDraft(c); setState({modal:{type:'bakimformlar', maintId:c.linkId}}); }, '#0f766e','#fff','7px 12px',{fontSize:'12px'}) : h('span'),
-      h('span',{style:{fontSize:'11px',color:'#64748b',alignSelf:'center'}},'Teknik servis ilgilisi maddeleri işaretler (Uygun / Uygun Değil / N/A), imzalar; rapor PDF/yazdır ile müşteriye teslim edilir.'))
+      h('span'),
+      h('span',{style:{fontSize:'11px',color:'#64748b',alignSelf:'center'}},'Teknik servis ilgilisi maddeleri işaretler (Uygun / Uygun Değil / N/A), yapılan işlemi yazar ve imzalar; müşteri imzalar. Rapor PDF/yazdır ile müşteriye teslim edilir (ayrı Servis Formu gerekmez).'))
     : h('span');
-  var body = h('div',{}, tools, header, ...systems, addBtn, signs, footer);
+  var body = h('div',{}, tools, header, ...systems, addBtn, workBox, signs, footer);
   return modal(FORMTYPE_META[c.formType]||'Servis Checklist', body, function(){ setState({modal:null}); }, '900px');
 }
 // ── PDF ──
@@ -8134,8 +8139,8 @@ function clListBlock(opts){
   });
   return h('div',{style:{marginTop:'12px',paddingTop:'12px',borderTop:'1px solid #e2e8f0'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px',marginBottom:'8px'}},
-      h('div',{style:{fontWeight:'800',fontSize:'14px',flex:'1',color:'#0f1f35'}}, '🧪 Servis Checklist (NFPA)'),
-      btn('+ Yeni Checklist', function(){ openChecklist(opts.newOpts); }, '#16a34a', '#fff', '6px 13px', {fontSize:'12px'})),
+      h('div',{style:{fontWeight:'800',fontSize:'14px',flex:'1',color:'#0f1f35'}}, (opts.linkType==='maintenance' ? '📋 Bakım Raporları (NFPA)' : '🧪 Servis Checklist (NFPA)')),
+      opts.hideNew ? h('span') : btn('+ Yeni Checklist', function(){ openChecklist(opts.newOpts); }, '#16a34a', '#fff', '6px 13px', {fontSize:'12px'})),
     rows.length ? h('div',{}, ...rows) : h('div',{style:{fontSize:'12px',color:'#94a3b8'}}, 'Henüz checklist yok.'));
 }
 
@@ -10283,7 +10288,7 @@ async function maintStartIcra(m){
   const me=(state.currentUser && state.currentUser.displayName) || '';
   if(!maintIcraActive(m)) await persistMaint({...m, mtIcra:{due:due, at:today(), by:me}, ...stamp()});
   maintOpenVisitReport(m);
-  showToast('🚀 İcra başlatıldı — NFPA maddelerini işaretleyin, imzalayın; sonra Servis Formunu doldurup ziyareti tamamlayın.');
+  showToast('🚀 İcra başlatıldı — NFPA maddelerini işaretleyin, raporu imzalayın; sonra ziyareti tamamlayın.');
 }
 function maintIcraChip(m){
   if(!maintIcraActive(m)) return h('span');
@@ -10632,8 +10637,7 @@ async function maintDone(m){
     if(!isAdmin){ showToast('⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(maintNextDue(m))+'). Erken tamamlama için admin onayı gerekir.','#d97706'); return; }
     if(!confirm('Bu ziyaretin vadesi '+_toTR(maintNextDue(m))+'. Erken tamamlanacak — admin onayıyla devam edilsin mi?')) return;
   }
-  if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce NFPA Checklist doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
-  if(!sfHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce Servis Formu doldurulup personel+müşteri imzasıyla tamamlanmalı.','#d97706'); return; }
+  if(!clHasFreshCompleted('maintenance', m.id, m.mtLastDone||'')){ showToast('⚠️ Bu ziyaret için önce Periyodik Bakım Raporu doldurulup teknik servis ilgilisi + müşteri imzasıyla tamamlanmalı (🚀 İcrayı başlat ile raporu açın).','#d97706'); return; }
   const note = prompt('Bakım tamamlandı — yapılan işlem / not (opsiyonel):', '');
   if(note === null) return;
   const me = (state.currentUser && state.currentUser.displayName) || '';
@@ -10676,18 +10680,21 @@ function buildBakimModal(maintId){
 // Checklist + Servis Formu — Geçmiş'ten AYRI pencere (yeni belge doldurma, geçmiş kayıt görüntüleme değil).
 function buildMaintFormsModal(maintId){
   const m=(state.maintenances||[]).find(x=>x.id===maintId);
-  if(!m) return modal('Checklist & Servis Formu', h('div',{style:{padding:'20px',color:'#64748b'}},'Kayıt bulunamadı.'), ()=>setState({modal:null}), '520px');
+  if(!m) return modal('Bakım Raporları', h('div',{style:{padding:'20px',color:'#64748b'}},'Kayıt bulunamadı.'), ()=>setState({modal:null}), '520px');
   const cust=(state.customers||[]).find(c=>c.id===m.customerId)||null;
+  const hasOldSf=(state.serviceForms||[]).some(x=>x.linkType==='maintenance' && x.linkId===m.id);
   const content=h('div',{},
     h('div',{style:{marginBottom:'12px'}},
       h('div',{style:{fontWeight:'800',fontSize:'15px',color:'#0f1f35'}},m.jobName||'(başlıksız)'),
       cust?h('div',{style:{fontSize:'12px',color:'#475569'}},'👤 '+(cust.firmName||'')):h('span')
     ),
+    btn('🚀 Bu ziyaretin raporunu aç / doldur',()=>maintOpenVisitReport(m),'linear-gradient(135deg,#7c3aed,#6d28d9)','#fff','10px 16px',{width:'100%',fontSize:'13px',marginBottom:'6px',boxSizing:'border-box'}),
+    h('div',{style:{fontSize:'11px',color:'#64748b'}},'Periyodik bakımda tek imzalı belge Periyodik Bakım Raporu\'dur (NFPA maddeleri + yapılan işlem + imzalar); ayrı Checklist / Servis Formu gerekmez.'),
     h('div',{style:{marginTop:'12px'}}, btn('Kapat',()=>setState({modal:null}),'#21262d','#8b949e','10px 18px',{fontSize:'14px'}))
   );
-  content.appendChild(clListBlock({ linkType:'maintenance', linkId:m.id, newOpts:{ formType:'bakim', customerId:m.customerId||'', siteName:(cust&&cust.firmName)||'', linkType:'maintenance', linkId:m.id } }));
-  content.appendChild(sfListBlock({ linkType:'maintenance', linkId:m.id, newOpts:{ docType:'bakim', customerId:m.customerId||'', siteName:(cust&&cust.firmName)||'', staffName:m.serviceContact||'', linkType:'maintenance', linkId:m.id } }));
-  return modal('📋 Checklist & Servis Formu', content, ()=>setState({modal:null}), '600px');
+  content.appendChild(clListBlock({ linkType:'maintenance', linkId:m.id, hideNew:true, newOpts:{} }));
+  if(hasOldSf) content.appendChild(sfListBlock({ linkType:'maintenance', linkId:m.id, hideNew:true, newOpts:{} }));   // eski servis formları arşivde görünür
+  return modal('📋 Bakım Raporları', content, ()=>setState({modal:null}), '600px');
 }
 // ================= /FAZ 3b =================
 // Otomatik görev üretimi (spec §11.4) — deterministik id ile idempotent, mevcut CRM'e dokunmaz.
@@ -10922,11 +10929,11 @@ function _taskParentClosed(t){
 // Sistem satışı görevleri imzalı formlara bağlıdır: Check list görevi → imzalı Checklist, Devreye alma görevi → imzalı Devreye Alma Servis Formu (personel + müşteri imzası).
 function _taskFormGate(t){
   const k=(t&&t.dedupeKey)||'';
-  // Periyodik bakım görevi yalnız bakım kaydından ("Servis Hizmetini Tamamla": Checklist + imzalı Servis Formu) kapanır; elle kapatma bakımı tamamlamaz.
+  // Periyodik bakım görevi yalnız bakım kaydından ("Servis Hizmetini Tamamla": imzalı Periyodik Bakım Raporu) kapanır; elle kapatma bakımı tamamlamaz.
   if(t && t.linkType==='maintenance' && /^auto_maint_/.test(String(t.id||''))){
     const _m=(state.maintenances||[]).find(x=>x.id===t.linkId);
     if(_m && _m.mtNextDue && String(_m.mtNextDue).slice(0,10)===String(t.dueDate||'').slice(0,10))
-      return 'Bakım görevi elle kapatılamaz: Periyodik Bakım → ilgili kayıt → "Servis Hizmetini Tamamla" (Checklist + imzalı Servis Formu gerekir). Bakım tamamlanınca bu görev otomatik kapanır.';
+      return 'Bakım görevi elle kapatılamaz: Periyodik Bakım → ilgili kayıt → "Servis Hizmetini Tamamla" (imzalı Periyodik Bakım Raporu gerekir). Bakım tamamlanınca bu görev otomatik kapanır.';
   }
   if(!t || t.linkType!=='opportunity' || !t.linkId) return '';
   { const _m=/^is_programi_(.+)_(\d+)$/.exec(k);
@@ -12095,7 +12102,7 @@ function rpBuildPages(c){
     cur.push(x); used+=w;
   });
   if(cur.length || !pages.length) pages.push(cur);
-  const tailU=17+Math.min(findings.length,10)*0.75+(notes.length?2.5:0);
+  const tailU=17+Math.min(findings.length,10)*0.75+(notes.length?2.5:0)+((c.workDesc&&String(c.workDesc).trim())?(2+Math.ceil(String(c.workDesc).length/110)):0);
   if(used+tailU>cap+0.001) pages.push([]);
   const total=pages.length;
   const logoHdr='<div class="ipg-hd"><img alt="A-PRO" src="data:image/png;base64,'+APRO_LOGO_B64+'"><div class="ipg-addr"><b>A-PRO MÜHENDİSLİK LTD. ŞTİ.</b>Batı Sitesi Mah. 2307/2. Sk. No:13 Yenimahalle — Ankara / Türkiye<br>Tel: +90 (312) 481 25 00 | info@a-pro.com.tr | www.a-pro.com.tr</div></div>';
@@ -12118,10 +12125,12 @@ function rpBuildPages(c){
     return '<div class="ipg-sb"><h4>'+title+'</h4><div class="bd"><p><b>Ad Soyad:</b> '+_ipEsc(name||'')+'</p><p><b>Ünvan:</b> '+_ipEsc(unvan)+'</p><p><b>Tarih:</b> '+ipFmt((sign&&sign.at)||c.completedAt||c.createdAt||today())+'</p>'
       +((sign&&sign.dataURL)?'<img alt="" src="'+sign.dataURL+'" style="position:absolute;right:12px;top:4px;height:56px;max-width:55%">':'')+'<div class="sg">İmza</div></div></div>';
   };
+  const workBoxHtml=(c.workDesc && String(c.workDesc).trim()) ? '<div class="rpg-box"><h5>YAPILAN İŞLEMLER</h5><div style="padding:3px 8px;font-size:9px;line-height:1.4;white-space:pre-wrap">'+_ipEsc(String(c.workDesc).trim())+'</div></div>' : '';
   const tail='<div class="rpg-sum"><b>ÖZET</b> · Toplam madde: '+(stats.uygun+stats.uygundegil+stats.na+stats.bos)+' · <span style="color:#15803d">Uygun: '+stats.uygun+'</span> · <span style="color:#b91c1c">Uygun değil: '+stats.uygundegil+'</span> · N/A: '+stats.na+(stats.bos?(' · <span style="color:#b45309">İşaretlenmemiş: '+stats.bos+'</span>'):'')+'</div>'
     +'<div class="rpg-box"><h5>TESPİT EDİLEN EKSİKLİKLER / UYGUN OLMAYAN MADDELER</h5>'+(findings.length?('<ol>'+findings.slice(0,10).map(function(f){ return '<li><b>'+_ipEsc(f.sys)+':</b> '+_ipEsc(f.label)+(f.note?(' — <i>'+_ipEsc(f.note)+'</i>'):'')+'</li>'; }).join('')+(findings.length>10?('<li>… ve '+(findings.length-10)+' madde daha (tabloya bakınız)</li>'):'')+'</ol>'):'<div style="padding:3px 8px;font-size:9px;color:#15803d">Uygun olmayan madde tespit edilmemiştir.</div>')+'</div>'
+    +workBoxHtml
     +(notes.length?('<div class="rpg-box"><h5>EK NOTLAR</h5><div style="padding:3px 8px;font-size:9px;line-height:1.4">'+notes.map(_ipEsc).join('<br>')+'</div></div>'):'')
-    +'<div class="ipg-sign" style="margin-top:14px">'+sigBox('Teknik servis ilgilisi (A-PRO)',tech,'Teknik Servis',c.staffSign)+sigBox('Müşteri ilgilisi',c.custSign&&c.custSign.name,'İşveren Yetkilisi',c.custSign)+'</div>'
+    +'<div class="ipg-sign" style="margin-top:14px">'+sigBox('Teknik servis ilgilisi (A-PRO)',tech,'Teknik Servis',c.staffSign)+sigBox('Müşteri ilgilisi',c.custSign&&c.custSign.name,'İşveren Yetkilisi'+(c.custPhone?(' · Tel: '+c.custPhone):''),c.custSign)+'</div>'
     +'<div class="rpg-std">Bu rapor, '+_ipEsc(stds.join(', ')||'NFPA 25')+' standartları kapsamındaki periyodik muayene, test ve bakım maddelerine göre hazırlanmıştır. Standart metni: NFPA 25 (2026) — link.nfpa.org/free-access/publications/25/2026</div>';
   return pages.map(function(pg,pi){
     const isLast=pi===total-1;
