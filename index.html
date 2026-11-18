@@ -113,11 +113,13 @@ function _isSalesOpp(o){ return !(o && (o.salesType==='servis' || o.salesType===
 function _svcExtraWon(repName){ return (state.maintenances||[]).filter(function(m){ return m.opportunityId && (!repName || m.assignedTo===repName); }).reduce(function(a,m){ return a+(Number(m.amount)||0); },0); }
 const JOB_ST = ["SON KULLANICI","ALMIŞ MÜTEAHHİT","ALMIŞ TAŞERON","MÜTEAHHİT İHALESİ","TAŞERON İHALESİ","KEŞİF","BAYİ","OEM"];
 const PROP_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Reddedildi"];
-const SERV_ST = ["Hazırlanıyor","Gönderildi","Revize","Onaylandı","Randevu"];
+const SERV_ST = ["Hazırlanıyor","Gönderildi","Revize","Kazanıldı","Randevu","Kaçtı"];
+// Servis kazanıldı mı? (eski kayıtlarda "Onaylandı" saklıdır → Kazanıldı sayılır)
+function _svcIsWon(s){ return !!s && (s.status==='Kazanıldı' || s.status==='Onaylandı'); }
 const MAINT_ST = ["Hizmet Verildi","Hizmet Henüz Verilmedi"];
 const HOT = ["SICAK-1","SICAK-2","KAZANILDI","KAÇTI"];
 const SC = {"KAZANILDI":"#4f46e5","TEKLİF":"#0284c7","SICAK-1":"#ea580c","SICAK-2":"#dc2626","KAÇTI":"#64748b","NO GO":"#475569","FIRSAT ÖLDÜ":"#374151","ERTELENDİ":"#b45309"};
-const PS = {"Hazırlanıyor":"#d97706","Gönderildi":"#0284c7","Revize":"#7c3aed","Onaylandı":"#16a34a","Reddedildi":"#dc2626","Randevu":"#0891b2"};
+const PS = {"Hazırlanıyor":"#d97706","Gönderildi":"#0284c7","Revize":"#7c3aed","Onaylandı":"#16a34a","Kazanıldı":"#16a34a","Kaçtı":"#64748b","Reddedildi":"#dc2626","Randevu":"#0891b2"};
 const MS = {"Hizmet Verildi":"#16a34a","Hizmet Henüz Verilmedi":"#d97706"};
 
 // Kullanıcılar (Firebase Auth + Firestore'da saklanır)
@@ -758,7 +760,7 @@ function _teklifBtnsFor(o, pad, allowCreate){
     btn("📋 Teklif Oluştur",_teklifClick,'#ecfdf5','#15803d',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #86efac',borderRadius:'7px'}),
     btn("⧉ Teklifi Kopyala",function(){teklifKopyala(o);},'#f5f3ff','#6d28d9',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #c4b5fd',borderRadius:'7px'})
   ];
-  var crmSent=["Gönderildi","Revize","Randevu","Onaylandı","Reddedildi"];
+  var crmSent=["Gönderildi","Revize","Randevu","Onaylandı","Kazanıldı","Kaçtı","Reddedildi"];
   var qStatus=o.quotationStatus||(lp&&lp.quotationStatus);
   var isDraft=qStatus?qStatus==='DRAFT':(lp?!crmSent.includes(lp.status):true);
   var existing=isDraft?btn("✏️ Taslağı Aç",function(){openQuotationWithSSO(qId);},'#fffbeb','#b45309',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #fcd34d',borderRadius:'7px'}):btn("🔗 Teklif Programı",function(){openQuotationWithSSO(qId);},'#eff6ff','#1d4ed8',pad,{fontSize:'12px',whiteSpace:'nowrap',border:'1px solid #bfdbfe',borderRadius:'7px',whiteSpace:'nowrap'});
@@ -1111,10 +1113,22 @@ function setState(patch) {
   render();
 }
 
+// Açık bir form/pencere (modal) varken uyarı mesajı YENİDEN ÇİZİM yapmadan gösterilir: yeniden çizim formu kayıtlı (ilk) haline
+// döndürüp girilen bilgileri siliyordu ("... girilmelidir" uyarısından sonra tüm alanlar boşalıyordu). Mesaj 3 sn sonra kendiliğinden kalkar.
 function showToast(msg, color="#10b981") {
   if(toastTimer) clearTimeout(toastTimer);
+  if(state.modal){
+    let el=document.getElementById('apro-toast');
+    if(!el){ el=document.createElement('div'); el.id='apro-toast'; document.body.appendChild(el); }
+    el.style.cssText='position:fixed;bottom:20px;right:20px;z-index:1000001;background:#fff;border:2px solid '+color+';border-radius:11px;padding:11px 16px;color:'+color+';font-size:14px;font-weight:600;animation:si .25s ease;box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:min(420px,calc(100vw - 40px))';
+    el.textContent=String(msg);
+    state.toast=null;
+    toastTimer = setTimeout(()=>{ const e=document.getElementById('apro-toast'); if(e) e.remove(); }, 3000);
+    return;
+  }
+  const _old=document.getElementById('apro-toast'); if(_old) _old.remove();
   setState({toast:{msg,color}});
-  toastTimer = setTimeout(()=>setState({toast:null}), 3000);
+  toastTimer = setTimeout(()=>{ if(state.modal){ state.toast=null; } else setState({toast:null}); }, 3000);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1238,7 +1252,7 @@ function projIsClosed(o){ return !!(o && o.execActive===true && o.execClosedAt);
 // ===== FAZ 3a: Arıza servis icra — salt-okuma güvenli erişimciler =====
 function servExecStage(s){ return (s && typeof SERVICE_STAGES!=='undefined' && SERVICE_STAGES.includes(s.execStage)) ? s.execStage : 'talep'; }
 function servIsActive(s){ return !!(s && s.execActive===true && !s.execClosedAt); }
-function servIsAwaiting(s){ return !!(s && s.execActive!==true && (s.status==='Onaylandı' || s.status==='Randevu')); }
+function servIsAwaiting(s){ return !!(s && s.execActive!==true && (_svcIsWon(s) || s.status==='Randevu')); }
 function servIsClosed(s){ return !!(s && s.execActive===true && s.execClosedAt); }
 // Arızanın sorumlusu: servis ilgilisi (fiilen işi yapan), yoksa hazırlayan.
 function servOwner(s){ return (s && (s.serviceContact || s.preparedBy)) || ''; }
@@ -2153,7 +2167,7 @@ async function createServiceFromOpp(o){
   if((state.services||[]).some(function(x){ return x.id===id; })) return;
   const owner=leastBusyInDept('teknik');
   const rec={ id:id, jobName:o.title||'Servis', customerId:o.customerId||'', preparedBy:o.assignedTo||'', serviceContact:owner, assignedTo:o.assignedTo||'',
-    amount:Number(o.value)||0, status:'Onaylandı', createdAt:today(), validUntil:'', appointmentDate:'', notes:'Kazanılan fırsattan otomatik açıldı.',
+    amount:Number(o.value)||0, status:'Kazanıldı', createdAt:today(), validUntil:'', appointmentDate:'', notes:'Kazanılan fırsattan otomatik açıldı.',
     tenderRef:o.tenderRef||'', opportunityId:o.id, source:'opportunity', fiscalYear:activeFiscalYear(), ...stamp() };
   const created=await _createIfAbsent('services', id, rec);
   if(!(state.services||[]).some(function(x){ return x.id===id; })) setState({ services:[...(state.services||[]), rec] });
@@ -2618,15 +2632,15 @@ async function saveServ(form, isEdit) {
   const list = isEdit ? state.services.map(s=>s.id===id?data:s) : [...state.services, data];
   setState({services:list, modal:null, saving:false});
   showToast('✅ Teknik Servis kaydedildi!');
-  // A) Onaylandı/Randevu olunca otomatik icraya al (henüz alınmadıysa) — ayrı "İcraya al" adımı gerekmez.
-  if((data.status==='Onaylandı' || data.status==='Randevu') && data.execActive!==true){
+  // A) Kazanıldı/Randevu olunca otomatik icrayı başlat (henüz başlamadıysa) — ayrı bir adım gerekmez.
+  if((_svcIsWon(data) || data.status==='Randevu') && data.execActive!==true){
     await servStart(data);
     render();
   }
   return data;
 }
 async function saveMaint(form, isEdit) {
-  setState({saving:true});
+  state.saving=true;   // yeniden çizim YOK: kayıt başarısız olursa form girilen bilgilerle açık kalır
   let data;
   try{
     const id = isEdit ? form.id : genId();
@@ -2635,7 +2649,7 @@ async function saveMaint(form, isEdit) {
     await persistMaint(data);
   }catch(e){
     console.error('[saveMaint]', e);
-    setState({saving:false});
+    state.saving=false;
     showToast('⚠️ Periyodik bakım KAYDEDİLEMEDİ: '+((e&&e.message)||e)+' — form açık bırakıldı, tekrar deneyin.','#dc2626');
     return;
   }
@@ -3272,6 +3286,7 @@ function buildServModal(item) {
   const fPrep=sel(_staffOpts(f.preparedBy),f.preparedBy,v=>f.preparedBy=v);
   const fContact=sel(_staffOpts(f.serviceContact),f.serviceContact,v=>f.serviceContact=v);
   const fAmt=inp('0',f.amount,v=>f.amount=v,'number');
+  if(f.status==='Onaylandı') f.status='Kazanıldı';
   const fSt=sel(SERV_ST,f.status,v=>f.status=v);
   const fCreated=inp('',f.createdAt,v=>f.createdAt=v,'date');
   const fValid=inp('',f.validUntil,v=>f.validUntil=v,'date');
@@ -3355,6 +3370,9 @@ function buildMaintModal(item) {
   const mtBtnColor = mtBlocked?'#cbd5e1':(mtPremature?'linear-gradient(135deg,#d97706,#b45309)':'linear-gradient(135deg,#16a34a,#15803d)');
   const mtBtnFg = mtBlocked?'#475569':'#fff';
   const mtCaptionEl = mtCaption ? h('div',{style:{fontSize:'11px',color:'#92400e',fontWeight:'600',marginBottom:'8px'}}, mtCaption) : h('span');
+  const mtIcraEl = !item ? h('span') : (maintIcraActive(item)
+    ? h('div',{style:{background:'#ede9fe',border:'1px solid #c4b5fd',color:'#5b21b6',borderRadius:'10px',padding:'9px 12px',marginBottom:'8px',fontSize:'13px',fontWeight:'700'}},'🚀 İcrada — '+(item.mtIcra.by||'')+' · '+_toTR(item.mtIcra.at||'')+'. Checklist + imzalı Servis Formu bitince ziyareti tamamlayın.')
+    : btn('🚀 İcrayı başlat',()=>maintStartIcra(item),'linear-gradient(135deg,#7c3aed,#6d28d9)','#fff','10px 14px',{width:'100%',fontSize:'13px',marginBottom:'8px',boxSizing:'border-box'}));
   const mtUtilRow = h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginBottom:'10px'}},
     btn('📅 Randevu Oluştur',()=>maintNewAppt(item),'#f5f3ff','#6d28d9','8px 12px',{fontSize:'12px',flex:'1 1 150px',border:'1px solid #c4b5fd'}),
     btn('+ Geçmiş Kayıt Ekle',()=>maintAddManualHistory(item, f),'#fef9c3','#92400e','8px 12px',{fontSize:'12px',flex:'1 1 150px',border:'1px solid #fde68a'}),
@@ -3372,10 +3390,12 @@ function buildMaintModal(item) {
     mtSection,
     field('Notlar',fNotes),
     (item && maintHasSystems(f)) ? h('div',{style:{marginBottom:'4px'}},
+      mtIcraEl,
       btn(mtBtnLabel, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintVisitDone(item), mtBtnColor, mtBtnFg,'10px 14px',{width:'100%',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer',marginBottom:'4px',boxSizing:'border-box'}),
       mtCaptionEl,
       mtUtilRow
     ) : (item && maintIsTracked(f)) ? h('div',{style:{marginBottom:'4px'}},
+      mtIcraEl,
       btn(mtBtnLabel, mtBlocked ? ()=>showToast(mtPrematureMsg,'#d97706') : ()=>maintDone(item), mtBtnColor, mtBtnFg,'10px 14px',{width:'100%',fontSize:'13px',opacity:mtBlocked?'0.75':'1',cursor:mtBlocked?'not-allowed':'pointer',marginBottom:'4px',boxSizing:'border-box'}),
       mtCaptionEl,
       mtUtilRow
@@ -3728,7 +3748,7 @@ async function maintVisitDone(m){
   const advanced = mtCompleteVisit(m.mtSystems, recordDue, m.mtBaseDate, m.mtEndDate);
   const nextDue = mtRecordNextDue(advanced);
   const hist = [...maintHistory(m), {at:recordDue, dueAt:recordDue, completedOn:today(), by:me, note:note||'', systems:names}];
-  const data = {...m, mtSystems:advanced, mtHistory:hist, mtNextDue:nextDue, mtLastDone:recordDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
+  const data = {...m, mtSystems:advanced, mtHistory:hist, mtNextDue:nextDue, mtLastDone:recordDue, mtIcra:null, status:'Hizmet Henüz Verilmedi', ...stamp()};
   const _occLbl = maintOccurrenceLabel(m);   // tamamlanan ziyaretin etiketi (ilerletmeden ÖNCE) — fatura görevi başlığı için
   setState({saving:true});
   await persistMaint(data, {visitDone:true});
@@ -4176,7 +4196,7 @@ function prepareReportData() {
   var staleVal=stalePipe.reduce(function(a,o){return a+(Number(o.value)||0);},0);
   // Servis analizi
   var svcTotal=S.reduce(function(a,s){return a+(Number(s.amount)||0);},0);
-  var svcApproved=S.filter(function(s){return s.status==="Onaylandı";}).reduce(function(a,s){return a+(Number(s.amount)||0);},0);
+  var svcApproved=S.filter(function(s){return _svcIsWon(s);}).reduce(function(a,s){return a+(Number(s.amount)||0);},0);
   return {O,P,S,C,LOST,now,totalWon,totalPipe,totalLost,compTarget,targetPct,propWon,propPending,needFollow,repData,topSectors,stageText,repLines,projSize,custSegment,lostSectors,stalePipe,staleVal,svcTotal,svcApproved,avgDeal,small,mid,large};
 }
 
@@ -4792,7 +4812,7 @@ function buildTargetsModal() {
       const LOST = ["KAÇTI","NO GO","FIRSAT ÖLDÜ"];
       const repO = state.opportunities.filter(o=>o.assignedTo===u.displayName && _isSalesOpp(o));
       const wonVal = repO.filter(o=>o.stage==='KAZANILDI').reduce((a,o)=>a+(Number(o.value)||0),0);
-      const svcVal = state.services.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
+      const svcVal = state.services.filter(s=>s.assignedTo===u.displayName&&_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
       const pct = repTarget > 0 ? Math.min(100, Math.round(wonVal/repTarget*100)) : 0;
       const svcPct = svcTarget > 0 ? Math.min(100, Math.round(svcVal/svcTarget*100)) : 0;
 
@@ -5402,8 +5422,8 @@ function renderDashboardAdmin() {
     h('div',{style:{marginTop:'16px'}},
       card('🔧 Toplam Teknik Servis Cirosu & Yıllık Hedef', (()=>{
         const svcTarget = (state.targets&&state.targets.serviceCompany)||0;
-        const svcWon = S.filter(s=>s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();
-        const svcPipe = S.filter(s=>s.status!=='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0);
+        const svcWon = S.filter(s=>_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();
+        const svcPipe = S.filter(s=>!_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0);
         const svcPct = svcTarget>0?Math.min(100,Math.round(svcWon/svcTarget*100)):0;
         const svcPctPipe = svcTarget>0?Math.min(100-svcPct,Math.round(svcPipe/svcTarget*100)):0;
         const div = h('div',{});
@@ -5450,7 +5470,7 @@ function renderDashboardAdmin() {
           activeReps2.forEach(u=>{
             const t2 = Number(svcReps[u.displayName])||0;
             if(!t2) return;
-            const w2 = S.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
+            const w2 = S.filter(s=>s.assignedTo===u.displayName&&_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
             const p3 = Math.min(100,Math.round(w2/t2*100));
             div.appendChild(h('div',{style:{marginBottom:'10px'}},
               h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'4px'}},
@@ -5468,7 +5488,7 @@ function renderDashboardAdmin() {
       })()),
       card('🔧 Teknik Servis Ciro & Yıllık Hedef', (()=>{
         const svcTarget = (state.targets&&state.targets.serviceCompany)||0;
-        const svcWon = S.filter(s=>s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();
+        const svcWon = S.filter(s=>_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon();
         const svcAll = S.reduce((a,s)=>a+(Number(s.amount)||0),0);
         const svcPct = svcTarget>0?Math.min(100,Math.round(svcWon/svcTarget*100)):0;
         const div = h('div',{});
@@ -5485,7 +5505,7 @@ function renderDashboardAdmin() {
                 h('div',{style:{fontSize:'12px',color:'#4a6080'}},'Hedefe Ulaşma Oranı')
               ),
               h('div',{style:{textAlign:'right'}},
-                h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#1e2d4a'}},eur(svcWon)+' Onaylandı'),
+                h('div',{style:{fontSize:'14px',fontWeight:'700',color:'#1e2d4a'}},eur(svcWon)+' Kazanıldı'),
                 h('div',{style:{fontSize:'12px',color:'#4a6080'}},'Tüm: '+eur(svcAll)+' · Hedef: '+eur(svcTarget))
               )
             ),
@@ -5861,7 +5881,7 @@ function renderDashboardSales() {
             if(!v) continue;
             if(k===u.displayName||k.toLowerCase()===u.displayName.toLowerCase()||k.replace(/\s+/g,'')===u.displayName.replace(/\s+/g,'')) { t=v; break; }
           }
-          const w2 = state.services.filter(s=>s.assignedTo===u.displayName&&s.status==='Onaylandı').reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
+          const w2 = state.services.filter(s=>s.assignedTo===u.displayName&&_svcIsWon(s)).reduce((a,s)=>a+(Number(s.amount)||0),0)+_svcExtraWon(u.displayName);
           const p3 = t>0?Math.min(100,Math.round(w2/t*100)):0;
           svcDiv.appendChild(h('div',{style:{marginBottom:'14px'}},
             h('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:'5px'}},
@@ -6975,10 +6995,10 @@ function renderServices() {
   );
   const infoNote = _icra
     ? h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},
-        h('div',{style:{color:'#0e7490',fontWeight:'600'}},'🧭 Akış: 1) Servis onaylanınca otomatik icraya alınır → 2) Kartı açıp aşamayı ilerlet → 3) Checklist + Servis Formu (imza) → 4) Kapat'),
+        h('div',{style:{color:'#0e7490',fontWeight:'600'}},'🧭 Akış: 1) Servis Kazanıldı olunca icra otomatik başlar (başlamadıysa "🚀 İcrayı başlat") → 2) Kartı açıp aşamayı ilerlet → 3) Checklist + Servis Formu (imza) → 4) Kapat'),
         h('div',{style:{marginTop:'3px'}},'Yeni kayıt ve teklif için: Servis ▾ → Servis Talepleri.'))
     : h('div',{style:{fontSize:'11px',color:T4,marginBottom:'10px'}},
-        h('div',{},'ℹ️ Burada servis kaydı ve teklif hazırlanır. Onaylanan servis otomatik icraya alınır; Checklist/Servis Formu için satırdaki "🚀 İcraya git" ya da Servis ▾ → Servis İcra.'));
+        h('div',{},'ℹ️ Burada servis kaydı ve teklif hazırlanır. Kazanılan servis otomatik icraya alınır ("🚀 İcrayı başlat"); Checklist/Servis Formu için satırdaki "🚀 İcraya git" ya da Servis ▾ → Servis İcra.'));
   const headerRow=h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
     h('h2',{style:{fontSize:isMobSvc?'17px':'20px',fontWeight:'800',color:'#0f1f35'}},_icra?'🚀 Servis İcra ':'🔧 Servis Talepleri ',h('span',{style:{fontSize:'12px',color:T3,fontWeight:'400'}},_icra?('('+(awaitingS.length+activeS.length+closedS.length)+')'):('('+svcFiltered.length+'/'+state.services.length+')'))),
     _icra ? h('span') : btn('+ Yeni Teknik Servis',()=>setState({modal:{type:'service',item:null}}),'linear-gradient(135deg,#0891b2,#0284c7)','#fff',isMobSvc?'9px 14px':'10px 20px',{fontSize:'14px',borderRadius:'10px',boxShadow:'0 3px 8px rgba(8,145,178,.3)'})
@@ -7049,7 +7069,7 @@ function arizaAwaitingRow(s){
       cust?h('div',{style:{fontSize:'12px',color:T3}},'👤 '+(cust.firmName||'')):h('span'),
       h('div',{style:{fontSize:'11px',color:T4}},'Durum: '+(s.status||'-'))
     ),
-    btn('🔧 İcraya al',async()=>{await servStart(s); PMOD.arizaTab='aktif'; render();},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'})
+    btn('🚀 İcrayı başlat',async()=>{await servStart(s); PMOD.arizaTab='aktif'; render();},'linear-gradient(135deg,#10b981,#059669)','#fff','8px 14px',{fontSize:'13px'})
   );
 }
 function arizaListRow(s, isAdmin){
@@ -7306,7 +7326,7 @@ function buildServiceFormModal(sf){
       custContactsList.length ? h('datalist',{id:'sf-cust-contacts'}, ...custContactsList.map(function(n){ return h('option',{value:n}); })) : h('datalist',{id:'sf-cust-contacts'})),
     h('div',{style:{flex:'1 1 160px'}}, h('input',{value:sf.custContact.phone||'', placeholder:'Telefon', oninput:function(e){ sf.custContact.phone=e.target.value; }, style:_clInputStyle()})));
   var staffContactRow = h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap',marginBottom:'14px'}},
-    h('div',{style:{flex:'1 1 200px'}}, h('input',{value:sf.staffContact.name||'', placeholder:'Servis Personeli - Ad Soyad', oninput:function(e){ sf.staffContact.name=e.target.value; }, style:_clInputStyle()})),
+    h('div',{style:{flex:'1 1 200px'}}, _clSelect([{v:'',l:'— Servis personeli / Teknik servis ilgilisi seçin —'}].concat(((sf.staffContact.name && _staffNames().indexOf(sf.staffContact.name)<0) ? [sf.staffContact.name] : []).concat(_staffNames()).map(function(n){ return {v:n,l:n}; })), sf.staffContact.name||'', function(v){ sf.staffContact.name=v; })),
     h('div',{style:{flex:'1 1 160px'}}, h('input',{value:sf.staffContact.phone||'', placeholder:'Telefon', oninput:function(e){ sf.staffContact.phone=e.target.value; }, style:_clInputStyle()})));
 
   var signs = h('div',{style:{marginTop:'14px',paddingTop:'14px',borderTop:'2px solid #e2e8f0'}},
@@ -7949,6 +7969,8 @@ function clSystemCard(c, sys, idx){
     h('textarea',{oninput:function(e){ sys.extraNotes=e.target.value; }, style:Object.assign(_clInputStyle(),{minHeight:'46px',resize:'vertical'})}, sys.extraNotes||''));
   return h('div',{style:{border:'1px solid #e2e8f0',borderRadius:'12px',padding:'12px',marginBottom:'12px',background:'#f8fafc'}}, head, due, ...rows, extra);
 }
+// CRM'de kayıtlı tüm (aktif) kullanıcıların adları — imza ve servis personeli açılır menüleri için.
+function _staffNames(){ return (state.users||[]).filter(function(u){ return u.active!==false && u.displayName; }).map(function(u){ return u.displayName; }).sort(function(a,b){ return a.localeCompare(b,'tr'); }); }
 function clSignPad(c, sign, label, canvasId, nameList, skipNameInput){
   setTimeout(function(){
     var cv = document.getElementById(canvasId); if(!cv) return;
@@ -7967,7 +7989,7 @@ function clSignPad(c, sign, label, canvasId, nameList, skipNameInput){
   var _nameInput = skipNameInput
     ? h('div',{style:{fontSize:'12px',color:sign.name?'#334155':'#dc2626',marginBottom:'6px',fontWeight:'600'}}, sign.name ? ('İmzalayan: '+sign.name) : 'Önce yukarıdan ad soyad girin')
     : (_hasList
-      ? h('input',{value:sign.name||'', placeholder:'Ad Soyad (listeden seçin veya yazın)', list:_listId, oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})})
+      ? h('div',{style:{marginBottom:'6px'}}, _clSelect([{v:'',l:'— Yetkili seçin —'}].concat((nameList.indexOf(sign.name)<0 && sign.name ? [sign.name] : []).concat(nameList).map(function(n){ return {v:n,l:n}; })), sign.name||'', function(v){ sign.name=v; }))
       : h('input',{value:sign.name||'', placeholder:'Ad Soyad', oninput:function(e){ sign.name=e.target.value; }, style:Object.assign(_clInputStyle(),{marginBottom:'6px'})}));
   return h('div',{style:{flex:'1 1 240px',minWidth:'220px'}},
     h('div',{style:{fontWeight:'700',fontSize:'13px',marginBottom:'4px',color:'#334155'}}, label),
@@ -8414,12 +8436,12 @@ function renderMaintenances() {
     const dl=maintDaysLeft(m), cust=custById(m.customerId);
     return h('div',{style:{background:'#fff',border:'1px solid '+(stt==='geciken'?'#fca5a5':'#d0daea'),borderRadius:'12px',padding:'12px 14px',marginBottom:'8px',display:'flex',flexWrap:'wrap',alignItems:'center',gap:'10px'}},
       h('div',{style:{flex:'1',minWidth:'160px'}},
-        h('div',{style:{fontWeight:'700',color:'#0f2040'}},(stt==='geciken'?'🔴 ':'')+(m.jobName||'(başlıksız)')),
+        h('div',{style:{fontWeight:'700',color:'#0f2040'}},(stt==='geciken'?'🔴 ':'')+(m.jobName||'(başlıksız)')+' ',maintIcraChip(m)),
         cust?h('div',{style:{fontSize:'12px',color:T3}},'👤 '+(cust.firmName||'')):h('span'),
         h('div',{style:{fontSize:'11px',color:T4}},'Vade: '+(maintNextDue(m)?_toTR(maintNextDue(m)):'-')+' · '+(maintHasSystems(m)?(m.mtSystems.length+' sistem'):maintPeriodLabel(maintPeriod(m))))
       ),
       h('span',{style:{background:c+'18',color:c,border:'1px solid '+c+'55',borderRadius:'20px',padding:'4px 10px',fontSize:'12px',fontWeight:'700'}},dl<0?Math.abs(dl)+' gün gecikti':dl+' gün kaldı'),
-      btn('✅ Tamamla',()=>maintCompleteAction(m),'linear-gradient(135deg,#16a34a,#15803d)','#fff','7px 12px',{fontSize:'12px'}),
+      maintPrimaryBtn(m),
       btn('📅 Randevu',()=>maintNewAppt(m),'#f5f3ff','#6d28d9','7px 12px',{fontSize:'12px',border:'1px solid #c4b5fd'}),
       btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','7px 12px',{fontSize:'12px',border:'1px solid #bfdbfe'}),
       btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','7px 12px',{fontSize:'12px',border:'1px solid #fecaca'})
@@ -8459,14 +8481,15 @@ function renderMaintenances() {
       h('td',{style:{padding:'10px 11px',fontSize:'13px'}},(()=>{
         const p=maintProgressLabel(m);
         const _mm = maintMissing(m);
-        const mainBadge = p ? h('span',{style:{background:(p.done?'#dcfce7':'#fef3c7'),color:(p.done?'#15803d':'#b45309'),padding:'4px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},p.text) : badge(m.status,MS[m.status]||T3);
+        const mainBadge0 = p ? h('span',{style:{background:(p.done?'#dcfce7':'#fef3c7'),color:(p.done?'#15803d':'#b45309'),padding:'4px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},p.text) : badge(m.status,MS[m.status]||T3);
+        const mainBadge = maintIcraActive(m) ? h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-start'}}, mainBadge0, maintIcraChip(m)) : mainBadge0;
         if(p && p.done) return h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-start'}}, mainBadge,
           h('span',{title:'Program bitti: sözleşme yenilendiyse kaydı açıp "Programı Yenile"yi kullanın',style:{background:'#e0f2fe',color:'#0369a1',padding:'3px 9px',borderRadius:'20px',fontSize:'10.5px',fontWeight:'800',whiteSpace:'nowrap'}},'🔄 Yenileme gerekli'));
         return _mm.length ? h('div',{style:{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-start'}}, mainBadge,
           h('span',{title:'Takip başlamaz: '+_mm.join(', ')+' eksik',style:{background:'#fee2e2',color:'#b91c1c',padding:'3px 9px',borderRadius:'20px',fontSize:'10.5px',fontWeight:'800',whiteSpace:'nowrap'}},'⚠ Eksik bilgi: '+_mm.join(', '))) : mainBadge;
       })()),
       h('td',{style:{padding:'10px 11px',fontSize:'11px',whiteSpace:'nowrap'}},m._editedBy?h('span',{},h('span',{style:{color:'#1e3a5f',fontWeight:'700'}},m._editedBy),h('br'),h('span',{style:{color:T4}},m._editedAt||'')):h('span',{style:{color:T4}},'—')),
-      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px'}},btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(m.customerId)||c.name===m.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
+      h('td',{style:{padding:'10px 11px',fontSize:'13px'}},h('div',{style:{display:'flex',gap:'5px',flexWrap:'wrap'}},maintPrimaryBtn(m,'6px 10px'),btn('Düzenle',()=>setState({modal:{type:'maintenance',item:m}}),'#eff6ff','#1d4ed8','6px 12px',{fontSize:'12px',border:'1px solid #bfdbfe',borderRadius:'7px'}),(()=>{const cust=state.customers.find(c=>String(c.id)===String(m.customerId)||c.name===m.customerName);return cust&&cust.phone?h('a',{href:'https://wa.me/90'+cust.phone.replace(/[^0-9]/g,'').replace(/^0/,''),target:'_blank',style:{display:'inline-flex',alignItems:'center',background:'#dcfce7',color:'#15803d',padding:'6px 10px',borderRadius:'7px',fontSize:'14px',textDecoration:'none',border:'1px solid #86efac'}},'💬'):h('span')})(),btn('Sil',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','6px 12px',{fontSize:'12px',border:'1px solid #fecaca',borderRadius:'7px'})))
     ));
   });
   const maintHeaderRow=h('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',flexWrap:'wrap',gap:'8px'}},
@@ -8490,6 +8513,8 @@ function renderMaintenances() {
           h('div',{style:{fontWeight:'700',color:'#0f2040'}},e.m.jobName||'(başlıksız)'),
           h('div',{style:{fontSize:'11px',color:T4}},(cust?('👤 '+(cust.firmName||'')+' · '):'')+'🔧 '+(e.m.serviceContact||'Atanmamış')+(e.systems.length?(' · '+e.systems.join(', ')):''))),
         h('span',{style:{background:c+'18',color:c,border:'1px solid '+c+'55',borderRadius:'20px',padding:'3px 10px',fontSize:'11px',fontWeight:'700',whiteSpace:'nowrap'}},late?Math.abs(dl)+' gün gecikti':(dl===0?'Bugün':dl+' gün kaldı')),
+        (String(e.date).slice(0,10)===String(maintNextDue(e.m)).slice(0,10)) ? maintIcraChip(e.m) : h('span'),
+        (String(e.date).slice(0,10)===String(maintNextDue(e.m)).slice(0,10) && !maintIcraActive(e.m)) ? maintPrimaryBtn(e.m,'6px 11px') : h('span'),
         btn('📅 Randevu',()=>maintNewAppt(e.m, late?'':e.date),'#f5f3ff','#6d28d9','6px 11px',{fontSize:'12px',border:'1px solid #c4b5fd'}),
         btn('Düzenle',()=>setState({modal:{type:'maintenance',item:e.m}}),'#eff6ff','#1d4ed8','6px 11px',{fontSize:'12px',border:'1px solid #bfdbfe'}));
     };
@@ -8534,7 +8559,9 @@ function renderMaintenances() {
             m.preparedBy?h('span',{style:{background:'#f0fdf4',color:'#16a34a',padding:'3px 8px',borderRadius:'12px',fontSize:'11px'}},'👤 '+m.preparedBy):h('span')
           ),
           m.appointmentDate?h('div',{style:{fontSize:'11px',color:T3,marginBottom:'8px'}},'📅 Bakım: '+_toTR(m.appointmentDate)):h('span'),
-          h('div',{style:{display:'flex',gap:'8px'}},
+          maintIcraActive(m)?h('div',{style:{marginBottom:'8px'}},maintIcraChip(m)):h('span'),
+          h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+            maintPrimaryBtn(m,'8px 12px'),
             btn('✏️',()=>setState({modal:{type:'maintenance',item:m}}),'#f0fdf4','#059669','8px 14px',{fontSize:'12px',border:'1px solid #86efac',borderRadius:'7px',flex:'1'}),
             btn('🗑️',()=>delItem('maintenances',m.id),'#fef2f2','#dc2626','8px 12px',{fontSize:'13px',border:'1px solid #fecaca',borderRadius:'7px'})
           )
@@ -10177,6 +10204,33 @@ function _addMonth(iso, n){ const dt=_toDate(iso); if(!dt) return ''; const d0=d
 function maintPeriod(m){ return (m && m.mtPeriod) || ''; }
 function maintPeriodDays(m){ return (m && Number(m.mtPeriodDays)) || 0; }
 function maintNextDue(m){ return (m && m.mtNextDue) || ''; }
+// PERİYODİK BAKIM İCRASI: ziyaret akışı Planlı → Randevulu → İcrada → Tamamlandı. "İcrada" = bu ziyaretin (güncel vadenin) icrası başlatıldı;
+// ziyaret tamamlanınca vade ilerler ve işaret kendiliğinden düşer (mtIcra.due artık güncel vadeye eşit olmaz).
+function maintIcraActive(m){ const d=maintNextDue(m); return !!(m && m.mtIcra && d && String(m.mtIcra.due).slice(0,10)===String(d).slice(0,10)); }
+async function maintStartIcra(m){
+  if(!maintIsTracked(m)){ showToast('⚠️ Önce sistem/periyot ve ilk vade girin.','#d97706'); return; }
+  const due=String(maintNextDue(m)).slice(0,10);
+  if(today() < due){
+    const isAdmin = !!(state.currentUser && state.currentUser.isAdmin);
+    if(!isAdmin){ showToast('⚠️ Bu ziyaretin vadesi henüz gelmedi ('+_toTR(due)+'). Erken icra için admin onayı gerekir.','#d97706'); return; }
+    if(!confirm('Bu ziyaretin vadesi '+_toTR(due)+'. İcra erken başlatılacak — admin onayıyla devam edilsin mi?')) return;
+  }
+  const me=(state.currentUser && state.currentUser.displayName) || '';
+  if(!maintIcraActive(m)) await persistMaint({...m, mtIcra:{due:due, at:today(), by:me}, ...stamp()});
+  setState({modal:{type:'bakimformlar', maintId:m.id}});
+  showToast('🚀 İcra başlatıldı — Checklist ve Servis Formunu doldurun, sonra ziyareti tamamlayın.');
+}
+function maintIcraChip(m){
+  if(!maintIcraActive(m)) return h('span');
+  return h('span',{title:(m.mtIcra.by||'')+' · '+_toTR(m.mtIcra.at||''), style:{background:'#ede9fe',color:'#6d28d9',border:'1px solid #c4b5fd',borderRadius:'20px',padding:'3px 9px',fontSize:'11px',fontWeight:'800',whiteSpace:'nowrap'}},'🚀 İcrada');
+}
+// Satırın ana düğmesi: icrada değilse "İcrayı başlat", icradaysa "Tamamla".
+function maintPrimaryBtn(m, pad, fs){
+  if(!maintIsTracked(m)) return h('span');
+  return maintIcraActive(m)
+    ? btn('✅ Tamamla',()=>maintCompleteAction(m),'linear-gradient(135deg,#16a34a,#15803d)','#fff',pad||'7px 12px',{fontSize:fs||'12px'})
+    : btn('🚀 İcrayı başlat',()=>maintStartIcra(m),'linear-gradient(135deg,#7c3aed,#6d28d9)','#fff',pad||'7px 12px',{fontSize:fs||'12px'});
+}
 function maintHistory(m){ return (m && Array.isArray(m.mtHistory)) ? m.mtHistory : []; }
 function maintIsTracked(m){ return !!(m && m.mtNextDue && (m.mtPeriod || maintHasSystems(m))); }
 // Tamamlama yönlendirici: çok-sistemli → ziyaret; eski tekli → bakım.
@@ -10521,7 +10575,7 @@ async function maintDone(m){
   const now = today();
   const hist = [...maintHistory(m), {at:now, dueAt:(m.mtNextDue||''), completedOn:now, by:me, note:note||''}];
   const nextDue = computeNextDue(now, maintPeriod(m), maintPeriodDays(m));
-  const data = {...m, mtLastDone:now, mtHistory:hist, mtNextDue: nextDue || m.mtNextDue, status:'Hizmet Henüz Verilmedi', ...stamp()};
+  const data = {...m, mtLastDone:now, mtHistory:hist, mtNextDue: nextDue || m.mtNextDue, mtIcra:null, status:'Hizmet Henüz Verilmedi', ...stamp()};
   setState({saving:true});
   await persistMaint(data, {visitDone:true});
   setState({modal:null, saving:false});
@@ -12686,9 +12740,9 @@ function checkAllNotifications() {
   (state.services||[]).forEach(s=>{
     const cn=_custName(s.customerId);
     // Onaylandı - anında
-    if(s.status==='Onaylandı' && s.updatedAt && (new Date()-new Date(s.updatedAt))<120000) {
-      showNotification('svc_appr_'+s.id,'✅ Servis Onaylandı!',(s.jobName||'Servis')+' · '+cn,'win',s.preparedBy);
-      showNotification('svc_appr_adm_'+s.id,'✅ Servis Onaylandı!',(s.jobName||'Servis')+' · '+cn,'win','admin');
+    if(_svcIsWon(s) && s.updatedAt && (new Date()-new Date(s.updatedAt))<120000) {
+      showNotification('svc_appr_'+s.id,'✅ Servis Kazanıldı!',(s.jobName||'Servis')+' · '+cn,'win',s.preparedBy);
+      showNotification('svc_appr_adm_'+s.id,'✅ Servis Kazanıldı!',(s.jobName||'Servis')+' · '+cn,'win','admin');
     }
     // Randevu 1 gün önce 16:30
     if(s.appointmentDate) {
