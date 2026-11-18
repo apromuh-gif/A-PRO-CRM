@@ -10481,7 +10481,7 @@ function _clTemplates(){ return {
     algilama: [
       {kod:'alr_m1', freq:'aylik', label:'Panel normal durumda, arıza / alarm yok, batarya OK'},
       {kod:'alr_m7', freq:'aylik', label:'Panel sigortaları, arayüz cihazları, lamba ve LED, ana güç ve arıza sinyalleri normal durumda doğrulandı (Tablo 14.3.1)'},
-      {kod:'alr_m8', freq:'aylik', label:'Motorlu jeneratör (varsa) çalıştırma kontrolü yapıldı (Tablo 14.4.3.2 madde 6)'},
+      {kod:'alr_m8', freq:'aylik', label:'Yangın alarmı için yedek güç olarak kullanılan jeneratör varsa: jeneratör çalıştırıldı ve transfer şalteri devreye girdi (NFPA 110). Yoksa N/A.'},
       {kod:'alr_m9', freq:'6aylik', label:'Kontrol ünitesi arıza sinyalleri, uzak izleme istasyonu ve uzaktan gösterge panelleri muayene edildi'},
       {kod:'alr_m2', freq:'6aylik', label:'Panel fonksiyon testi (birincil/ikincil güç kaynağı) yapıldı'},
       {kod:'alr_m10', freq:'6aylik', label:'Aküler: üretim tarihi etiketi okunur, terminal korozyonu ve şişme yok, şarj cihazı gerilimi ve hücre gerilimi (13,26 V altı değiştirilir) ölçüldü'},
@@ -12172,7 +12172,7 @@ function clOwnerFoyOpen(c){
     blocks.push({k:'sec', title:_ipEsc(m.l)+(sl?(' · '+_ipEsc(sl)):'')+' — '+_ipEsc(m.std||'')});
     if(!items.length){ blocks.push({k:'html', html:'<div class="dc-p" style="color:#666">Bu sistem için tanımlı haftalık / aylık müşteri kontrolü yok.</div>'}); return; }
     const rows=items.map(function(it,i){
-      return '<tr><td style="text-align:center">'+(i+1)+'</td><td>'+_ipEsc(it.label)+'</td><td style="text-align:center">'+_ipEsc(FREQ_META[it.freq]||it.freq)+'</td><td></td><td></td><td style="text-align:center">☐ Uygun<br>☐ Uygun değil</td></tr>';
+      return '<tr><td style="text-align:center">'+(i+1)+'</td><td>'+_ipEsc(it.label)+'</td><td style="text-align:center">'+_ipEsc(FREQ_META[it.freq]||it.freq)+'</td><td></td><td></td><td style="text-align:center">☐ Uygun<br>☐ Uygun değil<br>☐ N/A</td></tr>';
     });
     blocks.push({k:'table', cols:[26,0,50,56,56,86], head:['No','KONTROL MADDESİ','PERİYOT','TARİH','YAPAN','SONUÇ'], rows:rows, keepWith:true});
   });
