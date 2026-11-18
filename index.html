@@ -9539,6 +9539,7 @@ function sandboxEnter(){
 }
 async function sandboxExit(){
   state.sandbox = false; state.testMode = false; state._sbxQuoteIds = null;
+  _notifPurgeSandbox();   // deneme sırasında oluşan bildirimler gerçek geçmişte KALMASIN
   if(state._sbxUser) state.currentUser = state._sbxUser; state._sbxUser = null;
   sandboxBar();
   showToast('⏳ Gerçek veriler yeniden yükleniyor…','#0369a1');
@@ -9708,6 +9709,7 @@ function maintLiveStart(){
 }
 function taskLiveStart(){
   taskLiveStop();
+  _notifPurgeSandbox();   // sayfa yenilenerek/kapanarak çıkılan deneme oturumlarından kalan bildirimleri temizle
   maintLiveStart();
   try{
     const L = window._taskLive;
@@ -12937,9 +12939,24 @@ function _notifIsMine(x) {
 function _notifHistAdd(key, title, body, type, target) {
   const arr=_notifHistLoad();
   if(arr.some(x=>x.k===key)) return;
-  arr.unshift({k:key, t:title, b:body, ty:type||'info', tg:target||'all', ts:Date.now(), r:0});
+  const _e={k:key, t:title, b:body, ty:type||'info', tg:target||'all', ts:Date.now(), r:0};
+  if(state.sandbox===true || state.testMode===true) _e.sb=1;   // Deneme/test modunda üretilen bildirimler işaretlenir; moddan çıkınca silinir (gerçek bildirim geçmişine karışmaz)
+  arr.unshift(_e);
   _notifHistSave(arr);
   _notifBadgeUpdate();
+}
+// Deneme/test modunda üretilmiş (sb:1) bildirimleri TÜM kullanıcıların yerel geçmişinden siler. Moddan çıkışta ve girişte çalışır.
+function _notifPurgeSandbox(){
+  try{
+    for(let i=localStorage.length-1;i>=0;i--){
+      const k=localStorage.key(i);
+      if(!k || k.indexOf('apro_notif_hist_')!==0) continue;
+      const arr=JSON.parse(localStorage.getItem(k)||'[]')||[];
+      const keep=arr.filter(function(x){ return !x.sb; });
+      if(keep.length!==arr.length) localStorage.setItem(k, JSON.stringify(keep));
+    }
+  }catch(e){}
+  try{ _notifBadgeUpdate(); }catch(e){}
 }
 function _notifUnreadCount() {
   return _notifHistLoad().filter(x=>!x.r && _notifIsMine(x)).length;
@@ -13294,6 +13311,7 @@ function _propDeadlineEligible(p){
 const ALERT_B_CUTOFF = '2026-11-18';
 function _alertOnceKey(){ const cu=state.currentUser; return 'apro_alert_once_'+((cu&&cu.email)||(cu&&cu.displayName)||'u'); }
 function _alertOnce(key){
+  if(state.sandbox===true || state.testMode===true) return true;   // deneme modunda kalıcı kayıt tutulmaz
   try{
     const k=_alertOnceKey(); const m=JSON.parse(localStorage.getItem(k)||'{}'); const now=Date.now();
     if(m[key]) return false;
