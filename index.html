@@ -14272,20 +14272,28 @@ function taxCalendarItems(now0){
 }
 // Aylık muhasebe kontrolü: her ayın 25'i vadeli TEK görev (şirket genel durumu + KDV + cari kontrol).
 // Ayın 20'sinde (CRM kapalıysa ilk açıldığında, ay sonuna kadar telafili) Muhasebe & İdari İşler departmanındaki en az yüklü kişiye açılır.
-// Çeyrek sonu (Mart/Haziran/Eylül/Aralık 15–son gün): Erkan KARACAKALE'ye tüm çalışanlar için
-// Yönetici Puanı girmesi gerektiğini hatırlatan görev oluşturur.
+// Çeyrek sonu (Mart/Haziran/Eylül/Aralık 15–son gün): Erkan KARACAKALE'ye tüm departmanların
+// manuel kriter girişlerini (Yönetici Puanı + diğer auto:false kriterler) hatırlatan görev oluşturur.
 function evalManagerScoreSync(){
   if(!state.currentUser) return;
   const n0=new Date(), y=n0.getFullYear(), m=n0.getMonth(); // m: 0-tabanlı
   const Q_END=[2,5,8,11]; // Mart=2, Haziran=5, Eylül=8, Aralık=11
   const qIdx=Q_END.indexOf(m); if(qIdx===-1||n0.getDate()<15) return;
-  const q=qIdx+1, key='eval_mgrscore_'+y+'_Q'+q;
+  const q=qIdx+1, key='eval_manuel_'+y+'_Q'+q;
   if((state.tasks||[]).some(t=>t.dedupeKey===key)) return;
   const lastDay=new Date(y,m+1,0).getDate();
   const dueDate=y+'-'+String(m+1).padStart(2,'0')+'-'+lastDay;
+  const desc=
+    'Personel → çalışan → Performans Değerlendirmesi → dönem seç → ilgili kriteri gir.\n\n'+
+    '• Satış: Yönetici Puanı (1–5)\n'+
+    '• Saha / Şantiye: Malzeme\/fire verimliliği — Yönetici Puanı\n'+
+    '• Teknik Servis: İlk seferde çözüm oranı — Yönetici Puanı\n'+
+    '• Proje Grubu: Teknik doğruluk \/ revizyon — Yönetici Puanı\n'+
+    '• Muhasebe: Evrak & arşiv düzeni — Yönetici Puanı\n'+
+    '• Stok-Sevkiyat: Stok takip, Sevkiyat organizasyonu, Depo düzeni, Evrak düzeni — Yönetici Puanı';
   autoCreateTask({ id:key, dedupeKey:key,
-    title:'\u{1F4CA} Y\u{00F6}netici puan\u{0131} gir — Q'+q+' '+y,
-    desc:'T\u{00FC}m aktif çalışanlar için Yönetici Puanı (1–5) girilmeli. Personel → çalışan → Performans Değerlendirmesi → dönem seç → Yönetici Puanı.',
+    title:'\u{1F4CA} Performans — manuel kriter girişi Q'+q+' '+y,
+    desc:desc,
     assignedTo:'Erkan KARACAKALE', dept:'muhasebe', context:'sirket',
     dueDate:dueDate, priority:'yuksek' });
 }
