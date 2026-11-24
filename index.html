@@ -152,7 +152,7 @@ const DEPARTMENTS = [
 const TASK_SUBDEPTS = [
   { v:'satinalma', l:'Satın Alma (Proje Grubu)',        parent:'proje',    pick:true  },
   { v:'fatura',    l:'Fatura & Tahsilat (Muhasebe)',    parent:'muhasebe', pick:true  },
-  { v:'stok',      l:'Stok-Sevkiyat (Depo yetkisi)',    parent:'muhasebe', pick:false },
+  { v:'stok',      l:'Stok-Sevkiyat (Depo yetkisi)',    parent:'muhasebe', pick:true  },
 ];
 const DEPT_PARENT = Object.fromEntries(TASK_SUBDEPTS.map(d=>[d.v,d.parent]));
 function deptParent(d){ return DEPT_PARENT[d] || d; }
@@ -226,13 +226,25 @@ const DEFAULT_EVAL_CONFIG = {
     criteria:[
       {kod:'tahsilat',        label:'Tahsilat zamanında tamamlama',    auto:true, weight:0.20},
       {kod:'siparis_takip',   label:'Sipariş onay/PO takibi',         auto:true, weight:0.15},
-      {kod:'yasal_uyum',      label:'Vergi/beyanname zamanında teslim',auto:true, weight:0.15},
       {kod:'faturalama',      label:'Faturalama zamanında tamamlama',  auto:true, weight:0.10},
       {kod:'yonetici',        label:'Kalite / iç-dış ilişki / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.15},
-      {kod:'raporlama',       label:'Raporlama zamanında hazırlama',  auto:true, weight:0.10},
-      {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.06},
+      {kod:'raporlama',       label:'Raporlama zamanında hazırlama',  auto:true, weight:0.15},
+      {kod:'gorev',           label:'Görev tamamlama',                auto:true, weight:0.16},
       {kod:'gorev_dogruluk',  label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.04},
       {kod:'evrak_duzen',     label:'Evrak & arşiv düzeni',           auto:false,weight:0.05},
+    ],
+  },
+  stok: {
+    threshold:0.70, overCap:1.5, overAccel:1.0, primBase:0,
+    criteria:[
+      {kod:'stok_takip',      label:'Stok takip görevi',              auto:false, weight:0.25},
+      {kod:'sevkiyat',        label:'Sevkiyat organizasyonu',          auto:false, weight:0.15},
+      {kod:'depo_duzen',      label:'Depo düzeni görevi',             auto:false, weight:0.10},
+      {kod:'yonetici',        label:'Kalite / iç-dış ilişki / ekip uyumu (Yönetici Puanı)',auto:false,weight:0.15},
+      {kod:'raporlama',       label:'Raporlama zamanında hazırlama',  auto:true,  weight:0.10},
+      {kod:'gorev',           label:'Görev tamamlama',                auto:true,  weight:0.16},
+      {kod:'gorev_dogruluk',  label:'Görev doğruluğu (onay/revizyon)', auto:true, weight:0.04},
+      {kod:'evrak_duzen',     label:'Evrak & arşiv düzeni',           auto:false, weight:0.05},
     ],
   },
 };
@@ -8990,8 +9002,10 @@ const CRIT_METRIC_NOTE = {
   cozum_suresi:   'Kapanan arızaların SLA vadesinde kapatılma oranı (acil 1 / normal 3 / düşük 7 gün).',
   tahsilat:       'Başlığında "Tahsilat" geçen görevlerin vadesinde kapatılma oranı.',
   faturalama:     'Fatura görevlerinin vadesinde kapatılma oranı.',
-  yasal_uyum:     'Vergi/beyanname görevlerinin vadesinde kapatılma oranı.',
   siparis_takip:  'Başlığında "sipariş" geçen görevlerin vadesinde kapatılma oranı.',
+  stok_takip:     'Yönetici elle % girer — stok doğruluk, sayım ve takip görevlerindeki performans ortalaması.',
+  sevkiyat:       'Yönetici elle % girer — sevkiyat zamanlaması, paketleme ve müşteri teslim performansı.',
+  depo_duzen:     'Yönetici elle % girer — depo düzeni, etiketleme ve raf organizasyonu değerlendirmesi.',
   saha_rapor:     'Zamanında teslim edilen saha raporu ÷ beklenen rapor sayısı (projenin rapor periyoduna göre).',
   proje_butce:    'Saha raporlarındaki toplam harcama ÷ projenin planlanan bütçesi.',
   is_guvenligi:   '1 − (güvenlik uygunsuzluğu sayısı ÷ saha raporu sayısı).',
