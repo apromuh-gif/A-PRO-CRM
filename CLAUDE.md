@@ -119,6 +119,9 @@ Kullanıcı kararı (18 Kasım 2026): yeni yazılan her form/modal/açılır pen
 7. **Yeniden çizimde pencere durumu bozulmaz:** yeniden çizimden sonra `item` id'siz kopya olarak gelir; "yeni mi / düzenleme mi" ayrımı `item` varlığına DEĞİL `item && item.id`'ye bakar (başlık, Kaydet). Yeni form yazınca dene: alttaki bir alanda sistem seç / satır ekle → ekran yerinde kalmalı, başlık ve girilen değerler değişmemeli.
 
 
+## FIRESTORE KURALI DEĞİŞİNCE (ZORUNLU)
+Kullanıcı kararı (24 Kasım 2026): `firestore.rules` dosyasında her değişiklikte, kullanıcıya **dosyanın TAMAMI tek bir kod bloğunda**, Firebase Console → Firestore Database → Rules sekmesine **komple kopyala-yapıştır** edilecek şekilde verilir. Yalnız değişen satırları/parçayı verme — Console'da kısmi yapıştırma kuralı bozar. Blokla birlikte kısaca ne değiştiği ve yayınlanmazsa hangi ekranın etkileneceği yazılır.
+
 ## DEPLOY SONRASI CANLI DOĞRULAMA (ZORUNLU)
 Kullanıcı kararı (18 Kasım 2026): her `git push` sonrası değişikliğin **canlıya geçtiği kontrol edilir** ve geçince kullanıcıya haber verilir ("canlıya geçti" demeden önce doğrula).
 - Canlı adres: `https://apromuh-gif.github.io/A-PRO-CRM/` (GitHub Pages; yayın ~1–3 dk).
