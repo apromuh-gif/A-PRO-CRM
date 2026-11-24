@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 15 Kasım 2026 (yedek ve silme doğrulaması, ticari satış analizi, geliştirme önerileri; önceki: mobil açılış hızı, iPhone'da Teklif Programı erişimi)
+> Son güncelleme: 24 Kasım 2026 (Performans/Prim denetiminin onay bekleyen 6 maddesi uygulandı; önceki: 19 Kasım iş programı/bakım raporu işleri, 15 Kasım güvenlik kalemleri)
 
 ---
 
@@ -1181,7 +1181,7 @@ Kaldırılanlar ve sebepleri:
 - Ek düzeltme: Periyodik bakım Kaydet düğmesi yeni kaydı `!!(item&&item.id)` ile ayırır (yeni kayıtta sistem eklenince yeniden çizim item'ı id'siz kopyayla doldurduğu için kayıt "düzenleme" sanılıp id'siz kaydedilmeye çalışılıyordu).
 - **19 Kasım (devam) — Pencerelerde kaydırma konumu korunur (TÜM formlar) — yerelde, commit/push edilmedi:** Pencere açıkken yeniden çizim (sistem seç, satır ekle, madde işaretle vb.) kaydırmayı en başa sarıyordu; çalışılan alan kayıp aşağı inmek gerekiyordu. `render()` artık sarmalayıcı: yeniden çizimden önce açık pencerenin (`data-apro-modal`; tüm pencereler `modal()` ile çizilir) içindeki kaydırma konumları yol bazında alınır, sonra geri yüklenir (`_modalScrollSnap` / `_modalScrollRestore`); farklı pencere türüne geçince taşınmaz. Test düzeneğinde: yeniden çizimde 500 → 0, geri yüklemeyle 500; farklı pencerede 0. Ek: yeniden çizimden sonra bakım kaydı başlığı "Düzenle"ye dönmüyor (`item&&item.id`).
 
-## 24 Kasım 2026 — Personel Performans & Prim denetimi ve düzeltmeler (yerelde; commit/push edilmedi)
+## 24 Kasım 2026 — Personel Performans & Prim denetimi ve düzeltmeler (canlı, commit `3796be8`)
 - **Denetim:** Personel sekmesi Performans/Prim sistemi yönetici ve çalışan gözüyle incelendi; 10 bulgu çıkarıldı. Aktif 7 kullanıcının hepsinde departman atanmış (teknik departmanda kimse yok).
 - **Hesap hatası düzeltildi:** Servis/bakım fırsatları (`salesType` servis/bakim) yıllık hedef oranını şişiriyordu (0,75 → doğrusu 0,5). `personelAnnualRatio` ve `printPersonelReport` artık `_isSalesOpp` ile filtreler.
 - **#9 Görev tamamlama oranı:** payda = kapanan + vadesi geçmiş açık + performans nedeniyle alınan (`personelTaskStats`); vadesi gelmemiş açık görevler oranı düşürmez.
@@ -1191,6 +1191,25 @@ Kaldırılanlar ve sebepleri:
 - **Aşım primi formülü (bilgi):** Tam Prim × ağırlık × (min(oran, tavan) − 1) × ivme; yalnız birey_hedef + karlılık, yalnız yıllık oran >1 iken, şu an yalnız Q4'te.
 - **Bekleyen (onay bekliyor):** #3 aşımı yalnız Aralık'ta hesaplama / Ekim-Kasım tahmin; #6 çeyrek kaydı çeyrek sonrası + üzerine yazma onayı; #2 eşik kapısı (kriter başına %100 tavan, ≥%70 veri kapsamı); #4 yönetici puanı ve elle girilen kriterlerin yıllık ortalaması; #1 çalışan "Performansım" sekmesi (prim yok, yönetici notu gizli, Firestore kuralı güncellemesi); #8 görev bazlı kriter etiketi.
 - Doğrulama: ana script sözdizimi temiz, prim test düzeneği (servis filtresi) geçti. Uygulama ekranında denenmedi.
+
+## 24 Kasım 2026 — Performans/Prim: onay bekleyen 6 madde uygulandı (yerelde; commit/push edilmedi)
+
+Denetimde "onay bekliyor" olarak bırakılan 6 madde (#1, #2, #3, #4, #6, #8) tek turda uygulandı.
+
+| # | Konu | Ne değişti |
+|---|---|---|
+| **#2** | **Eşik kapısı** | Prim kapısı artık İKİ koşullu: (a) **kriter başına %100 tavanlı** eşik skoru (`skorGate`) ≥ eşik — bir kriterdeki aşım (pace %150) zayıf/eksik kriteri telafi edip eşiği yapay geçiremez; (b) **veri kapsamı ≥ %70** — yarısı eksik veriyle prim hesaplanmaz. Geçilmezse karta ve bordroya gerekçe yazılır (`failReason`). Gösterimdeki ham skor değişmedi (performans göstergesi). Örnek: ham skor %79,5 → tavanlı eşik skoru %60 (eski kapı geçiriyordu, yeni kapı kapatıyor). |
+| **#3** | **Aşım zamanlaması** | Aşım primi yalnız **ARALIK**'ta hak edilir (`overDue`); **Ekim–Kasım**'da yalnız **tahmin** (`overForecast`) olarak gösterilir, hak edişe/ödemeye girmez. Eskiden Q4'ün ilk ayında (Ekim) hesaplanıp ödenebiliyordu; yıl sonunda oran düşse geri alınamıyordu (fazla avans devri). |
+| **#4** | **Yıllık ortalama** | Manuel kriterler ve Yönetici Puanı artık **yıl başından döneme kadar DEĞER GİRİLMİŞ ayların ortalaması** (`_evalManualAvg`, `_evalManagerAvg`). Eskiden yalnız seçili ayın değeri okunuyordu: puan girilmeyen ayda kriter "veri yok" olup ağırlığını kaybediyor, girilen tek ay tüm yılı temsil ediyordu. Puan seçicisi **o ayın** girdisini gösterir, yanında yıllık ortalama yazar. |
+| **#6** | **Çeyrek kaydı** | "Çeyrek Primini Kaydet" **çeyrek kapanmadan çalışmaz** (`_quarterClosed`; düğme soluk + kartta "Q4 henüz kapanmadı, kayıt 31.12.2026'dan sonra" notu). Aynı çeyreğe ikinci kayıt **üzerine yazma onayı** ister (eski tutar/tarih gösterilir); defterde eski kayıt `prev{amount,date,by}` olarak saklanır, kaydeden kişi `by` ile yazılır. |
+| **#8** | **Kriter etiketi** | Her kriterin **neyi ölçtüğü** kriter satırının altında yazar (`CRIT_METRIC_NOTE`, `critMetricNote`) — Performans kartı kriter detayı, Performansım ekranı ve Performans Raporu kriter tablosu. Özellikle aynı görev havuzunu farklı paydalarla ölçen Görev tamamlama / İş emri / Zamanında teslim / Görev doğruluğu ayrımı artık ekranda görünür. |
+| **#1** | **Çalışan "Performansım" sekmesi** | Normal kullanıcıya (departmanı atanmış, admin olmayan) ana menüde **📊 Performansım** sekmesi: kendi toplam skoru, kriterleri (oran · ağırlık · neyi ölçtüğü), kapsam uyarısı, dönem seçici. **Prim tutarı, prim defteri, eşik/kapı hesabı ve yönetici değerlendirme notu GÖSTERİLMEZ**; başka personelin verisi görünmez. Veri: `loadOwnEvaluations()` yalnız `personName == kendi adı` kaydını çeker. |
+
+**Firestore kuralı (YAYINLANMALI):** `evaluations` okuması — yönetici tümünü, çalışan yalnız kendi kaydını (`users/{e-posta}.displayName == resource.data.personName`); yazma yalnız yönetici. `firestore.rules` güncellendi, **Console'da Publish edilmedi**. Yayınlanmazsa Performansım ekranı çalışır ama manuel kriterler/Yönetici Puanı "veri yok" görünür (otomatik kriterler etkilenmez).
+
+**Doğrulama:** ana betik sözdizimi temiz; izole Node testi 19/19 geçti (çeyrek sonu tarihleri ve kapanış kontrolü, yıllık ortalama pencereleri, tavanlı eşik skoru + kapsam aritmetiği, aşım ay dağılımı); sayfa yerel sunucuda hatasız yüklendi (yalnız beklenen Firebase 401). **Uygulama içinde gerçek kullanıcıyla (giriş yapılmış) ekran testi yapılmadı.**
+
+**Bilinmesi gerekenler:** Yeni kapı mevcut personelde primi düşürebilir/sıfırlayabilir (ham skoru yüksek ama tavanlı skoru veya kapsamı düşük olanlar). Ekim–Kasım'da daha önce kaydedilmiş aşım primleri defterde durur; yeni kural geçmiş kayıtları değiştirmez. Yapısal olarak uygulanmayan kriter için "N/A" işaretleme hâlâ yok (kapsam %70 koşulu bu kişilerde kapıyı kapatabilir).
 
 ## 23 Kasım 2026 — Teklif Programı: modül kalem sırası korunur (canlı)
 - Modül (boru hesabı, gaz, mutfak vb.) güncellenince kalemler bölüm sonuna düşüyordu; `item-order.ts` ile eski konumlar korunuyor, yeni kalemler bloğun sonuna ekleniyor. Commit `658c7fc`, Vercel yayında.

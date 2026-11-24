@@ -1201,6 +1201,18 @@ async function saveDoc(collection, id, data) {
   await db.collection(collection).doc(String(id)).set(data);
 }
 
+// #1 (24 Kas 2026) — Normal kullanıcı kendi performansını görebilsin diye YALNIZ kendi
+// değerlendirme kayıtlarını okur (Firestore kuralı da personName=kendi adı ile sınırlar).
+// Hata (kural yayınlanmamış/izin yok) sessizce boş döner: Performansım ekranı "veri yok" der.
+async function loadOwnEvaluations(){
+  const nm = (state.currentUser && state.currentUser.displayName) || '';
+  if(!nm) return [];
+  try{
+    const snap = await db.collection('evaluations').where('personName','==',nm).get();
+    return snap.docs.map(d=>({...d.data(), id:d.id}));
+  }catch(e){ console.warn('[loadOwnEvaluations] okunamadı (Firestore kuralı?):', e && e.message); return []; }
+}
+
 // Boş hedef iskeleti (tek yıl).
 function _emptyTargets(){ return { company:0, serviceCompany:0, reps:{}, serviceReps:{}, profitReps:{} }; }
 // Belirli mali yılın hedef objesi (yoksa boş iskelet). state.targetsByYear üzerinden okur.
@@ -1922,7 +1934,8 @@ async function loadAllData() {
     loadCollection('proposals'), loadCollection('services'), loadCollection('maintenances'),
     loadCollection('suppliers'), loadCollection('serviceOpps'), loadCollection('visits'), loadCollection('appointments'),
     // 'evaluations' (prim/performans değerlendirmeleri) yalnız yönetici içindir (Personel ekranı admin'e kilitli) — diğer kullanıcılar için çekilmez.
-    loadCollection('tasks'), (state.currentUser && state.currentUser.isAdmin) ? loadCollection('evaluations') : Promise.resolve([]), loadCollection('checklists'), loadCollection('serviceForms'),
+    // 'evaluations': yönetici TÜMÜNÜ okur; normal kullanıcı #1 (Performansım sekmesi) için YALNIZ KENDİ kaydını okur.
+    loadCollection('tasks'), (state.currentUser && state.currentUser.isAdmin) ? loadCollection('evaluations') : loadOwnEvaluations(), loadCollection('checklists'), loadCollection('serviceForms'),
     loadCollection('fieldReports')
   ]);
   // Yumuşak silinenler (deletedAt dolu) ana listelere alınmaz → ekranlar, prim, hedef, karlılık hesabı onları görmez; yalnız "Silinenler" ekranında durur.
@@ -8554,6 +8567,14 @@ function _quarterOfMonth(m){ return Math.floor(((Number(m)||1)-1)/3)+1; }   // 1
 function _periodQuarter(period){ return _quarterOfMonth(_monthNum(period)); }
 // Yılın geçen kısmı (0..1] — operasyonel/karlılık primini zamana orantılamak için.
 function _elapsedFrac(period){ return Math.min(1, Math.max(0, _monthNum(period)/12)); }
+// #6 — Çeyreğin son günü (YYYY-MM-DD) ve çeyrek kapandı mı? (gerçek bugüne göre)
+function _quarterEndISO(year, q){
+  const m = Math.max(1,Math.min(4,Number(q)||1))*3;            // 3,6,9,12
+  const last = new Date(Number(year), m, 0).getDate();         // o ayın son günü
+  return String(year)+'-'+String(m).padStart(2,'0')+'-'+String(last).padStart(2,'0');
+}
+function _quarterEndTR(year, q){ return _toTR(_quarterEndISO(year,q)); }
+function _quarterClosed(year, q){ return today() > _quarterEndISO(year, q); }
 // Bir fırsatın ait olduğu mali yıl: manuel devir varsa o (fiscalYear), yoksa kapanış tarihinin yılı.
 function _pOppFY(o){ return o && o.fiscalYear ? Number(o.fiscalYear) : (_periodYear(_pOppDate(o))||0); }
 // YTD ay konumu: manuel devirle başka yıldan taşındıysa yıl başından (1) sayılır, aksi halde kapanış ayı.
@@ -8906,13 +8927,69 @@ function personelAnnualRatio(kod, name, period){
 function personelEvalFor(name, period){
   return (state.evaluations||[]).find(e=>e.personName===name && e.period===period) || null;
 }
+// #8 (24 Kas 2026) — Kriterin NEYİ ölçtüğü (ekranda ve raporda kriterin altında görünür).
+// Özellikle görev bazlı kriterler ("Görev tamamlama" / "Zamanında teslim" / "İş emri") aynı
+// görev havuzunu farklı paydalarla ölçüyor; kimse ekrana bakıp hangisinin ne olduğunu bilemiyordu.
+const CRIT_METRIC_NOTE = {
+  birey_hedef:    'Kazanılan satış cirosu (YTD) ÷ yıllık bireysel hedefin geçen aya düşen payı. Servis/bakım işleri sayılmaz.',
+  sirket_hedef:   'Şirketin kazanılan cirosu (YTD) ÷ yıllık şirket hedefinin geçen aya düşen payı.',
+  karlilik:       'Yıl başından kümülatif kâr marjı % ÷ hedef marj % (Teklif Programı kâr verisi).',
+  teklif_takip:   'Teklifleri zamanında gönderme oranı: vadesi geçip gönderilmeyen veya vadeden sonra gönderilen teklifler düşer.',
+  kesif_sure:     'Teklif hazırlama süresi: vadesinde gönderilen teklif oranı (vadesi geçip gönderilmeyenler düşer).',
+  aktivite:       'Ziyaret + randevu + yeni fırsat sayısı ÷ (ayda 20 × geçen ay).',
+  hedefe_yonelim: 'Açılan fırsatların stratejik hedef sektör/büyüklüğe uyma oranı.',
+  gorev:          'Görev tamamlama: kapatılan görev ÷ (kapatılan + vadesi geçmiş açık + performans nedeniyle elinden alınan). Vadesi gelmemiş açık görevler paydaya girmez.',
+  is_emri:        'İş emri tamamlama: kapatılan görev ÷ (kapatılan + vadesi geçmiş açık + elinden alınan) — "Görev tamamlama" ile aynı havuz.',
+  gorev_dogruluk: 'Görev doğruluğu: revizyonsuz onaylanan görev ÷ (revizyonsuz onaylanan + revizyon sayısı + elinden alınan).',
+  zamaninda_teslim:'Zamanında teslim: tamamlanan görevlerin vadesinde kapatılma oranı (tamamlamak yetmez, vadesinde olmalı).',
+  km_tasi:        'Kilometre taşı: tamamlanan görevlerin vadesinde kapatılma oranı.',
+  raporlama:      'Raporlama: tamamlanan görevlerin vadesinde kapatılma oranı.',
+  periyodik_bakim:'Periyodik bakım ziyaretlerinin vadesinde (≤3 gün toleransla) tamamlanma oranı.',
+  acik_servis:    'Açık arıza kayıtlarından vadesi (SLA) geçmemiş olanların oranı.',
+  cozum_suresi:   'Kapanan arızaların SLA vadesinde kapatılma oranı (acil 1 / normal 3 / düşük 7 gün).',
+  tahsilat:       'Başlığında "Tahsilat" geçen görevlerin vadesinde kapatılma oranı.',
+  faturalama:     'Fatura görevlerinin vadesinde kapatılma oranı.',
+  yasal_uyum:     'Vergi/beyanname görevlerinin vadesinde kapatılma oranı.',
+  siparis_takip:  'Başlığında "sipariş" geçen görevlerin vadesinde kapatılma oranı.',
+  saha_rapor:     'Zamanında teslim edilen saha raporu ÷ beklenen rapor sayısı (projenin rapor periyoduna göre).',
+  proje_butce:    'Saha raporlarındaki toplam harcama ÷ projenin planlanan bütçesi.',
+  is_guvenligi:   '1 − (güvenlik uygunsuzluğu sayısı ÷ saha raporu sayısı).',
+  iscilik_kalite: '1 − (yeniden-iş kalemi sayısı ÷ saha raporu sayısı).',
+  yonetici:       'Yönetici Puanı (1-5) ÷ 5 — yıl başından bu döneme kadar PUAN VERİLEN ayların ortalaması.',
+};
+function critMetricNote(c){
+  if(CRIT_METRIC_NOTE[c.kod]) return CRIT_METRIC_NOTE[c.kod];
+  return c.auto ? 'Sistemden otomatik hesaplanır.' : 'Yönetici elle % girer — yıl başından bu döneme kadar girilen ayların ortalaması alınır.';
+}
+// #4 (24 Kas 2026) — MANUEL kriterler ve Yönetici Puanı artık YILLIK ORTALAMA ile hesaplanır.
+// Eskiden yalnız seçili AYIN değeri okunuyordu: yönetici o ay puan girmediyse kriter "veri yok"
+// olup ağırlığı kaybediliyor, girdiği tek kötü/iyi ay da tüm yılı temsil ediyordu.
+// Artık yıl başından döneme kadar DEĞER GİRİLMİŞ ayların ortalaması alınır (boş aylar sayılmaz).
+function _evalPeriodsYtd(name, period){
+  const fy = _periodYear(period), m = _monthNum(period)||1;
+  return (state.evaluations||[]).filter(e=>{
+    if(e.personName!==name || _periodYear(e.period)!==fy) return false;
+    const em = _monthNum(e.period)||0;
+    return em>0 && em<=m;
+  });
+}
+// Manuel kriterin YTD ortalaması (oran, 0..1.5) — hiç girilmemişse null (hesap dışı).
+function _evalManualAvg(name, period, kod){
+  const vals = _evalPeriodsYtd(name, period).map(e=>(e.criteria||{})[kod]).filter(v=>typeof v==='number');
+  if(!vals.length) return null;
+  return vals.reduce((a,v)=>a+v,0)/vals.length;
+}
+// Yönetici Puanı (1-5) YTD ortalaması — hiç verilmemişse null.
+function _evalManagerAvg(name, period){
+  const vals = _evalPeriodsYtd(name, period).map(e=>Number(e.managerScore)||0).filter(v=>v>0);
+  if(!vals.length) return null;
+  return vals.reduce((a,v)=>a+v,0)/vals.length;
+}
 function personelCritOran(c, name, period, dept, ev){
   if(c.auto) return personelAutoMetric(c.kod, name, period, dept);
-  // Manuel kriter: yönetici o kritere değer girdiyse onu kullan
-  if(ev && ev.criteria && typeof ev.criteria[c.kod]==='number') return ev.criteria[c.kod];
-  // "yonetici" kalemi Yönetici Puanı (1-5) ile beslenir; diğer manuel kriterler girilene kadar hesap dışıdır
-  if(c.kod==='yonetici'){ const ms = ev && ev.managerScore; return ms ? ms/5 : null; }
-  return null;
+  // "yonetici" kalemi Yönetici Puanı (1-5) ile beslenir; diğer manuel kriterler girilene kadar hesap dışıdır.
+  if(c.kod==='yonetici'){ const ms = _evalManagerAvg(name, period); return ms!=null ? ms/5 : null; }
+  return _evalManualAvg(name, period, c.kod);   // YTD ortalama (girilmiş aylar)
 }
 function personelScore(person, period){
   const dept = person.department;
@@ -8928,9 +9005,14 @@ function personelScore(person, period){
   const coverage = avail.reduce((a,r)=>a+(Number(r.weight)||0),0);                // veri üreten ağırlık
   const missing = rows.filter(r=>r.oran===null || r.oran===undefined);
   const skor = avail.reduce((a,r)=>a+r.weight*r.oran, 0);                         // HAM ağırlık
+  // #2 (24 Kas 2026) — EŞİK KAPISI SKORU: her kriter en çok %100 sayılır (tavan),
+  // böylece bir kriterdeki aşım (pace %150) diğer zayıf/eksik kriterleri telafi edip
+  // eşiği yapay olarak geçiremez. Gösterimdeki `skor` ham kalır (performans göstergesi).
+  const skorGate = avail.reduce((a,r)=>a+r.weight*Math.min(Number(r.oran)||0,1), 0);
   // wsum geriye dönük uyum için korunur ama artık paydada KULLANILMAZ.
-  return { dept, cfg, ev, rows, avail, missing, totalWeight, coverage, wsum: totalWeight, skor,
-           managerScore: (ev&&ev.managerScore)||0 };
+  return { dept, cfg, ev, rows, avail, missing, totalWeight, coverage, wsum: totalWeight, skor, skorGate,
+           managerScore: _evalManagerAvg(person.displayName, period) || 0,
+           managerScoreMonth: (ev&&ev.managerScore)||0 };
 }
 // ÇEYREKLİK PRİM MOTORU — yıllık hedefe göre kümülatif hak ediş, çeyreklik ödeme.
 //  • Geçiş kapısı (pass): PACE skoru (sc.skor) ≥ eşik → dönem sonunda hedefe gidişat yeterli mi?
@@ -8938,7 +9020,8 @@ function personelScore(person, period){
 //      - hedef (birey/şirket): kazanım = min(yıllıkOran, 1)                → yıllık gerçekleşmenin doğrudan payı
 //      - karlılık            : kazanım = min(marjOran, 1) × geçenSüre       → oran birikmez, süreye yayılır
 //      - operasyonel/manuel  : kazanım = min(oran, 1) × geçenSüre           → aynı mantık
-//  • Aşım (over): YALNIZCA Q4'te (yıl kapanışında) ve yalnızca yıllık hedefi AŞAN (oran>1) birey/karlılıkta.
+//  • Aşım (over): YALNIZCA ARALIK'ta (yıl kapanışında) ve yalnızca yıllık hedefi AŞAN (oran>1) birey/karlılıkta.
+//    Ekim-Kasım'da aşım yalnız TAHMİN olarak gösterilir (overForecast), hak edişe girmez.
 //  • Bu çeyrek ödenecek = max(0, yılBaşındanHakEdilen − buÇeyrektenÖnceÖdenen)  → NEGATİF ödeme yok, fazlası devreder.
 function personelPrim(person, period){
   const sc = personelScore(person, period);
@@ -8946,7 +9029,16 @@ function personelPrim(person, period){
   const name = person.displayName;
   const cfg = sc.cfg;
   const base = cfg.primBase||0;               // Tüm kriterler %100 karşılandığında hak edilen TOPLAM yıllık taban prim.
-  const pass = sc.skor >= (cfg.threshold||0); // Eşik altında prim oluşmaz (PACE skoru — hedefe gidişat).
+  // #2 (24 Kas 2026) — EŞİK KAPISI iki koşullu:
+  //   (a) kriter başına %100 tavanlı skor (sc.skorGate) ≥ eşik  → aşım zayıf kriteri telafi etmez
+  //   (b) veri kapsamı ≥ %70 → yarısı eksik veriyle prim hesaplanmaz (ölçülemeyen performansa ödeme yok)
+  const MIN_COVERAGE = 0.70;
+  const gateOk = (sc.skorGate||0) >= (cfg.threshold||0);
+  const covOk  = (sc.coverage||0) >= MIN_COVERAGE;
+  const pass = gateOk && covOk;
+  const failReason = pass ? '' : (!covOk
+    ? 'Veri kapsamı %'+Math.round((sc.coverage||0)*100)+' — en az %'+Math.round(MIN_COVERAGE*100)+' gerekir'
+    : 'Eşik skoru %'+Math.round((sc.skorGate||0)*100)+' — eşik %'+Math.round((cfg.threshold||0)*100));
   const overCap = Math.max(1, Number(cfg.overCap)||1.5);   // Aşım tavanı: oran en çok bu kadar sayılır (örn. 1.5 = %150).
   const overAccel = (cfg.overAccel!=null?Number(cfg.overAccel):1); // İvme: aşımın ödüllendirme çarpanı.
   const OVER_KODS = ['birey_hedef','karlilik']; // Aşım primi YALNIZCA bireysel hedef ve karlılıkta çalışır.
@@ -8954,7 +9046,14 @@ function personelPrim(person, period){
   const year = _periodYear(period);
   const quarter = _periodQuarter(period);
   const elapsed = _elapsedFrac(period);       // geçenSüre = ay/12
+  const month = _monthNum(period)||1;
   const isQ4 = quarter === 4;
+  // #3 (24 Kas 2026) — AŞIM PRİMİ YALNIZ ARALIK'TA HAK EDİLİR (yıl kapanınca kesinleşir).
+  // Ekim–Kasım'da yalnız TAHMİN olarak gösterilir, hak edişe ve ödemeye GİRMEZ:
+  // eskiden Q4'ün ilk ayında (Ekim) hesaplanıp ödenebiliyordu, yıl sonunda oran düşse
+  // geri alınamıyordu (negatif ödeme yok → fazla avans devri).
+  const overDue = month === 12;
+  const overForecastOnly = (month===10 || month===11);
 
   const breakdown = {};
   let primRatio = 0, overRatio = 0;
@@ -8972,8 +9071,8 @@ function personelPrim(person, period){
     }
     primRatio += wshare * kazanim;
     breakdown[r.kod] = pass ? base * wshare * kazanim : 0;
-    // AŞIM: yalnız Q4 + yıllık hedefi aşan birey/karlılık
-    if(isQ4 && OVER_KODS.indexOf(r.kod)>=0){
+    // AŞIM: yalnız Aralık'ta hak edilir (Ekim-Kasım tahmin) + yalnız yıllık hedefi aşan birey/karlılık
+    if((overDue || overForecastOnly) && OVER_KODS.indexOf(r.kod)>=0){
       const ar = personelAnnualRatio(r.kod, name, period);
       if(ar!=null && ar>1){
         overRatio += wshare * (Math.min(ar, overCap) - 1) * overAccel;
@@ -8982,13 +9081,15 @@ function personelPrim(person, period){
   });
 
   const baseAmount = pass ? base*primRatio : 0;   // yıl başından hak edilen TABAN (kümülatif)
-  const overAmount = pass ? base*overRatio : 0;   // yıl kapanışı aşım primi
+  const overAmount = (pass && overDue) ? base*overRatio : 0;                  // Aralık: hak edilen aşım primi
+  const overForecast = (pass && overForecastOnly) ? base*overRatio : 0;       // Ekim-Kasım: yalnız tahmin (ödenmez)
   const earnedToDate = baseAmount + overAmount;   // yıl başından bu döneme kadar TOPLAM hak ediş
   const paidBefore = _paidBeforeQuarter(year, name, quarter); // bu çeyrekten önce ödenen (ledger)
   const thisQuarterPayable = Math.max(0, earnedToDate - paidBefore); // NEGATİF ödeme yok
   const carry = paidBefore > earnedToDate ? (paidBefore - earnedToDate) : 0; // fazla avans → sonraki çeyreğe devir
   const primAmount = earnedToDate;                // geriye dönük uyum: primAmount = toplam hak ediş
-  return { ...sc, pass, accel:1, name, year, quarter, elapsed, isQ4,
+  return { ...sc, pass, failReason, gateOk, covOk, minCoverage:MIN_COVERAGE,
+    accel:1, name, year, quarter, month, elapsed, isQ4, overDue, overForecastOnly, overForecast,
     primRatio, overRatio, baseAmount, overAmount, breakdown,
     earnedToDate, paidBefore, thisQuarterPayable, carry, primAmount };
 }
@@ -9059,18 +9160,19 @@ function printPrimBordro(person, period){
     {k:'html', html:'<div class="ipg-title">ÇEYREKLİK PRİM BORDROSU</div><div class="ipg-sub">Dönem: '+_ipEsc(period)+' ('+pr.year+'-Q'+pr.quarter+')</div>'},
     {k:'html', html:docInfoTable([
       ['Personel','<b>'+_ipEsc(nm)+'</b>','Dönem',_ipEsc(period)+' ('+pr.year+'-Q'+pr.quarter+')'],
-      ['Departman',_ipEsc(dept)+(person.email?(' · '+_ipEsc(person.email)):''),'Skor / eşik','<b>%'+skorPct+'</b> / %'+thrPct],
-      ['Durum',pr.pass?'<b style="color:#15803d">✔ Eşik aşıldı — prim hak edildi</b>':'<b style="color:#b91c1c">✕ Eşik altı — prim oluşmadı</b>','Q'+pr.quarter+' ödenecek','<b style="font-size:12px;color:'+(pr.pass&&pr.thisQuarterPayable>0?'#15803d':'#666')+'">'+_ipEsc(eur(pr.pass?pr.thisQuarterPayable:0))+'</b>'],
+      ['Departman',_ipEsc(dept)+(person.email?(' · '+_ipEsc(person.email)):''),'Eşik skoru / eşik · kapsam','<b>%'+Math.round((pr.skorGate||0)*100)+'</b> / %'+thrPct+' · kapsam %'+Math.round((pr.coverage||0)*100)+' (ham skor %'+skorPct+')'],
+      ['Durum',pr.pass?'<b style="color:#15803d">✔ Prim kapısı açık — prim hak edildi</b>':('<b style="color:#b91c1c">✕ Prim kapısı kapalı</b><div style="font-size:8px;color:#b91c1c">'+_ipEsc(pr.failReason||'')+'</div>'),'Q'+pr.quarter+' ödenecek','<b style="font-size:12px;color:'+(pr.pass&&pr.thisQuarterPayable>0?'#15803d':'#666')+'">'+_ipEsc(eur(pr.pass?pr.thisQuarterPayable:0))+'</b>'],
       ['Hazırlayan',_ipEsc(cu),'Yazdırma tarihi',_ipEsc(new Date().toLocaleString('tr-TR'))] ])},
     {k:'sec', title:'Kriter kırılımı (yıl başından hak edilen €)'},
     {k:'table', cols:[0,70,110], head:['Kriter','Ağırlık','Hak edilen'],
       rows:(_rows(critRows).length?_rows(critRows):['<tr><td colspan="3" style="text-align:center;color:#888">Veri yok</td></tr>'])
         .concat([ _sum('Taban (kümülatif)', pr.baseAmount) ])
-        .concat(pr.overAmount>0?[ _sum('⚡ Aşım (Q4)', pr.overAmount, {color:'#7c3aed'}) ]:[])
+        .concat(pr.overAmount>0?[ _sum('⚡ Aşım (Aralık)', pr.overAmount, {color:'#7c3aed'}) ]:[])
+        .concat(pr.overForecast>0?[ _sum('≈ Aşım tahmini (Aralık\'ta kesinleşir — ödemeye girmez)', pr.overForecast, {color:'#888'}) ]:[])
         .concat([ _sum('Yıl başından hak edilen', pr.earnedToDate, {bg:'#f5f5f5', bold:true}), _sum('Önceki çeyreklerde ödenen', pr.paidBefore) ])
         .concat(pr.carry>0?[ _sum('Fazla avans → devir', pr.carry, {color:'#b91c1c'}) ]:[])
         .concat([ _sum('Bu çeyrek ödenecek', pr.pass?pr.thisQuarterPayable:0, {bg:'#f5f5f5', bold:true, color:'#c00000'}) ])},
-    {k:'html', html:'<div class="dc-p" style="font-size:9px;color:#555">Primler <b>çeyreklik</b> ödenir; hak ediş <b>yıllık</b> hedefe göre kümülatiftir. “Bu çeyrek ödenecek” = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz, fazlası sonraki çeyreğe devreder). Aşım primi yalnızca yıl kapanışında (Q4) yıllık hedefi aşanlara verilir.</div>'},
+    {k:'html', html:'<div class="dc-p" style="font-size:9px;color:#555">Primler <b>çeyreklik</b> ödenir; hak ediş <b>yıllık</b> hedefe göre kümülatiftir. “Bu çeyrek ödenecek” = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz, fazlası sonraki çeyreğe devreder). Aşım primi yalnızca ARALIK ayında (yıl kapanışında) hak edilir; Ekim–Kasım ayında tahmin olarak gösterilir, ödemeye girmez. Prim kapısı: kriter başına %100 tavanlı eşik skoru ≥ eşik VE veri kapsamı ≥ %70. Çeyrek primi ancak çeyrek kapandıktan sonra kaydedilir.</div>'},
     {k:'html', html:docSignBoxes({title:'Personel',name:nm,unvan:dept,sign:{}},{title:'Yönetici',name:'',unvan:'Yönetici',sign:{}})+'<div class="rpg-std">Gizli — yalnızca ilgili personel ve yönetim içindir.</div>'}
   ];
   const pages=docPaginate(blocks, 'Prim Bordrosu · '+nm);
@@ -9104,7 +9206,7 @@ function printPersonelReport(person, period, isAdmin){
     const sl = statusLabel(r.oran);
     const num = personelCritNumbers(r.kod, person.displayName, period);
     return `<tr>
-      <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}</td>
+      <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}<div style="font-size:7.5px;color:#888;line-height:1.3;white-space:normal;margin-top:1px">${escapeHtml(critMetricNote(r))}</div></td>
       <td style="text-align:right;white-space:nowrap">${num?(num.hedefTable||num.hedef):'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;font-weight:700;white-space:nowrap">${num?num.gerc:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;white-space:nowrap">${num?num.kalan:'<span style="color:#cbd5e1">—</span>'}</td>
@@ -9258,7 +9360,7 @@ function printPersonelReport(person, period, isAdmin){
     blocks.push({k:'table', cols:[0,110,110,110], head:['Hedef','Hedef','Gerçekleşen','Kalan'], rows:_tgt.map(function(x){ return '<tr><td>'+x[0]+'</td><td style="text-align:right">'+x[1].hedef+'</td><td style="text-align:right;font-weight:700">'+x[1].gerc+'</td><td style="text-align:right">'+x[1].kalan+'</td></tr>'; })});
   }
   blocks.push({k:'sec', title:'Görev özeti'});
-  blocks.push({k:'table', cols:[0,0,0,0,0,0], head:['Skor','Yön. puanı','Görev','Tamamlanan','Açık','Geciken'], rows:['<tr style="text-align:center;font-weight:800"><td style="color:'+col(sc.skor)+'">%'+skorPct+'</td><td>'+(sc.managerScore?(sc.managerScore+'/5'):'—')+'</td><td>'+tTotal+'</td><td style="color:#15803d">'+tDone+'</td><td>'+tOpen+'</td><td style="color:'+(tOverdue?'#b91c1c':'#666')+'">'+tOverdue+'</td></tr>']});
+  blocks.push({k:'table', cols:[0,0,0,0,0,0], head:['Skor','Yön. puanı','Görev','Tamamlanan','Açık','Geciken'], rows:['<tr style="text-align:center;font-weight:800"><td style="color:'+col(sc.skor)+'">%'+skorPct+'</td><td>'+(sc.managerScore?((Math.round(sc.managerScore*10)/10)+'/5'):'—')+'</td><td>'+tTotal+'</td><td style="color:#15803d">'+tDone+'</td><td>'+tOpen+'</td><td style="color:'+(tOverdue?'#b91c1c':'#666')+'">'+tOverdue+'</td></tr>']});
   blocks.push({k:'sec', title:'Kriter bazlı değerlendirme'});
   blocks.push({k:'table', cols:[0,78,78,78,48,56], head:['Kriter','Hedef','Gerçekleşen','Hedefe kalan','Oran','Durum'], rows:_rows(critRows).length?_rows(critRows):['<tr><td colspan="6" style="text-align:center;color:#888">Veri yok</td></tr>']});
   blocks.push({k:'sec', title:'Prime dahil kazanılan projeler (dönem başından '+_ipEsc(period)+' sonuna)'});
@@ -12696,7 +12798,8 @@ function renderPersonelPerformans(period, isAdmin){
     if(!sc) return h('span');
     const open = !!PMOD.perfOpen[u.email];
     const barColor = sc.skor>=1?'#16a34a':sc.skor>=0.7?'#d97706':'#dc2626';
-    const msSel = sel([{v:'',l:'Yönetici Puanı (1-5)'},{v:'1',l:'1 — Zayıf'},{v:'2',l:'2'},{v:'3',l:'3 — Orta'},{v:'4',l:'4'},{v:'5',l:'5 — Çok iyi'}], String(sc.managerScore||''), async v=>{
+    // #4: Seçici BU AYIN puanını gösterir; skorda kullanılan değer yıl başından ortalamadır (yanında yazar).
+    const msSel = sel([{v:'',l:'Yönetici Puanı (1-5)'},{v:'1',l:'1 — Zayıf'},{v:'2',l:'2'},{v:'3',l:'3 — Orta'},{v:'4',l:'4'},{v:'5',l:'5 — Çok iyi'}], String(sc.managerScoreMonth||''), async v=>{
       const ev = personelEvalFor(u.displayName, period);
       const rec = ev ? { ...ev } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
       rec.managerScore = Number(v)||0;
@@ -12755,14 +12858,22 @@ function renderPersonelPerformans(period, isAdmin){
       return inp;
     };
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
-      isAdmin?h('div',{style:{fontSize:'10px',color:T4,marginBottom:'6px'}},'⚙ otomatik (sistemden) · ✎ manuel (yönetici % girer, boş = hesap dışı)'):h('span'),
+      isAdmin?h('div',{style:{fontSize:'10px',color:T4,marginBottom:'6px'}},'⚙ otomatik (sistemden) · ✎ manuel (yönetici % girer, boş = hesap dışı). Manuel kriterler ve Yönetici Puanı: yıl başından bu döneme kadar GİRİLEN ayların ortalaması.'):h('span'),
       ...sc.rows.map(r=>{
         const editable = isAdmin && !r.auto && r.kod!=='yonetici';
-        return h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',padding:'4px 0',fontSize:'12px'}},
-          h('span',{style:{color: r.oran==null && !editable?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
-          editable
-            ? h('span',{style:{display:'flex',alignItems:'center',gap:'5px'}}, critInput(r), h('span',{style:{color:'#64748b',fontSize:'11px'}},'% · ağırlık '+Math.round(r.weight*100)+'%'))
-            : h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, r.oran==null?'veri yok':pct(r.oran)+' ('+Math.round(r.weight*100)+'%)')
+        // #4: manuel kriterde bu AYIN girdisi ile YTD ortalama farklıysa ortalama ayrıca yazılır.
+        const monthVal = (evNow && evNow.criteria && typeof evNow.criteria[r.kod]==='number') ? evNow.criteria[r.kod] : null;
+        const avgNote = (editable && r.oran!=null) ? ' · yıllık ort. '+pct(r.oran) : '';
+        return h('div',{style:{padding:'5px 0',fontSize:'12px',borderBottom:'1px dashed #eef2f7'}},
+          h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}},
+            h('span',{style:{color: r.oran==null && !editable?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
+            editable
+              ? h('span',{style:{display:'flex',alignItems:'center',gap:'5px'}}, critInput(r), h('span',{style:{color:'#64748b',fontSize:'11px'}},'% · ağırlık '+Math.round(r.weight*100)+'%'+avgNote))
+              : h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, r.oran==null?'veri yok':pct(r.oran)+' ('+Math.round(r.weight*100)+'%)')
+          ),
+          // #8: kriterin neyi ölçtüğü
+          h('div',{style:{fontSize:'10.5px',color:'#94a3b8',lineHeight:'1.45',marginTop:'2px'}}, critMetricNote(r)
+            + (editable && monthVal!=null ? ' (bu ay girilen: %'+Math.round(monthVal*100)+')' : ''))
         );
       })
     ) : h('span');
@@ -12789,7 +12900,9 @@ function renderPersonelPerformans(period, isAdmin){
         '⚠️ '+sc.avail.length+'/'+sc.rows.length+' kriterde veri var — ağırlığın %'+Math.round((sc.coverage||0)*100)+'\'i hesaplanıyor, %'+Math.round((1-(sc.coverage||0))*100)+'\'i veri olmadığı için kaybediliyor. Eksik: '+sc.missing.map(m=>m.label).join(', ')
       ) : h('span'),
       h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
-        isAdmin?msSel:h('span',{style:{fontSize:'12px',color:T3}},'Yönetici Puanı: '+(sc.managerScore||'—')),
+        isAdmin?h('span',{style:{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}, msSel,
+          h('span',{style:{fontSize:'11px',color:T4}}, sc.managerScore?('yıllık ort. '+(Math.round(sc.managerScore*10)/10)+'/5'):'puan yok'))
+          :h('span',{style:{fontSize:'12px',color:T3}},'Yönetici Puanı (yıllık ort.): '+(sc.managerScore?(Math.round(sc.managerScore*10)/10):'—')),
         btn(open?'▲ Kriterleri gizle':'▼ Kriter detayı',()=>{PMOD.perfOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}),
         btn('🖨️ Rapor',()=>printPersonelReport(u, period, isAdmin),'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe'})
       ),
@@ -12810,6 +12923,70 @@ function renderPersonelPerformans(period, isAdmin){
   return h('div',{}, testBar, ...cards);
 }
 
+// ═══ #1 (24 Kas 2026) — "PERFORMANSIM": çalışanın KENDİ performansı ═══
+// Prim tutarı, prim defteri, eşik/kapı hesabı ve yönetici değerlendirme notu GÖSTERİLMEZ.
+// Yalnız kendi kriterleri, oranları, ağırlıkları, neyi ölçtükleri ve toplam skoru görünür.
+function _perfMeSelf(){
+  const cu = state.currentUser; if(!cu) return null;
+  const me = (state.users||[]).find(u=>u.email===cu.email) || cu;
+  return (me && me.department && me.displayName) ? me : null;
+}
+function _perfMeAllowed(){
+  const cu = state.currentUser;
+  return !!(cu && !cu.isAdmin && _perfMeSelf());
+}
+function renderPerfMe(){
+  const me = _perfMeSelf();
+  const mob = window.innerWidth<=768;
+  const fy = activeFiscalYear();
+  const period = _periodYear(state.personelPeriod)===fy ? state.personelPeriod : (fy+'-'+today().slice(5,7));
+  const head = h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',flexWrap:'wrap',marginBottom:'12px'}},
+    h('h2',{style:{fontSize:mob?'17px':'20px',fontWeight:'800',color:'#0f1f35',margin:'0'}},'📊 Performansım'),
+    h('div',{style:{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}},
+      h('span',{style:{fontSize:'12px',color:T3,fontWeight:'600'}},'Dönem:'),
+      inp('', period, v=>setState({personelPeriod:v}), 'month', {maxWidth:'170px'}),
+      h('span',{style:{fontSize:'11px',fontWeight:'700',color:'#1e3a6e',background:'#dbeafe',padding:'4px 9px',borderRadius:'8px'}},'Mali Yıl '+fy)
+    )
+  );
+  if(!me) return h('div',{}, head, h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Departmanınız atanmadığı için performans kriterleri hesaplanamıyor. Yöneticinizle görüşün.'));
+  const sc = personelScore(me, period);
+  if(!sc) return h('div',{}, head, h('div',{style:{padding:'24px',textAlign:'center',color:T4,background:'#fff',borderRadius:'12px',border:'1px solid #d0daea'}},'Departmanınız için tanımlı performans kriteri bulunamadı.'));
+  const pct = v => Math.round((v||0)*100)+'%';
+  const barColor = sc.skor>=1?'#16a34a':sc.skor>=0.7?'#d97706':'#dc2626';
+  const note = h('div',{style:{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'10px',padding:'10px 14px',marginBottom:'12px',fontSize:'12px',color:'#1e3a6e',lineHeight:'1.55'}},
+    'Bu ekran yalnız SİZE aittir; kimsenin skorunu göremezsiniz. Oranlar yıl başından seçili döneme kadar (YTD) hesaplanır. '
+    + 'Veri üretmeyen kriterin ağırlığı skora eklenmez (taralı bölüm). Prim tutarları ve yönetici notu bu ekranda gösterilmez.');
+  const card = h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'12px',padding:'16px'}},
+    h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
+      h('div',{style:{flex:'1',minWidth:'140px'}},
+        h('div',{style:{fontWeight:'700',fontSize:'15px',color:'#0f1f35'}},me.displayName),
+        h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[me.department]||me.department)+' · '+period)
+      ),
+      h('div',{style:{textAlign:'right'}},
+        h('div',{style:{fontSize:'24px',fontWeight:'800',color:barColor}},pct(sc.skor)),
+        h('div',{style:{fontSize:'10px',color:T4}},'Toplam Skor')
+      )
+    ),
+    h('div',{style:{height:'8px',background:'#e2e8f0',borderRadius:'4px',overflow:'hidden',margin:'12px 0',display:'flex'}},
+      h('div',{style:{height:'100%',width:Math.min(100,(sc.skor||0)*100)+'%',background:barColor}}),
+      h('div',{style:{height:'100%',width:Math.max(0,Math.min(100,(1-(sc.coverage||0))*100))+'%',background:'repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 3px,#e2e8f0 3px,#e2e8f0 6px)'}})
+    ),
+    (sc.missing && sc.missing.length) ? h('div',{style:{fontSize:'11px',color:'#b45309',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'7px 10px',marginBottom:'10px',lineHeight:'1.5'}},
+      '⚠️ '+sc.avail.length+'/'+sc.rows.length+' kriterde veri var — ağırlığın %'+Math.round((sc.coverage||0)*100)+'\'i hesaplanıyor. Veri olmayan: '+sc.missing.map(m=>m.label).join(', ')
+    ) : h('span'),
+    h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,margin:'4px 0 6px'}},'Kriterler'),
+    ...sc.rows.map(r=>h('div',{style:{padding:'6px 0',borderBottom:'1px dashed #eef2f7'}},
+      h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',fontSize:'12.5px'}},
+        h('span',{style:{color: r.oran==null?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
+        h('span',{style:{fontWeight:'700',whiteSpace:'nowrap',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}},
+          (r.oran==null?'veri yok':pct(r.oran))+' · ağırlık '+Math.round(r.weight*100)+'%')
+      ),
+      h('div',{style:{fontSize:'10.5px',color:'#94a3b8',lineHeight:'1.45',marginTop:'2px'}}, critMetricNote(r))
+    ))
+  );
+  return h('div',{}, head, note, card);
+}
+
 function renderPersonelPrim(period){
   const people = personelPeople();
   if(!people.length){
@@ -12819,7 +12996,9 @@ function renderPersonelPrim(period){
   const note = h('div',{style:{background:'#fffbeb',border:'1px solid #fcd34d',borderRadius:'10px',padding:'10px 14px',marginBottom:'12px',fontSize:'12px',color:'#92400e'}},
     '🔒 Prim verileri yalnızca yöneticiye görünür. Primler ÇEYREKLİK ödenir; hak ediş YILLIK hedefe göre kümülatiftir. '
     + '“Bu çeyrek ödenecek” = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz, fazlası sonraki çeyreğe devreder). '
-    + 'Aşım primi yalnızca yıl kapanışında (Q4) yıllık hedefi aşanlara verilir.');
+    + 'Aşım primi yalnızca ARALIK\'ta (yıl kapanışında) hak edilir; Ekim–Kasım\'da yalnız tahmin olarak gösterilir. '
+    + 'Prim kapısı: kriter başına %100 tavanlı eşik skoru ≥ eşik VE veri kapsamı ≥ %70. '
+    + 'Çeyrek primi yalnızca çeyrek kapandıktan sonra kaydedilebilir.');
 
   const cards = people.map(u=>{
     const pr = personelPrim(u, period);
@@ -12829,6 +13008,9 @@ function renderPersonelPrim(period){
     const rec = _ledgerRec(pr.year, nm);
     const qPaidRec = rec.quarters && rec.quarters[pr.quarter];
     const alreadyPaid = qPaidRec && Number(qPaidRec.amount)>=0 && qPaidRec.date;
+    // #6: çeyrek kapanmadan ya da Tam Prim 0 iken kayıt düğmesi soluk (tıklanınca da engellenir).
+    const _qClosed = _quarterClosed(pr.year, pr.quarter);
+    const _primSaveOk = Number(pr.cfg.primBase)>0 && _qClosed;
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
       h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,marginBottom:'6px'}},'Kriter kırılımı (yıl başından hak edilen €)'),
       ...pr.avail.map(r=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
@@ -12838,7 +13020,10 @@ function renderPersonelPrim(period){
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'6px 0 0',marginTop:'4px',borderTop:'1px dashed #e2e8f0',fontSize:'12px'}},
         h('span',{style:{color:'#334155'}},'Taban (kümülatif)'), h('span',{style:{fontWeight:'700'}},eur(pr.baseAmount))),
       pr.overAmount>0 ? h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
-        h('span',{style:{color:'#7c3aed'}},'⚡ Aşım (Q4)'), h('span',{style:{fontWeight:'700',color:'#7c3aed'}},eur(pr.overAmount))) : h('span'),
+        h('span',{style:{color:'#7c3aed'}},'⚡ Aşım (Aralık — hak edildi)'), h('span',{style:{fontWeight:'700',color:'#7c3aed'}},eur(pr.overAmount))) : h('span'),
+      // #3: Ekim-Kasım'da aşım yalnız tahmin — hak edişe ve ödemeye girmez.
+      pr.overForecast>0 ? h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
+        h('span',{style:{color:'#94a3b8'}},'≈ Aşım tahmini (Aralık\'ta kesinleşir, ödemeye girmez)'), h('span',{style:{fontWeight:'700',color:'#94a3b8'}},eur(pr.overForecast))) : h('span'),
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
         h('span',{style:{color:'#334155'}},'Yıl başından hak edilen'), h('span',{style:{fontWeight:'700'}},eur(pr.earnedToDate))),
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
@@ -12850,7 +13035,10 @@ function renderPersonelPrim(period){
       h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
         h('div',{style:{flex:'1',minWidth:'120px'}},
           h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#0f1f35'}},nm),
-          h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[u.department]||u.department)+' · '+pr.year+'-Q'+pr.quarter+' · Skor '+Math.round((pr.skor||0)*100)+'% · Eşik '+Math.round((pr.cfg.threshold||0)*100)+'%'),
+          h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[u.department]||u.department)+' · '+pr.year+'-Q'+pr.quarter+' · Skor '+Math.round((pr.skor||0)*100)+'% · Eşik skoru '+Math.round((pr.skorGate||0)*100)+'% (eşik '+Math.round((pr.cfg.threshold||0)*100)+'%) · Kapsam '+Math.round((pr.coverage||0)*100)+'%'),
+          // #2: eşik kapısı neden geçilmedi?
+          !pr.pass ? h('div',{style:{fontSize:'11px',color:'#b45309',fontWeight:'700',marginTop:'3px'}},'⛔ Prim kapısı kapalı — '+pr.failReason) : h('span'),
+          !_qClosed ? h('div',{style:{fontSize:'11px',color:'#64748b',marginTop:'3px'}},'⏳ Q'+pr.quarter+' henüz kapanmadı — kayıt '+_quarterEndTR(pr.year,pr.quarter)+' tarihinden sonra yapılabilir (tutar o güne kadar değişebilir).') : h('span'),
           !(Number(pr.cfg.primBase)>0) ? h('div',{style:{fontSize:'11px',color:'#dc2626',fontWeight:'700',marginTop:'4px'}},'⛔ Bu departman için Tam Prim tutarı tanımlı değil (0 €) — prim hesaplanamaz. ⚙ Ayarlar\'dan girin; kayıt kapalı.') : h('span'),
           (pr.missing && pr.missing.length) ? h('div',{style:{fontSize:'11px',color:'#b45309',marginTop:'4px'}},
             '⚠️ Ağırlığın %'+Math.round((1-(pr.coverage||0))*100)+'\'i veri olmadığı için prime girmiyor ('+pr.missing.length+' kriter)') : h('span')
@@ -12866,6 +13054,17 @@ function renderPersonelPrim(period){
         btn('💾 Çeyrek Primini Kaydet', async()=>{
           if(!(Number(pr.cfg.primBase)>0)){ showToast('⚠ '+(DEPT_LABEL[u.department]||u.department)+' için Tam Prim tutarı 0 — önce ⚙ Ayarlar\'dan girin.','#dc2626'); return; }
           const year=pr.year, q=pr.quarter;
+          // #6 (24 Kas 2026) — ÇEYREK KAPANMADAN KAYIT YOK: çeyrek içindeyken hak ediş henüz
+          // kesinleşmemiştir (kalan aylarda oran düşerse fazla avans devri oluşur).
+          if(!_quarterClosed(year, q)){
+            showToast('⚠ '+year+'-Q'+q+' henüz kapanmadı — çeyrek primi ancak '+_quarterEndTR(year,q)+' tarihinden sonra kaydedilebilir.','#d97706'); return;
+          }
+          // #6 — ÜZERİNE YAZMA ONAYI: bu çeyrek için zaten kayıt varsa ikinci bir onay istenir.
+          if(qPaidRec && qPaidRec.date){
+            if(!confirm('⚠ ÜZERİNE YAZMA\n\n'+nm+' · '+year+'-Q'+q+' primi '+_toTR(qPaidRec.date)+' tarihinde '
+              +eur(Number(qPaidRec.amount)||0)+' olarak KAYDEDİLMİŞ.\n\nYeni tutar: '+eur(pr.thisQuarterPayable)
+              +'\n\nEski kayıt silinip yenisi yazılsın mı? (Ödeme yapıldıysa muhasebe ile doğrulayın.)')) return;
+          }
           // O9: para tutarı yazılıyor — onaysız tek tıkla kayıt oluşmasın.
           if(!confirm(nm+' · '+year+'-Q'+q+'\n\nÖdenecek tutar: '+eur(pr.thisQuarterPayable)
             +'\nYıl başından hak edilen: '+eur(pr.earnedToDate)
@@ -12874,13 +13073,16 @@ function renderPersonelPrim(period){
           const ledger = JSON.parse(JSON.stringify(state.primLedger||{}));
           if(!ledger[year]) ledger[year]={};
           if(!ledger[year][nm]) ledger[year][nm]={paid:0,quarters:{}};
-          ledger[year][nm].quarters[q] = { amount: pr.thisQuarterPayable, earned: pr.earnedToDate, skor: pr.skor, date: today() };
+          const _prevQ = ledger[year][nm].quarters[q];
+          ledger[year][nm].quarters[q] = { amount: pr.thisQuarterPayable, earned: pr.earnedToDate, skor: pr.skor, date: today(),
+            by: (state.currentUser&&state.currentUser.displayName)||'',
+            ...( _prevQ && _prevQ.date ? { prev:{ amount:Number(_prevQ.amount)||0, date:_prevQ.date, by:_prevQ.by||'' } } : {} ) };
           ledger[year][nm].paid = Object.values(ledger[year][nm].quarters).reduce((a,x)=>a+(Number(x.amount)||0),0);
           state.primLedger = ledger;
           await savePrimLedger(ledger);
           showToast(state.testMode?'🧪 Test — kaydedilmedi':'✅ '+year+'-Q'+q+' primi kaydedildi.');
           render();
-        },Number(pr.cfg.primBase)>0?'#eef2ff':'#f1f5f9',Number(pr.cfg.primBase)>0?'#4338ca':'#94a3b8','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe',opacity:Number(pr.cfg.primBase)>0?'1':'0.6'}),
+        },_primSaveOk?'#eef2ff':'#f1f5f9',_primSaveOk?'#4338ca':'#94a3b8','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe',opacity:_primSaveOk?'1':'0.6'}),
         btn('🖨️ Prim Bordrosu',()=>printPrimBordro(u, period),'#ecfdf5','#065f46','7px 12px',{fontSize:'12px',border:'1px solid #a7f3d0'})
       ),
       detail
@@ -12916,7 +13118,7 @@ function renderPersonelSettings(){
         + 'Geçiş kapısı: dönem PACE skoru ≥ eşik ise prim oluşur (hedefe gidişat yeterli mi?). '
         + 'Hak ediş = Tam Prim × Σ(ağırlık × kazanım). Hedef kriterleri yıllık orana göre; karlılık ve operasyonel kriterler oran × geçen süre (ay/12) ile birikir. '
         + 'Bu çeyrek ödenecek = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz; fazla avans sonraki çeyreğe devreder). '
-        + 'Aşım Primi: YALNIZCA yıl kapanışında (Q4) ve yalnızca YILLIK hedefi aşan bireysel hedef/karlılıkta verilir. Aşım = Tam Prim × Σ(ağırlık × (min(yıllıkOran, aşım tavanı) − 1) × ivme). '
+        + 'Aşım Primi: YALNIZCA ARALIK ayında (yıl kapanışında) ve yalnızca YILLIK hedefi aşan bireysel hedef/karlılıkta verilir (Ekim–Kasım yalnız tahmin).  Aşım = Tam Prim × Σ(ağırlık × (min(yıllıkOran, aşım tavanı) − 1) × ivme). '
         + 'Aşım tavanı: oran en çok bu kadar sayılır (1.5 = %150; en az 1.0 girilebilir). İvme: aşımın ödül çarpanı (1 = normal). Skor eşiğin altındaysa hiç prim oluşmaz.')
     );
   });
@@ -12997,7 +13199,7 @@ function _renderInner() {
     return;
   }
 
-  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'leads',l:'🌱 Potansiyeller'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'projeler',l:'🏗 Projeler'},{id:'gorevler',l:'✅ Görevler'},{id:'personel',l:'🧑‍💼 Personel'}];
+  const TABS=[{id:'dashboard',l:'📊 Dashboard'},{id:'customers',l:'👥 Müşteriler'},{id:'suppliers',l:'🏭 Tedarikçiler'},{id:'appointments',l:'📅 Randevular'},{id:'visits',l:'📝 Ziyaretler'},{id:'opportunities',l:'🎯 Fırsatlar'},{id:'leads',l:'🌱 Potansiyeller'},{id:'proposals',l:'📄 Teklif Talepleri'},{id:'services',l:'_SERVIS_MENU_'},{id:'projeler',l:'🏗 Projeler'},{id:'gorevler',l:'✅ Görevler'},{id:'perfme',l:'📊 Performansım'},{id:'personel',l:'🧑‍💼 Personel'}];
   const cu = state.currentUser;
 
   // NAVBAR
@@ -13113,7 +13315,9 @@ function _renderInner() {
 
   const tabBar = h('div',{className:'tab-scroll',style:{background:'#c0daf0',borderBottom:'1px solid #a8c8e4',padding:window.innerWidth<=768?'0 6px':'0 24px',overflowX:'auto'}},
     h('div',{style:{maxWidth:'1400px',margin:'0 auto',display:'flex',gap:'2px',minWidth:'max-content'}},
-      ...TABS.filter(t=>(t.id!=='services'||t.l==='_SERVIS_MENU_') && (t.id!=='personel'||cu?.isAdmin)).map(t=>{
+      // 'personel' (tüm ekip + prim) yalnız yöneticide; 'perfme' (kendi performansı, prim yok) yalnız
+      // departmanı atanmış normal kullanıcıda (yönetici zaten Personel ekranından hepsini görür).
+      ...TABS.filter(t=>(t.id!=='services'||t.l==='_SERVIS_MENU_') && (t.id!=='personel'||cu?.isAdmin) && (t.id!=='perfme'||_perfMeAllowed())).map(t=>{
         if(t.l==='_TEKLIF_BTN_') {
           const tBtn = h('button',{
             style:{padding:window.innerWidth<=768?'8px 10px':'9px 15px',background:'linear-gradient(135deg,#16a34a,#15803d)',border:'none',cursor:'pointer',fontSize:window.innerWidth<=768?'11px':'13px',fontFamily:"'DM Sans',sans-serif",color:'#fff',whiteSpace:'nowrap',fontWeight:'700',borderRadius:'8px',margin:'6px 4px',boxShadow:'0 2px 6px rgba(21,128,61,.35)',display:'flex',alignItems:'center',gap:'5px'}
@@ -13216,6 +13420,7 @@ function _renderInner() {
   else if(state.tab==='projeler') content=renderProjeler();
   else if(state.tab==='gorevler') content=renderGorevlerStandalone();
   else if(state.tab==='personel') content=(cu&&cu.isAdmin)?renderPersonel():renderDashboard();
+  else if(state.tab==='perfme') content=_perfMeAllowed()?renderPerfMe():renderDashboard();
 
   const isMobMain = window.innerWidth <= 768;
   const main = h('div',{style:{maxWidth:'1400px',margin:'0 auto',padding:isMobMain?'12px':'20px'}},content);

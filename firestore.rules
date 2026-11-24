@@ -183,7 +183,16 @@ service cloud.firestore {
                         || resource.data.get('linkId', '') != '');
     }
     // Değerlendirmeler (prim/performans puanları, yönetici notları): yalnız yönetici — Personel ekranı zaten admin'e kilitli.
-    match /evaluations/{id}   { allow read, write: if isAdmin(); }
+    // Değerlendirmeler: yazma yalnız yönetici. Okuma → yönetici TÜMÜNÜ; çalışan YALNIZ KENDİ
+    // kaydını (personName = users/{e-posta}.displayName) — "Performansım" ekranı için (24 Kas 2026).
+    // Not: sorgu personName ile filtrelenmelidir (where('personName','==',kendi adı)).
+    match /evaluations/{id}   {
+      allow read: if isAdmin()
+        || (signedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+            && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.displayName == resource.data.personName);
+      allow write: if isAdmin();
+    }
     // Prim (para tutarları): yalnız yönetici
     match /prim/{id}          { allow read, write: if isAdmin(); }
 
