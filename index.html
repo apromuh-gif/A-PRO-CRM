@@ -1180,20 +1180,17 @@ async function loadUsers() {
 
 async function loadCollection(name) {
   try {
-    const snap = await db.collection(name).orderBy('createdAt','asc').get();
-    return snap.docs.map(d=>({...d.data(), id:d.id}));
+    // orderBy('createdAt') Firestore'da createdAt alanı olmayan kayıtları sessizce dışlar.
+    // Bu yüzden sırasız get() yapıp client'ta sıralıyoruz — hiçbir kayıt kaybolmaz.
+    const snap = await db.collection(name).get();
+    const docs = snap.docs.map(d=>({...d.data(), id:d.id}));
+    return docs.sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
   } catch(e) {
-    try {
-      // orderBy başarısız olabilir (createdAt alanı olmayan eski kayıtlar) — sırasız tekrar dene.
-      const snap = await db.collection(name).get();
-      return snap.docs.map(d=>({...d.data(), id:d.id}));
-    } catch(e2) {
-      // O10: eskiden burada sessizce [] dönülüyordu. İzin/ağ hatası "veri yok" gibi görünüyor,
-      // kullanıcı mükerrer kayıt oluşturabiliyordu. Artık görünür uyarı verilir.
-      console.error('[loadCollection] '+name+' okunamadı:', e2);
-      try { showToast('⚠️ "'+name+'" verisi yüklenemedi — liste eksik görünebilir, sayfayı yenileyin.','#dc2626'); } catch(_){}
-      return [];
-    }
+    // O10: eskiden burada sessizce [] dönülüyordu. İzin/ağ hatası "veri yok" gibi görünüyor,
+    // kullanıcı mükerrer kayıt oluşturabiliyordu. Artık görünür uyarı verilir.
+    console.error('[loadCollection] '+name+' okunamadı:', e);
+    try { showToast('⚠️ "'+name+'" verisi yüklenemedi — liste eksik görünebilir, sayfayı yenileyin.','#dc2626'); } catch(_){}
+    return [];
   }
 }
 
@@ -5396,8 +5393,8 @@ function renderDashboardAdmin() {
     if(o.stage==='KAZANILDI'){ repMap[n].won++; repMap[n].wonVal += Number(o.value)||0; }
     if(LOST.includes(o.stage)) repMap[n].lost++;
   });
-  // repMap zaten activeReps'ten geliyor - hasTarget filtreli
-  const repRows = Object.entries(repMap).sort((a,b)=>b[1].wonVal-a[1].wonVal||b[1].pipe-a[1].pipe).map(([n,d])=>{
+  const _activeRepNames = new Set([...state.users.filter(u=>u.active!==false).map(u=>u.displayName),'Atanmamış']);
+  const repRows = Object.entries(repMap).filter(([n])=>_activeRepNames.has(n)).sort((a,b)=>b[1].wonVal-a[1].wonVal||b[1].pipe-a[1].pipe).map(([n,d])=>{
     const _res=d.won+d.lost;
     return [
     h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
@@ -5776,7 +5773,8 @@ function renderDashboardSales() {
             }
           }
         });
-        const sorted = Object.entries(prepMap).sort((a,b)=>b[1].total-a[1].total);
+        const _activePrepNames = new Set([...state.users.filter(u=>u.active!==false).map(u=>u.displayName),'Bilinmiyor']);
+        const sorted = Object.entries(prepMap).filter(([n])=>_activePrepNames.has(n)).sort((a,b)=>b[1].total-a[1].total);
         const totalWonVal  = PF.filter(p=>p.status==='Onaylandı').reduce((a,p)=>a+(Number(p.amount)||0),0);
         const totalSentVal = PF.filter(p=>p.status==='Gönderildi').reduce((a,p)=>a+(Number(p.amount)||0),0);
         const totalPendVal = PF.filter(p=>p.status!=='Onaylandı'&&p.status!=='Reddedildi'&&p.status!=='Gönderildi').reduce((a,p)=>a+(Number(p.amount)||0),0);
@@ -12887,7 +12885,7 @@ function renderPersonelPerformans(period, isAdmin){
     // #4: Seçici BU AYIN puanını gösterir; skorda kullanılan değer yıl başından ortalamadır (yanında yazar).
     const msSel = sel([{v:'',l:'Yönetici Puanı (1-5)'},{v:'1',l:'1 — Zayıf'},{v:'2',l:'2'},{v:'3',l:'3 — Orta'},{v:'4',l:'4'},{v:'5',l:'5 — Çok iyi'}], String(sc.managerScoreMonth||''), async v=>{
       const ev = personelEvalFor(u.displayName, period);
-      const rec = ev ? { ...ev } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
+      const rec = ev ? { ...ev } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0, createdAt:today() };
       rec.managerScore = Number(v)||0;
       rec.updatedAt = today();
       await personelSaveDoc('evaluations', rec);
@@ -12909,7 +12907,7 @@ function renderPersonelPerformans(period, isAdmin){
       const cur = personelEvalFor(u.displayName, period);
       const prev = (cur && cur.notes) || '';
       if(ta.value === prev) return;
-      const rec = cur ? { ...cur } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
+      const rec = cur ? { ...cur } : { id: genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0, createdAt:today() };
       rec.notes = ta.value;
       rec.updatedAt = today();
       const sc3 = personelScore(u, period);
@@ -12931,7 +12929,7 @@ function renderPersonelPerformans(period, isAdmin){
         style:{width:'58px',textAlign:'right',padding:'3px 6px',border:'1px solid #cbd5e1',borderRadius:'6px',fontSize:'12px'}});
       inp.addEventListener('change', async()=>{
         const ev = personelEvalFor(u.displayName, period);
-        const rec = ev ? { ...ev, criteria:{ ...(ev.criteria||{}) } } : { id:genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0 };
+        const rec = ev ? { ...ev, criteria:{ ...(ev.criteria||{}) } } : { id:genId(), personName:u.displayName, department:u.department, period, criteria:{}, managerScore:0, createdAt:today() };
         const raw = String(inp.value).trim();
         if(raw==='') delete rec.criteria[r.kod];
         else rec.criteria[r.kod] = Math.max(0,Math.min(150,Number(raw)||0))/100;
@@ -14292,7 +14290,7 @@ function taxCalendarSync(){
 
 
 // Sürüm kodu: "Oturum alınamadı" uyarısının sonunda görünür (destekte hangi sürümün açık olduğunu anlamak için).
-const CRM_BUILD = '24Kas-PRIM2';
+const CRM_BUILD = '25Kas-EVAL1';
 
 
 
