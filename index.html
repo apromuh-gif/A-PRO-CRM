@@ -8958,7 +8958,7 @@ function evalDuplicates(){
 async function purgeDuplicateEvaluations(){
   if(!(state.currentUser && state.currentUser.isAdmin)){ showToast('⚠ Bu işlem yalnız yönetici içindir.','#dc2626'); return; }
   const dups = evalDuplicates();
-  if(!dups.length){ showToast('✅ Kopya değerlendirme kaydı yok.'); return; }
+  if(!dups.length){ showToast('✅ Kopya değerlendirme kaydı yok ('+((state.evaluations||[]).length)+' kayıt tarandı).'); return; }
   const ozet = dups.slice(0,12).map(e=>'• '+e.personName+' · '+e.period+' · puan '+(e.managerScore||'—')).join('\n')
     + (dups.length>12 ? '\n… ve '+(dups.length-12)+' kayıt daha' : '');
   if(!confirm('🧹 KOPYA DEĞERLENDİRME KAYITLARI\n\n'+dups.length+' kopya kayıt silinecek (kişi+dönem başına EN SON güncellenen kayıt KALIR):\n\n'
@@ -13359,7 +13359,8 @@ function _renderInner() {
               {icon:'🔄', label:'Teklifleri şimdi eşitle', color:'#0369a1', action:()=>{ menu.remove(); syncQuotationRefsNow(); }},
               {icon:'🔎', label:'Görev atama kontrolü', color:'#0e7490', action:()=>{ menu.remove(); setState({modal:{type:'taskcheck'}}); }},
               // A2: kişi+dönem başına tek değerlendirme kaydı kalsın (kopyalar yıllık ortalamayı kaydırır).
-              ...(evalDuplicates().length ? [{icon:'🧹', label:'Kopya değerlendirme kayıtlarını temizle ('+evalDuplicates().length+')', color:'#b45309', action:()=>{ menu.remove(); purgeDuplicateEvaluations(); }}] : []),
+              // Madde HER ZAMAN görünür: kopya yoksa tıklayınca "kopya yok" der (eskiden madde hiç çıkmıyordu, "düğme nerede?" karışıklığı oluyordu).
+              {icon:'🧹', label:'Kopya değerlendirme kayıtlarını temizle'+(evalDuplicates().length?(' ('+evalDuplicates().length+')'):''), color:'#b45309', action:()=>{ menu.remove(); purgeDuplicateEvaluations(); }},
               {icon:'🔃', label:'Sayfayı Yenile', color:'#0f1f35', action:()=>{ menu.remove(); location.reload(); }},
               {icon:'🧪', label:'Deneme modu (hiçbir şey kaydedilmez)', color:'#b91c1c', action:()=>{ menu.remove(); sandboxToggle(); }},
             ];
@@ -14291,7 +14292,7 @@ function taxCalendarSync(){
 
 
 // Sürüm kodu: "Oturum alınamadı" uyarısının sonunda görünür (destekte hangi sürümün açık olduğunu anlamak için).
-const CRM_BUILD = '14Kas-DOM1';
+const CRM_BUILD = '24Kas-PRIM2';
 
 
 
