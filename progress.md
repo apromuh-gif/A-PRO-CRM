@@ -1180,3 +1180,17 @@ Kaldırılanlar ve sebepleri:
 - **19 Kasım (devam):** Bakım raporunda **📄 Müşteri Kontrol Föyü** düğmesi alttaki düğme sırasına ("Rapor — PDF / Yazdır" yanına) taşındı; en üstteki "NFPA 25 (açık erişim)" düğmesi kaldırıldı (açıklama metni kaldı). Bakım kaydında sistem satırlarının üstüne sütun başlıkları (Sistem / Yıllık bakım sayısı / İlk bakım vadesi) eklendi; yeni kayıtta hazır boş sistem satırı gelir (`_sysInit`, kayda yazılmaz). Yerelde, commit/push edilmedi; form görünümü uygulamada denenmedi.
 - Ek düzeltme: Periyodik bakım Kaydet düğmesi yeni kaydı `!!(item&&item.id)` ile ayırır (yeni kayıtta sistem eklenince yeniden çizim item'ı id'siz kopyayla doldurduğu için kayıt "düzenleme" sanılıp id'siz kaydedilmeye çalışılıyordu).
 - **19 Kasım (devam) — Pencerelerde kaydırma konumu korunur (TÜM formlar) — yerelde, commit/push edilmedi:** Pencere açıkken yeniden çizim (sistem seç, satır ekle, madde işaretle vb.) kaydırmayı en başa sarıyordu; çalışılan alan kayıp aşağı inmek gerekiyordu. `render()` artık sarmalayıcı: yeniden çizimden önce açık pencerenin (`data-apro-modal`; tüm pencereler `modal()` ile çizilir) içindeki kaydırma konumları yol bazında alınır, sonra geri yüklenir (`_modalScrollSnap` / `_modalScrollRestore`); farklı pencere türüne geçince taşınmaz. Test düzeneğinde: yeniden çizimde 500 → 0, geri yüklemeyle 500; farklı pencerede 0. Ek: yeniden çizimden sonra bakım kaydı başlığı "Düzenle"ye dönmüyor (`item&&item.id`).
+
+## 24 Kasım 2026 — Personel Performans & Prim denetimi ve düzeltmeler (yerelde; commit/push edilmedi)
+- **Denetim:** Personel sekmesi Performans/Prim sistemi yönetici ve çalışan gözüyle incelendi; 10 bulgu çıkarıldı. Aktif 7 kullanıcının hepsinde departman atanmış (teknik departmanda kimse yok).
+- **Hesap hatası düzeltildi:** Servis/bakım fırsatları (`salesType` servis/bakim) yıllık hedef oranını şişiriyordu (0,75 → doğrusu 0,5). `personelAnnualRatio` ve `printPersonelReport` artık `_isSalesOpp` ile filtreler.
+- **#9 Görev tamamlama oranı:** payda = kapanan + vadesi geçmiş açık + performans nedeniyle alınan (`personelTaskStats`); vadesi gelmemiş açık görevler oranı düşürmez.
+- **#5 Aşım tavanı:** 1,0'ın altı kapatıldı (ayarlarda kayıt reddedilir; yükleme/hesapta en az 1,0). `saveEvalConfig` artık true/false döner.
+- **#7 Tam Prim = 0:** kartta kırmızı uyarı, "Çeyrek Primini Kaydet" soluk ve kayıt engelli.
+- **#10 Departman zorunlu:** kullanıcı ekleme, düzenleme kaydı ve pasif→aktif işleminde departman yoksa engellenir.
+- **Aşım primi formülü (bilgi):** Tam Prim × ağırlık × (min(oran, tavan) − 1) × ivme; yalnız birey_hedef + karlılık, yalnız yıllık oran >1 iken, şu an yalnız Q4'te.
+- **Bekleyen (onay bekliyor):** #3 aşımı yalnız Aralık'ta hesaplama / Ekim-Kasım tahmin; #6 çeyrek kaydı çeyrek sonrası + üzerine yazma onayı; #2 eşik kapısı (kriter başına %100 tavan, ≥%70 veri kapsamı); #4 yönetici puanı ve elle girilen kriterlerin yıllık ortalaması; #1 çalışan "Performansım" sekmesi (prim yok, yönetici notu gizli, Firestore kuralı güncellemesi); #8 görev bazlı kriter etiketi.
+- Doğrulama: ana script sözdizimi temiz, prim test düzeneği (servis filtresi) geçti. Uygulama ekranında denenmedi.
+
+## 23 Kasım 2026 — Teklif Programı: modül kalem sırası korunur (canlı)
+- Modül (boru hesabı, gaz, mutfak vb.) güncellenince kalemler bölüm sonuna düşüyordu; `item-order.ts` ile eski konumlar korunuyor, yeni kalemler bloğun sonuna ekleniyor. Commit `658c7fc`, Vercel yayında.

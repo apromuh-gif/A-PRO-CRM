@@ -1486,7 +1486,7 @@ async function loadEvalConfig() {
         if(s && typeof s==='object'){
           if(typeof s.primBase==='number')    base[dep].primBase    = s.primBase;
           if(typeof s.threshold==='number')   base[dep].threshold   = s.threshold;
-          if(typeof s.overCap==='number')     base[dep].overCap     = s.overCap;
+          if(typeof s.overCap==='number' && s.overCap>=1) base[dep].overCap = s.overCap;
           if(typeof s.overAccel==='number')   base[dep].overAccel   = s.overAccel;
         }
       });
@@ -1495,17 +1495,21 @@ async function loadEvalConfig() {
   return base;
 }
 async function saveEvalConfig(cfg) {
+  // Aşım tavanı 1.0'ın altında olamaz (negatif aşım oluşur).
+  const badCap = Object.keys(cfg||{}).find(dep=>{ const v=(cfg[dep]||{}).overCap; return v!=null && Number(v)<1; });
+  if(badCap){ showToast('⚠ Aşım tavanı 1.0\'ın altında olamaz ('+(DEPT_LABEL[badCap]||badCap)+'). Kaydedilmedi.','#dc2626'); return false; }
   try {
     // Yalnızca prim parametrelerini sakla — kriter/ağırlık koddan yönetildiği için kaydedilmez.
     const out = {};
     Object.keys(cfg||{}).forEach(dep=>{
       const c = cfg[dep]||{};
-      out[dep] = { primBase:Number(c.primBase)||0, threshold:Number(c.threshold)||0, overCap:Number(c.overCap)||1.5, overAccel:Number(c.overAccel)||1 };
+      out[dep] = { primBase:Number(c.primBase)||0, threshold:Number(c.threshold)||0, overCap:Math.max(1,Number(c.overCap)||1.5), overAccel:Number(c.overAccel)||1 };
     });
     await db.collection('settings').doc('evalConfig').set(out);
     state.evalConfig = await loadEvalConfig();
     showToast('✅ Prim ayarları kaydedildi!');
-  } catch(e) { showToast('❌ Kaydedilemedi!','#dc2626'); }
+    return true;
+  } catch(e) { showToast('❌ Kaydedilemedi!','#dc2626'); return false; }
 }
 
 async function loadProfitActuals() {
@@ -5017,6 +5021,7 @@ function buildAdminModal() {
           btn('🔑',()=>{editingId=editingId===u.email?null:u.email;editPw='';editingUser=null;rerender();},'#1c2a3a','#58a6ff','5px 10px',{fontSize:'11px',title:'Şifre değiştir'}),
           btn(u.active!==false?'Pasif':'Aktif',async()=>{
             if(u.email===state.currentUser.email){flash('⚠ Kendi hesabınızı pasife alamazsınız.',false);return;}
+            if(u.active===false && !u.department){flash('⚠ Departman atanmadan aktif edilemez — önce ✏️ ile departman seçin.',false);return;}
             const list=users.map(x=>x.email===u.email?{...x,active:x.active===false}:x);
             await persistUsers(list); flash('✅ Durum güncellendi.');
           },u.active!==false?'#1a2a1a':'#2a1a1a',u.active!==false?'#4ade80':'#f87171','5px 10px',{fontSize:'11px'}),
@@ -5060,6 +5065,7 @@ function buildAdminModal() {
           h('div',{style:{display:'flex',gap:'8px'}},
             btn('✓ Kaydet',async()=>{
               if(!eu.displayName){flash('⚠ Ad boş olamaz.',false);return;}
+              if(!eu.department){flash('⚠ Departman seçimi zorunludur.',false);return;}
               const list=users.map(x=>x.email===u.email?{...x,displayName:eu.displayName,isAdmin:eu.isAdmin,hasTarget:eu.hasTarget!==false,department:eu.department||'',extraDepts:(eu.extraDepts||[]).filter(d=>d!==eu.department),depo:!!eu.depo}:x);
               await persistUsers(list); editingUser=null; flash('✅ Kullanıcı güncellendi.');
             },'linear-gradient(135deg,#2563eb,#1d4ed8)','#fff','8px 14px',{flex:'1',fontSize:'12px'}),
@@ -5137,6 +5143,7 @@ function buildAdminModal() {
           btn('✓ Ekle',async()=>{
             if(!newU.email||!newU.password||!newU.displayName){flash('⚠ Tüm alanları doldurun.',false);return;}
             if(newU.password.length<6){flash('⚠ Şifre en az 6 karakter olmalı.',false);return;}
+            if(!newU.department){flash('⚠ Departman seçimi zorunludur.',false);return;}
             if(users.find(u=>u.email.toLowerCase()===newU.email.toLowerCase())){flash('⚠ E-posta zaten kayıtlı.',false);return;}
             // Firebase Auth hesabını ikincil app üzerinden oluştur — admin oturumu bozulmaz.
             try{
@@ -8581,8 +8588,11 @@ function personelTaskStats(name, period, ytd){
   // O2: devir TARİHİ de dönem penceresinde olmalı — Ocak'taki bir devir Ağustos oranını düşürmesin.
   const takenAway = (state.tasks||[]).map(normTask).filter(t=>recFY(t)===fy &&
     (t.assignmentHistory||[]).some(h=>h.from===name && h.reason==='performans' && win(h.at,period))).length;
-  const denom = total + takenAway;
-  return { total, done, takenAway, ratio: denom? done/denom : 0 };
+  // Payda: kapanan + vadesi geçmiş açık görevler + performans sebebiyle alınanlar.
+  // Vadesi henüz gelmemiş açık görevler oranı haksız düşürmesin (zamanında teslim ile aynı mantık).
+  const openOverdue = ts.filter(t=>!taskIsClosed(t) && t.dueDate && String(t.dueDate).slice(0,10) < today()).length;
+  const denom = done + openOverdue + takenAway;
+  return { total, done, openOverdue, takenAway, ratio: denom? done/denom : 0 };
 }
 // Zamanında teslim oranı — tamamlanan görevlerin vadesinde kapatılma oranı (tamamlama ≠ zamanında)
 function personelTaskPunctual(name, period, ytd){
@@ -8882,7 +8892,7 @@ function personelAnnualRatio(kod, name, period){
   if(kod==='birey_hedef' || kod==='sirket_hedef'){
     const annual = kod==='birey_hedef' ? (Number(T.reps&&T.reps[name])||0) : (Number(T.company)||0);
     if(!annual) return null;
-    const won = (state.opportunities||[]).filter(o=>(kod==='sirket_hedef'||o.assignedTo===name)&&o.stage==='KAZANILDI'&&_pWonYtd(o,period)).reduce((a,o)=>a+(Number(o.value)||0),0);
+    const won = (state.opportunities||[]).filter(_isSalesOpp).filter(o=>(kod==='sirket_hedef'||o.assignedTo===name)&&o.stage==='KAZANILDI'&&_pWonYtd(o,period)).reduce((a,o)=>a+(Number(o.value)||0),0);
     return won/annual;
   }
   if(kod==='karlilik'){
@@ -8937,7 +8947,7 @@ function personelPrim(person, period){
   const cfg = sc.cfg;
   const base = cfg.primBase||0;               // Tüm kriterler %100 karşılandığında hak edilen TOPLAM yıllık taban prim.
   const pass = sc.skor >= (cfg.threshold||0); // Eşik altında prim oluşmaz (PACE skoru — hedefe gidişat).
-  const overCap = Number(cfg.overCap)||1.5;   // Aşım tavanı: oran en çok bu kadar sayılır (örn. 1.5 = %150).
+  const overCap = Math.max(1, Number(cfg.overCap)||1.5);   // Aşım tavanı: oran en çok bu kadar sayılır (örn. 1.5 = %150).
   const overAccel = (cfg.overAccel!=null?Number(cfg.overAccel):1); // İvme: aşımın ödüllendirme çarpanı.
   const OVER_KODS = ['birey_hedef','karlilik']; // Aşım primi YALNIZCA bireysel hedef ve karlılıkta çalışır.
   const GOAL_KODS = ['birey_hedef','sirket_hedef']; // Yıllık kümülatif hedef kriterleri (elapsed uygulanmaz).
@@ -9104,7 +9114,7 @@ function printPersonelReport(person, period, isAdmin){
   }).join('');
 
   // Prime dahil kazanılan projeler (dönem — YTD): satış hedefi gerçekleşmesini oluşturan kalemler.
-  const wonProjects = (state.opportunities||[])
+  const wonProjects = (state.opportunities||[]).filter(_isSalesOpp)
     .filter(o=>o.assignedTo===person.displayName && o.stage==='KAZANILDI' && _pYtdInPeriod(_pOppDate(o),period))
     .sort((a,b)=>String(_pOppDate(b)||'').localeCompare(String(_pOppDate(a)||'')));
   const wonTotal = wonProjects.reduce((a,o)=>a+(Number(o.value)||0),0);
@@ -12841,6 +12851,7 @@ function renderPersonelPrim(period){
         h('div',{style:{flex:'1',minWidth:'120px'}},
           h('div',{style:{fontWeight:'700',fontSize:'14px',color:'#0f1f35'}},nm),
           h('div',{style:{fontSize:'11px',color:T3}},(DEPT_LABEL[u.department]||u.department)+' · '+pr.year+'-Q'+pr.quarter+' · Skor '+Math.round((pr.skor||0)*100)+'% · Eşik '+Math.round((pr.cfg.threshold||0)*100)+'%'),
+          !(Number(pr.cfg.primBase)>0) ? h('div',{style:{fontSize:'11px',color:'#dc2626',fontWeight:'700',marginTop:'4px'}},'⛔ Bu departman için Tam Prim tutarı tanımlı değil (0 €) — prim hesaplanamaz. ⚙ Ayarlar\'dan girin; kayıt kapalı.') : h('span'),
           (pr.missing && pr.missing.length) ? h('div',{style:{fontSize:'11px',color:'#b45309',marginTop:'4px'}},
             '⚠️ Ağırlığın %'+Math.round((1-(pr.coverage||0))*100)+'\'i veri olmadığı için prime girmiyor ('+pr.missing.length+' kriter)') : h('span')
         ),
@@ -12853,6 +12864,7 @@ function renderPersonelPrim(period){
       h('div',{style:{display:'flex',gap:'8px',marginTop:'10px',flexWrap:'wrap'}},
         btn(open?'▲ Kırılımı gizle':'▼ Kırılım',()=>{PMOD.primOpen[u.email]=!open;render();},'#e8eef7','#2a5080','7px 12px',{fontSize:'12px',border:'1px solid #b8c8de'}),
         btn('💾 Çeyrek Primini Kaydet', async()=>{
+          if(!(Number(pr.cfg.primBase)>0)){ showToast('⚠ '+(DEPT_LABEL[u.department]||u.department)+' için Tam Prim tutarı 0 — önce ⚙ Ayarlar\'dan girin.','#dc2626'); return; }
           const year=pr.year, q=pr.quarter;
           // O9: para tutarı yazılıyor — onaysız tek tıkla kayıt oluşmasın.
           if(!confirm(nm+' · '+year+'-Q'+q+'\n\nÖdenecek tutar: '+eur(pr.thisQuarterPayable)
@@ -12868,7 +12880,7 @@ function renderPersonelPrim(period){
           await savePrimLedger(ledger);
           showToast(state.testMode?'🧪 Test — kaydedilmedi':'✅ '+year+'-Q'+q+' primi kaydedildi.');
           render();
-        },'#eef2ff','#4338ca','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe'}),
+        },Number(pr.cfg.primBase)>0?'#eef2ff':'#f1f5f9',Number(pr.cfg.primBase)>0?'#4338ca':'#94a3b8','7px 12px',{fontSize:'12px',border:'1px solid #c7d2fe',opacity:Number(pr.cfg.primBase)>0?'1':'0.6'}),
         btn('🖨️ Prim Bordrosu',()=>printPrimBordro(u, period),'#ecfdf5','#065f46','7px 12px',{fontSize:'12px',border:'1px solid #a7f3d0'})
       ),
       detail
@@ -12896,7 +12908,7 @@ function renderPersonelSettings(){
         field('Eşik (0-1)', nInp(()=>c.threshold==null?0.7:c.threshold, v=>c.threshold=Number(v)||0), true)
       ),
       row(
-        field('Aşım tavanı (oran)', nInp(()=>c.overCap==null?1.5:c.overCap, v=>c.overCap=Number(v)||1.5), true),
+        field('Aşım tavanı (oran)', nInp(()=>c.overCap==null?1.5:c.overCap, v=>c.overCap=(v===''?1.5:Number(v))), true),
         field('Aşım ivmesi', nInp(()=>c.overAccel==null?1:c.overAccel, v=>c.overAccel=Number(v)||0), true)
       ),
       h('div',{style:{fontSize:'11px',color:'#64748b',marginTop:'6px',lineHeight:'1.5'}},
@@ -12905,7 +12917,7 @@ function renderPersonelSettings(){
         + 'Hak ediş = Tam Prim × Σ(ağırlık × kazanım). Hedef kriterleri yıllık orana göre; karlılık ve operasyonel kriterler oran × geçen süre (ay/12) ile birikir. '
         + 'Bu çeyrek ödenecek = yıl başından hak edilen − önceki çeyreklerde ödenen (negatif olmaz; fazla avans sonraki çeyreğe devreder). '
         + 'Aşım Primi: YALNIZCA yıl kapanışında (Q4) ve yalnızca YILLIK hedefi aşan bireysel hedef/karlılıkta verilir. Aşım = Tam Prim × Σ(ağırlık × (min(yıllıkOran, aşım tavanı) − 1) × ivme). '
-        + 'Aşım tavanı: oran en çok bu kadar sayılır (1.5 = %150). İvme: aşımın ödül çarpanı (1 = normal). Skor eşiğin altındaysa hiç prim oluşmaz.')
+        + 'Aşım tavanı: oran en çok bu kadar sayılır (1.5 = %150; en az 1.0 girilebilir). İvme: aşımın ödül çarpanı (1 = normal). Skor eşiğin altındaysa hiç prim oluşmaz.')
     );
   });
 
@@ -12932,7 +12944,7 @@ function renderPersonelSettings(){
     h('div',{style:{display:'flex',flexWrap:'wrap',gap:'6px'}}, ...sectorChips),
     h('div',{style:{display:'flex',gap:'8px',marginTop:'16px'}},
       btn('💾 Ayarları Kaydet', async()=>{
-        await saveEvalConfig(cfg);
+        if(!(await saveEvalConfig(cfg))) return;   // doğrulama başarısızsa taslak korunur
         await saveStrategy(strat);
         PMOD._cfgDraft=null; PMOD._stratDraft=null;   // taslağı bırak, kayıtlı değerden tazele
         render();
