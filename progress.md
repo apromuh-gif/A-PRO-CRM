@@ -1,5 +1,5 @@
 # A-PRO Mühendislik CRM — Proje Özeti
-> Son güncelleme: 24 Kasım 2026 (Performans/Prim denetiminin onay bekleyen 6 maddesi uygulandı; önceki: 19 Kasım iş programı/bakım raporu işleri, 15 Kasım güvenlik kalemleri)
+> Son güncelleme: 24 Kasım 2026 (onay bekleyen 6 madde + kriter N/A işareti ve değerlendirme kaydı tekilleştirme; önceki: 19 Kasım iş programı/bakım raporu işleri, 15 Kasım güvenlik kalemleri)
 
 ---
 
@@ -1210,6 +1210,24 @@ Denetimde "onay bekliyor" olarak bırakılan 6 madde (#1, #2, #3, #4, #6, #8) te
 **Doğrulama:** ana betik sözdizimi temiz; izole Node testi 19/19 geçti (çeyrek sonu tarihleri ve kapanış kontrolü, yıllık ortalama pencereleri, tavanlı eşik skoru + kapsam aritmetiği, aşım ay dağılımı); sayfa yerel sunucuda hatasız yüklendi (yalnız beklenen Firebase 401). **Uygulama içinde gerçek kullanıcıyla (giriş yapılmış) ekran testi yapılmadı.**
 
 **Bilinmesi gerekenler:** Yeni kapı mevcut personelde primi düşürebilir/sıfırlayabilir (ham skoru yüksek ama tavanlı skoru veya kapsamı düşük olanlar). Ekim–Kasım'da daha önce kaydedilmiş aşım primleri defterde durur; yeni kural geçmiş kayıtları değiştirmez. Yapısal olarak uygulanmayan kriter için "N/A" işaretleme hâlâ yok (kapsam %70 koşulu bu kişilerde kapıyı kapatabilir).
+
+## 24 Kasım 2026 — Kriter "N/A" işareti + değerlendirme kaydı tekilleştirme (A1 + A2)
+
+Prim kapısına (#2) geçildikten sonra kalan iki yapısal eksik kapatıldı.
+
+### A1 — Kriter "N/A" (bu kişide yapısal olarak uygulanmaz)
+- **Sorun:** saha/proje/muhasebe personelinde "Bireysel satış hedefi" gibi kriterler hiç veri üretmez; K3 gereği ağırlıkları kaybolur ve kişi **%70 veri kapsamı kapısını hiçbir zaman geçemez** — yani #2 fiilen "prim yok" anlamına geliyordu.
+- **Çözüm:** yönetici kriteri **N/A** işaretler (Personel → Performans → kriter detayı → `N/A` düğmesi; **gerekçe zorunlu**, mali yıl boyunca geçerli). N/A ağırlığı hem puandan hem **kapsam paydasından** düşer; kalan kriterlerin ağırlıkları orantılı büyütülür (`weightEff`), böylece kişi %100'e ulaşabilir. Kayıt yeri `users/{e-posta}.evalNA[yıl][kod] = {reason, by, at}` (users yazma zaten yalnız yönetici → **Firestore kuralı değişikliği gerekmez**).
+- N/A satırı Performans kartında, çalışanın Performansım ekranında ve Performans Raporu'nda gerekçesiyle görünür; prim kırılımı ve bordro etkin ağırlığı yazar.
+- **Kural:** N/A "veri girilmedi" demek DEĞİLDİR — yalnız yapısal olarak uygulanamayan kriter için kullanılır (arayüzde de bu uyarı yazar).
+- **Örnek (Ahsen TEKE, Kasım):** N/A yokken skor %15 · kapsam %41 → kapı kapalı (kapsam). Bireysel satış hedefi + Teknik doğruluk N/A işaretlenince etkin ağırlıklar yeniden dağılır (km taşı %20→%36, keşif %15→%27, yönetici %10→%18), skor %27 · kapsam %75 → kapsam koşulu sağlanır, kapı artık yalnız gerçek skor nedeniyle kapalı.
+
+### A2 — Değerlendirme kaydı tekilleştirme
+- **Sorun:** `evaluations` içinde aynı kişi+dönem için **10 ayrı belge** vardı (hepsi Erkan KARACAKALE / 2026-07, 28–29 Temmuz). Ekran ilk eşleşeni gösteriyor, kaydetme yalnız onu güncelliyor, yeni yıllık ortalama ise kopyaları ayrı ay gibi sayıyordu (ortalama 3,5/5 = %70).
+- **Çözüm:** `personelEvalFor` ve yıllık ortalama artık kişi+dönem başına **en son güncellenen** kaydı alır (`_evalPick`). Erkan'ın yönetici puanı ortalaması %70 → **%40** (en son girilen 2/5).
+- **Araçlar → 🧹 Kopya değerlendirme kayıtlarını temizle (N)**: yalnız yönetici, kopya varsa görünür, listeli onay sonrası eski kopyaları siler (9 kayıt). Deneme/test modunda yazmaz.
+
+**Doğrulama:** sözdizimi temiz; izole Node ortamında gerçek fonksiyonlarla gece yedeği verisi üzerinde denendi (N/A ağırlık dağıtımı, kapsam %41→%75, kopya tespiti 9, tekilleştirilmiş ortalama 2/5); sayfa yerel sunucuda hatasız yüklendi. Uygulama ekranında N/A düğmesi gerçek kullanıcıyla denenmedi.
 
 ## 23 Kasım 2026 — Teklif Programı: modül kalem sırası korunur (canlı)
 - Modül (boru hesabı, gaz, mutfak vb.) güncellenince kalemler bölüm sonuna düşüyordu; `item-order.ts` ile eski konumlar korunuyor, yeni kalemler bloğun sonuna ekleniyor. Commit `658c7fc`, Vercel yayında.

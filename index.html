@@ -8924,8 +8924,51 @@ function personelAnnualRatio(kod, name, period){
   }
   return null;
 }
+// A2 (24 Kas 2026) — KİŞİ + DÖNEM BAŞINA TEK KAYIT.
+// Temmuz 2026'da aynı kişi+dönem için 10 ayrı belge oluştuğu görüldü (sebep: kayıt sırasında
+// yeni id üretilmesi). Ekran ilk eşleşeni gösteriyor, kaydetme yalnız onu güncelliyor, yıllık
+// ortalama ise kopyaları ayrı ay gibi sayıyordu. Artık her yerde EN SON GÜNCELLENEN kayıt esastır.
+function _evalPick(list){
+  if(!list || !list.length) return null;
+  return list.slice().sort((a,b)=>{
+    const d=String(b.updatedAt||'').localeCompare(String(a.updatedAt||''));
+    return d!==0 ? d : String(b.id||'').localeCompare(String(a.id||''));
+  })[0];
+}
 function personelEvalFor(name, period){
-  return (state.evaluations||[]).find(e=>e.personName===name && e.period===period) || null;
+  return _evalPick((state.evaluations||[]).filter(e=>e.personName===name && e.period===period));
+}
+// Kopya değerlendirme kayıtları (kişi+dönem başına en son güncellenen hariç hepsi).
+function evalDuplicates(){
+  const byKey = {};
+  (state.evaluations||[]).forEach(e=>{
+    const k = String(e.personName||'')+'|'+String(e.period||'');
+    (byKey[k] = byKey[k] || []).push(e);
+  });
+  const dups = [];
+  Object.keys(byKey).forEach(k=>{
+    const list = byKey[k];
+    if(list.length<2) return;
+    const keep = _evalPick(list);
+    list.forEach(e=>{ if(e.id!==keep.id) dups.push(e); });
+  });
+  return dups;
+}
+// Araçlar → 🧹 Kopya değerlendirme kayıtlarını temizle (yalnız yönetici, onaylı, geri alınamaz).
+async function purgeDuplicateEvaluations(){
+  if(!(state.currentUser && state.currentUser.isAdmin)){ showToast('⚠ Bu işlem yalnız yönetici içindir.','#dc2626'); return; }
+  const dups = evalDuplicates();
+  if(!dups.length){ showToast('✅ Kopya değerlendirme kaydı yok.'); return; }
+  const ozet = dups.slice(0,12).map(e=>'• '+e.personName+' · '+e.period+' · puan '+(e.managerScore||'—')).join('\n')
+    + (dups.length>12 ? '\n… ve '+(dups.length-12)+' kayıt daha' : '');
+  if(!confirm('🧹 KOPYA DEĞERLENDİRME KAYITLARI\n\n'+dups.length+' kopya kayıt silinecek (kişi+dönem başına EN SON güncellenen kayıt KALIR):\n\n'
+    +ozet+'\n\nBu işlem geri alınamaz (kopyalar gece yedeğinde ~30 gün durur). Silinsin mi?')) return;
+  let ok=0, err=0;
+  for(const e of dups){
+    try{ await deleteDoc('evaluations', e.id); ok++; }catch(_){ err++; }
+  }
+  setState({ evaluations: (state.evaluations||[]).filter(e=>!dups.find(d=>d.id===e.id)) });
+  showToast(state.testMode||state.sandbox ? '🧪 Deneme/test — silinmedi' : ('✅ '+ok+' kopya kayıt silindi'+(err?(' · '+err+' kayıt silinemedi'):'')), err?'#d97706':'#16a34a');
 }
 // #8 (24 Kas 2026) — Kriterin NEYİ ölçtüğü (ekranda ve raporda kriterin altında görünür).
 // Özellikle görev bazlı kriterler ("Görev tamamlama" / "Zamanında teslim" / "İş emri") aynı
@@ -8967,11 +9010,15 @@ function critMetricNote(c){
 // Artık yıl başından döneme kadar DEĞER GİRİLMİŞ ayların ortalaması alınır (boş aylar sayılmaz).
 function _evalPeriodsYtd(name, period){
   const fy = _periodYear(period), m = _monthNum(period)||1;
-  return (state.evaluations||[]).filter(e=>{
+  const list = (state.evaluations||[]).filter(e=>{
     if(e.personName!==name || _periodYear(e.period)!==fy) return false;
     const em = _monthNum(e.period)||0;
     return em>0 && em<=m;
   });
+  // A2: aynı ay için birden çok kayıt varsa yalnız EN SON güncellenen sayılır (kopyalar ayrı ay gibi ortalamaya girmesin).
+  const byPeriod = {};
+  list.forEach(e=>{ (byPeriod[e.period] = byPeriod[e.period] || []).push(e); });
+  return Object.keys(byPeriod).map(p=>_evalPick(byPeriod[p]));
 }
 // Manuel kriterin YTD ortalaması (oran, 0..1.5) — hiç girilmemişse null (hesap dışı).
 function _evalManualAvg(name, period, kod){
@@ -8985,6 +9032,34 @@ function _evalManagerAvg(name, period){
   if(!vals.length) return null;
   return vals.reduce((a,v)=>a+v,0)/vals.length;
 }
+// ═══ A1 (24 Kas 2026) — KRİTER "N/A" (bu kişide yapısal olarak uygulanmaz) ═══
+// Örn. saha/proje personelinde "Bireysel satış hedefi": hedefi yoktur, kriter asla veri üretmez;
+// K3 gereği ağırlığı kaybolur ve kişi %70 veri kapsamı kapısını HİÇBİR zaman geçemez.
+// N/A işaretlenen kriterin ağırlığı hem puandan hem KAPSAM PAYDASINDAN düşer; kalan kriterlerin
+// ağırlıkları orantılı büyütülür (weightEff), böylece kişi %100'e ulaşabilir.
+// DİKKAT: N/A, "veri girilmedi" demek DEĞİLDİR — yalnız yapısal olarak uygulanamayan kriter içindir.
+// Kayıt yeri: users/{e-posta}.evalNA[yıl][kod] = {reason, by, at} (mali yıl boyunca geçerli, yalnız yönetici yazar).
+function evalNAFor(person, period){
+  const y = String(_periodYear(period));
+  const u = (state.users||[]).find(x=>x.email===(person&&person.email)) || person || {};
+  return ((u.evalNA||{})[y]) || {};
+}
+async function setEvalNA(person, period, kod, reason){
+  if(!(state.currentUser && state.currentUser.isAdmin)){ showToast('⚠ N/A işareti yalnız yönetici tarafından konur.','#dc2626'); return false; }
+  const y = String(_periodYear(period));
+  const u = (state.users||[]).find(x=>x.email===person.email);
+  if(!u){ showToast('⚠ Kullanıcı bulunamadı.','#dc2626'); return false; }
+  const rec = JSON.parse(JSON.stringify(u)); delete rec.password;
+  rec.evalNA = rec.evalNA || {}; rec.evalNA[y] = rec.evalNA[y] || {};
+  if(reason===null){ delete rec.evalNA[y][kod]; }
+  else { rec.evalNA[y][kod] = { reason: String(reason), by: (state.currentUser&&state.currentUser.displayName)||'', at: today() }; }
+  try{
+    if(!(state.testMode||state.sandbox)) await saveDoc('users', rec.email, rec);
+    setState({ users: (state.users||[]).map(x=>x.email===rec.email ? Object.assign({}, x, {evalNA: rec.evalNA}) : x) });
+    showToast((state.testMode||state.sandbox)?'🧪 Deneme/test — kaydedilmedi':(reason===null?'✅ N/A kaldırıldı.':'✅ Kriter N/A işaretlendi.'));
+    return true;
+  }catch(e){ showToast('❌ Kaydedilemedi: '+(e&&e.message||''),'#dc2626'); return false; }
+}
 function personelCritOran(c, name, period, dept, ev){
   if(c.auto) return personelAutoMetric(c.kod, name, period, dept);
   // "yonetici" kalemi Yönetici Puanı (1-5) ile beslenir; diğer manuel kriterler girilene kadar hesap dışıdır.
@@ -8996,21 +9071,32 @@ function personelScore(person, period){
   const cfg = (state.evalConfig && state.evalConfig[dept]) || DEFAULT_EVAL_CONFIG[dept];
   if(!cfg) return null;
   const ev = personelEvalFor(person.displayName, period);
-  const rows = cfg.criteria.map(c=>({ ...c, oran: personelCritOran(c, person.displayName, period, dept, ev) }));
-  const avail = rows.filter(r=>r.oran!==null && r.oran!==undefined);
-  // K3 — AĞIRLIK YENİDEN DAĞITILMAZ. Her kriter yalnızca KENDİ tasarlanan ağırlığı kadar
-  // katkı verir; veri üretmeyen kriterin payı KAYBEDİLİR, diğerlerine dağıtılmaz.
-  // (Eski davranış weight/wsum ile 1.00'e normalize ediyor, eksik veriyi ödüle çeviriyordu.)
+  // A1 — N/A işaretli kriter hesaba hiç girmez (oranı okunmaz, ağırlığı paydadan düşer).
+  const naMap = evalNAFor(person, period);
+  const rows = cfg.criteria.map(c=>{
+    const na = !!naMap[c.kod];
+    return { ...c, na, naReason: na ? (naMap[c.kod].reason||'') : '', naBy: na ? (naMap[c.kod].by||'') : '',
+             oran: na ? null : personelCritOran(c, person.displayName, period, dept, ev) };
+  });
   const totalWeight = cfg.criteria.reduce((a,c)=>a+(Number(c.weight)||0),0) || 1; // tasarlanan toplam (=1.00)
-  const coverage = avail.reduce((a,r)=>a+(Number(r.weight)||0),0);                // veri üreten ağırlık
-  const missing = rows.filter(r=>r.oran===null || r.oran===undefined);
-  const skor = avail.reduce((a,r)=>a+r.weight*r.oran, 0);                         // HAM ağırlık
+  const naRows = rows.filter(r=>r.na);
+  const naWeight = naRows.reduce((a,r)=>a+(Number(r.weight)||0),0);
+  // Uygulanabilir ağırlık = tasarlanan toplam − N/A. Kalan kriterlerin ağırlıkları bu paydaya göre
+  // orantılı büyütülür (weightEff) → kişi N/A'lara rağmen %100'e ulaşabilir.
+  const applicableWeight = Math.max(0.0001, totalWeight - naWeight);
+  rows.forEach(r=>{ r.weightEff = r.na ? 0 : (Number(r.weight)||0)/applicableWeight; });
+  const avail = rows.filter(r=>!r.na && r.oran!==null && r.oran!==undefined);
+  // K3 — VERİ ÜRETMEYEN kriterin ağırlığı KAYBEDİLİR, diğerlerine dağıtılmaz (N/A'dan farkı budur:
+  // N/A yapısal olarak uygulanamayan kriterdir, eksik veri değildir).
+  const coverage = avail.reduce((a,r)=>a+r.weightEff, 0);                        // veri üreten (etkin) ağırlık
+  const missing = rows.filter(r=>!r.na && (r.oran===null || r.oran===undefined));
+  const skor = avail.reduce((a,r)=>a+r.weightEff*r.oran, 0);
   // #2 (24 Kas 2026) — EŞİK KAPISI SKORU: her kriter en çok %100 sayılır (tavan),
   // böylece bir kriterdeki aşım (pace %150) diğer zayıf/eksik kriterleri telafi edip
   // eşiği yapay olarak geçiremez. Gösterimdeki `skor` ham kalır (performans göstergesi).
-  const skorGate = avail.reduce((a,r)=>a+r.weight*Math.min(Number(r.oran)||0,1), 0);
+  const skorGate = avail.reduce((a,r)=>a+r.weightEff*Math.min(Number(r.oran)||0,1), 0);
   // wsum geriye dönük uyum için korunur ama artık paydada KULLANILMAZ.
-  return { dept, cfg, ev, rows, avail, missing, totalWeight, coverage, wsum: totalWeight, skor, skorGate,
+  return { dept, cfg, ev, rows, avail, missing, naRows, naWeight, applicableWeight, totalWeight, coverage, wsum: totalWeight, skor, skorGate,
            managerScore: _evalManagerAvg(person.displayName, period) || 0,
            managerScoreMonth: (ev&&ev.managerScore)||0 };
 }
@@ -9058,7 +9144,7 @@ function personelPrim(person, period){
   const breakdown = {};
   let primRatio = 0, overRatio = 0;
   sc.avail.forEach(r=>{
-    const wshare = r.weight;   // K3: ham ağırlık — eksik kriterin payı buraya dağıtılmaz
+    const wshare = (r.weightEff!=null ? r.weightEff : r.weight);   // K3: eksik kriterin payı dağıtılmaz; A1: N/A payı uygulanabilir kriterlere orantılı dağılır
     let kazanim;
     if(GOAL_KODS.indexOf(r.kod)>=0){
       const ar = personelAnnualRatio(r.kod, name, period);
@@ -9135,7 +9221,7 @@ function printPrimBordro(person, period){
   const thrPct = Math.round((pr.cfg.threshold||0)*100);
 
   const critRows = (pr.avail||[]).map(r=>{
-    const wPct = Math.round(r.weight*100);   // K3: tasarlanan ham ağırlık
+    const wPct = Math.round((r.weightEff!=null?r.weightEff:r.weight)*100);   // K3/A1: etkin ağırlık (N/A payı dağıtılmış)
     const amt = pr.breakdown[r.kod]||0;
     return `<tr>
       <td>${escapeHtml(r.label)}</td>
@@ -9206,11 +9292,11 @@ function printPersonelReport(person, period, isAdmin){
     const sl = statusLabel(r.oran);
     const num = personelCritNumbers(r.kod, person.displayName, period);
     return `<tr>
-      <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}<div style="font-size:7.5px;color:#888;line-height:1.3;white-space:normal;margin-top:1px">${escapeHtml(critMetricNote(r))}</div></td>
+      <td>${(r.auto?'⚙ ':'✎ ')+escapeHtml(r.label)}<div style="font-size:7.5px;color:#888;line-height:1.3;white-space:normal;margin-top:1px">${escapeHtml(r.na?('N/A — uygulanmaz. Gerekçe: '+(r.naReason||'')):critMetricNote(r))}</div></td>
       <td style="text-align:right;white-space:nowrap">${num?(num.hedefTable||num.hedef):'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;font-weight:700;white-space:nowrap">${num?num.gerc:'<span style="color:#cbd5e1">—</span>'}</td>
       <td style="text-align:right;white-space:nowrap">${num?num.kalan:'<span style="color:#cbd5e1">—</span>'}</td>
-      <td style="text-align:center;font-weight:700;color:${col(r.oran)}">${r.oran==null?'veri yok':pct(r.oran)}</td>
+      <td style="text-align:center;font-weight:700;color:${r.na?'#991b1b':col(r.oran)}">${r.na?'N/A':(r.oran==null?'veri yok':pct(r.oran))}</td>
       <td style="text-align:center;font-weight:700;color:${sl[1]}">${sl[0]}</td>
     </tr>`;
   }).join('');
@@ -12860,20 +12946,34 @@ function renderPersonelPerformans(period, isAdmin){
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
       isAdmin?h('div',{style:{fontSize:'10px',color:T4,marginBottom:'6px'}},'⚙ otomatik (sistemden) · ✎ manuel (yönetici % girer, boş = hesap dışı). Manuel kriterler ve Yönetici Puanı: yıl başından bu döneme kadar GİRİLEN ayların ortalaması.'):h('span'),
       ...sc.rows.map(r=>{
-        const editable = isAdmin && !r.auto && r.kod!=='yonetici';
+        const editable = isAdmin && !r.auto && r.kod!=='yonetici' && !r.na;
         // #4: manuel kriterde bu AYIN girdisi ile YTD ortalama farklıysa ortalama ayrıca yazılır.
         const monthVal = (evNow && evNow.criteria && typeof evNow.criteria[r.kod]==='number') ? evNow.criteria[r.kod] : null;
         const avgNote = (editable && r.oran!=null) ? ' · yıllık ort. '+pct(r.oran) : '';
-        return h('div',{style:{padding:'5px 0',fontSize:'12px',borderBottom:'1px dashed #eef2f7'}},
+        const wEffTxt = Math.round((r.weightEff||0)*100)+'%' + (Math.round((r.weightEff||0)*100)!==Math.round(r.weight*100) ? ' (tasarım %'+Math.round(r.weight*100)+')' : '');
+        // A1: N/A işareti — yalnız yönetici; gerekçe zorunlu; mali yıl boyunca geçerli.
+        const naBtn = isAdmin ? btn(r.na?'N/A kaldır':'N/A', async()=>{
+          if(r.na){ if(!confirm(u.displayName+' · "'+r.label+'"\n\nN/A işareti kaldırılsın mı? Kriter yeniden hesaba girecek.')) return; await setEvalNA(u, period, r.kod, null); render(); return; }
+          const rs=(prompt('"'+r.label+'" kriteri '+u.displayName+' için NEDEN uygulanmıyor?\n\nYalnız YAPISAL olarak uygulanamayan kriter için kullanın (ör. saha personelinde satış hedefi).\n"Veri girilmedi" bir N/A sebebi DEĞİLDİR.\n\nGerekçe (zorunlu):','')||'').trim();
+          if(!rs){ showToast('⚠ Gerekçe girilmeden N/A işaretlenemez.','#d97706'); return; }
+          await setEvalNA(u, period, r.kod, rs); render();
+        }, r.na?'#fee2e2':'#f1f5f9', r.na?'#991b1b':'#64748b','2px 7px',{fontSize:'10px',border:'1px solid '+(r.na?'#fecaca':'#cbd5e1')}) : h('span');
+        return h('div',{style:{padding:'5px 0',fontSize:'12px',borderBottom:'1px dashed #eef2f7',opacity:r.na?'0.75':'1'}},
           h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px'}},
-            h('span',{style:{color: r.oran==null && !editable?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
-            editable
-              ? h('span',{style:{display:'flex',alignItems:'center',gap:'5px'}}, critInput(r), h('span',{style:{color:'#64748b',fontSize:'11px'}},'% · ağırlık '+Math.round(r.weight*100)+'%'+avgNote))
-              : h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, r.oran==null?'veri yok':pct(r.oran)+' ('+Math.round(r.weight*100)+'%)')
+            h('span',{style:{color: (r.na || (r.oran==null && !editable))?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
+            h('span',{style:{display:'flex',alignItems:'center',gap:'6px'}},
+              r.na
+                ? h('span',{style:{fontWeight:'700',color:'#991b1b'}},'N/A — uygulanmaz')
+                : (editable
+                    ? h('span',{style:{display:'flex',alignItems:'center',gap:'5px'}}, critInput(r), h('span',{style:{color:'#64748b',fontSize:'11px'}},'% · ağırlık '+wEffTxt+avgNote))
+                    : h('span',{style:{fontWeight:'700',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}}, (r.oran==null?'veri yok':pct(r.oran))+' ('+wEffTxt+')')),
+              naBtn
+            )
           ),
-          // #8: kriterin neyi ölçtüğü
-          h('div',{style:{fontSize:'10.5px',color:'#94a3b8',lineHeight:'1.45',marginTop:'2px'}}, critMetricNote(r)
-            + (editable && monthVal!=null ? ' (bu ay girilen: %'+Math.round(monthVal*100)+')' : ''))
+          // #8: kriterin neyi ölçtüğü · A1: N/A gerekçesi
+          h('div',{style:{fontSize:'10.5px',color:'#94a3b8',lineHeight:'1.45',marginTop:'2px'}},
+            r.na ? ('N/A gerekçesi: '+r.naReason+(r.naBy?(' — '+r.naBy):'')+' · ağırlığı (%'+Math.round(r.weight*100)+') diğer kriterlere orantılı dağıtıldı')
+                 : (critMetricNote(r) + (editable && monthVal!=null ? ' (bu ay girilen: %'+Math.round(monthVal*100)+')' : '')))
         );
       })
     ) : h('span');
@@ -12897,7 +12997,7 @@ function renderPersonelPerformans(period, isAdmin){
         h('div',{style:{height:'100%',width:Math.max(0,Math.min(100,(1-(sc.coverage||0))*100))+'%',background:'repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 3px,#e2e8f0 3px,#e2e8f0 6px)'}})
       ),
       sc.missing && sc.missing.length ? h('div',{style:{fontSize:'11px',color:'#b45309',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'7px 10px',marginBottom:'9px',lineHeight:'1.5'}},
-        '⚠️ '+sc.avail.length+'/'+sc.rows.length+' kriterde veri var — ağırlığın %'+Math.round((sc.coverage||0)*100)+'\'i hesaplanıyor, %'+Math.round((1-(sc.coverage||0))*100)+'\'i veri olmadığı için kaybediliyor. Eksik: '+sc.missing.map(m=>m.label).join(', ')
+        '⚠️ '+sc.avail.length+'/'+(sc.rows.length-(sc.naRows||[]).length)+' uygulanabilir kriterde veri var — ağırlığın %'+Math.round((sc.coverage||0)*100)+'\'i hesaplanıyor, %'+Math.round((1-(sc.coverage||0))*100)+'\'i veri olmadığı için kaybediliyor. Eksik: '+sc.missing.map(m=>m.label).join(', ')+((sc.naRows||[]).length?(' · N/A: '+sc.naRows.map(m=>m.label).join(', ')):'')
       ) : h('span'),
       h('div',{style:{display:'flex',gap:'8px',alignItems:'center',flexWrap:'wrap'}},
         isAdmin?h('span',{style:{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap'}}, msSel,
@@ -12972,16 +13072,18 @@ function renderPerfMe(){
       h('div',{style:{height:'100%',width:Math.max(0,Math.min(100,(1-(sc.coverage||0))*100))+'%',background:'repeating-linear-gradient(45deg,#cbd5e1,#cbd5e1 3px,#e2e8f0 3px,#e2e8f0 6px)'}})
     ),
     (sc.missing && sc.missing.length) ? h('div',{style:{fontSize:'11px',color:'#b45309',background:'#fffbeb',border:'1px solid #fde68a',borderRadius:'8px',padding:'7px 10px',marginBottom:'10px',lineHeight:'1.5'}},
-      '⚠️ '+sc.avail.length+'/'+sc.rows.length+' kriterde veri var — ağırlığın %'+Math.round((sc.coverage||0)*100)+'\'i hesaplanıyor. Veri olmayan: '+sc.missing.map(m=>m.label).join(', ')
+      '⚠️ '+sc.avail.length+'/'+(sc.rows.length-(sc.naRows||[]).length)+' uygulanabilir kriterde veri var — ağırlığın %'+Math.round((sc.coverage||0)*100)+'\'i hesaplanıyor. Veri olmayan: '+(sc.missing.map(m=>m.label).join(', ')||'—')+((sc.naRows||[]).length?(' · Bu kriterler sizde uygulanmıyor (N/A): '+sc.naRows.map(m=>m.label).join(', ')):'')
     ) : h('span'),
     h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,margin:'4px 0 6px'}},'Kriterler'),
-    ...sc.rows.map(r=>h('div',{style:{padding:'6px 0',borderBottom:'1px dashed #eef2f7'}},
+    ...sc.rows.map(r=>h('div',{style:{padding:'6px 0',borderBottom:'1px dashed #eef2f7',opacity:r.na?'0.75':'1'}},
       h('div',{style:{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'8px',fontSize:'12.5px'}},
-        h('span',{style:{color: r.oran==null?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
-        h('span',{style:{fontWeight:'700',whiteSpace:'nowrap',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}},
-          (r.oran==null?'veri yok':pct(r.oran))+' · ağırlık '+Math.round(r.weight*100)+'%')
+        h('span',{style:{color: (r.na||r.oran==null)?'#94a3b8':'#334155'}}, (r.auto?'⚙ ':'✎ ')+r.label),
+        r.na
+          ? h('span',{style:{fontWeight:'700',whiteSpace:'nowrap',color:'#991b1b'}},'N/A — sizde uygulanmıyor')
+          : h('span',{style:{fontWeight:'700',whiteSpace:'nowrap',color: r.oran==null?'#94a3b8':(r.oran>=1?'#16a34a':r.oran>=0.7?'#d97706':'#dc2626')}},
+              (r.oran==null?'veri yok':pct(r.oran))+' · ağırlık '+Math.round((r.weightEff||0)*100)+'%')
       ),
-      h('div',{style:{fontSize:'10.5px',color:'#94a3b8',lineHeight:'1.45',marginTop:'2px'}}, critMetricNote(r))
+      h('div',{style:{fontSize:'10.5px',color:'#94a3b8',lineHeight:'1.45',marginTop:'2px'}}, r.na ? ('Gerekçe: '+r.naReason) : critMetricNote(r))
     ))
   );
   return h('div',{}, head, note, card);
@@ -13014,7 +13116,7 @@ function renderPersonelPrim(period){
     const detail = open ? h('div',{style:{marginTop:'10px',borderTop:'1px solid #e2e8f0',paddingTop:'10px'}},
       h('div',{style:{fontSize:'11px',fontWeight:'700',color:T3,marginBottom:'6px'}},'Kriter kırılımı (yıl başından hak edilen €)'),
       ...pr.avail.map(r=>h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'3px 0',fontSize:'12px'}},
-        h('span',{style:{color:'#334155'}},r.label+' ',h('span',{style:{color:'#94a3b8'}},'%'+Math.round(r.weight*100))),
+        h('span',{style:{color:'#334155'}},r.label+' ',h('span',{style:{color:'#94a3b8'}},'%'+Math.round((r.weightEff!=null?r.weightEff:r.weight)*100))),
         h('span',{style:{fontWeight:'700',color:'#0f1f35'}},eur(pr.breakdown[r.kod]||0))
       )),
       h('div',{style:{display:'flex',justifyContent:'space-between',gap:'8px',padding:'6px 0 0',marginTop:'4px',borderTop:'1px dashed #e2e8f0',fontSize:'12px'}},
@@ -13256,6 +13358,8 @@ function _renderInner() {
               // ── Sistem / tanılama ──
               {icon:'🔄', label:'Teklifleri şimdi eşitle', color:'#0369a1', action:()=>{ menu.remove(); syncQuotationRefsNow(); }},
               {icon:'🔎', label:'Görev atama kontrolü', color:'#0e7490', action:()=>{ menu.remove(); setState({modal:{type:'taskcheck'}}); }},
+              // A2: kişi+dönem başına tek değerlendirme kaydı kalsın (kopyalar yıllık ortalamayı kaydırır).
+              ...(evalDuplicates().length ? [{icon:'🧹', label:'Kopya değerlendirme kayıtlarını temizle ('+evalDuplicates().length+')', color:'#b45309', action:()=>{ menu.remove(); purgeDuplicateEvaluations(); }}] : []),
               {icon:'🔃', label:'Sayfayı Yenile', color:'#0f1f35', action:()=>{ menu.remove(); location.reload(); }},
               {icon:'🧪', label:'Deneme modu (hiçbir şey kaydedilmez)', color:'#b91c1c', action:()=>{ menu.remove(); sandboxToggle(); }},
             ];
