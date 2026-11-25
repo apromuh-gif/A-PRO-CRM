@@ -9656,7 +9656,7 @@ function personelTestModeToggle(period){
   state.evaluations = evals;
   state.testMode = true;
   showToast('🧪 TEST MODU AÇIK — örnek veriler yüklendi, hiçbir şey kaydedilmez');
-  render();
+  render(); testModeBar();
 }
 function personelTestModeExit(){
   const b = state._testBackup;
@@ -9665,7 +9665,25 @@ function personelTestModeExit(){
   state._testBackup = null;
   state.testMode = false;
   showToast('✅ Test modu kapatıldı — gerçek veriler geri yüklendi');
-  render();
+  render(); testModeBar();
+}
+function testModeBar(){
+  let b = document.getElementById('test-mode-bar');
+  if(!state.testMode){ if(b) b.remove(); return; }
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'test-mode-bar';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99998;background:#dc2626;color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:800;letter-spacing:.3px;display:flex;align-items:center;justify-content:center;gap:14px;box-shadow:0 3px 10px rgba(0,0,0,.35);';
+    document.body.appendChild(b);
+  }
+  b.innerHTML = '';
+  const txt = document.createElement('span');
+  txt.textContent = '🧪 TEST MODU AÇIK — Girdiğiniz hiçbir veri veritabanına KAYDEDILMEZ. Sayfayı yenilerseniz tüm girişler silinir.';
+  const btn = document.createElement('button');
+  btn.textContent = '✕ Kapat';
+  btn.style.cssText = 'background:rgba(255,255,255,.25);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:6px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;';
+  btn.addEventListener('click', personelTestModeExit);
+  b.appendChild(txt); b.appendChild(btn);
 }
 
 async function personelSaveDoc(coll, rec){
