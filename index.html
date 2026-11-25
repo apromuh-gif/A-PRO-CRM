@@ -716,6 +716,12 @@ function selectConvertFormat(currentFormat){
     document.body.appendChild(overlay);
   });
 }
+// Teklif bildirimlerinin açıklaması: "Firma · İş adı · …" (boş parçalar atlanır).
+const TEKLIF_FMT_LABEL={SYSTEM_SALES:'Sistem Satış',UNIT_PRICE:'Birim Fiyatlı',SYSTEM_ROLLUP:'Sistem Master',SERVICE:'Teknik Servis'};
+function _teklifNotifBody(firm,title,extra){
+  const f=String(firm||'').trim(), t=String(title||'').trim();
+  return [f, t && t!==f ? t : ''].concat(extra||[]).filter(Boolean).join(' · ');
+}
 async function convertQuotationFormat(quotationId,currentFormat){
   try{
     var sr=await fetch(TEKLIF_APP_URL+'/api/v1/crm/quotation-status?id='+encodeURIComponent(quotationId),{headers:{'x-crm-key':TEKLIF_API_KEY}});
@@ -724,7 +730,11 @@ async function convertQuotationFormat(quotationId,currentFormat){
   }catch(e){}
   var targetFormat=await selectConvertFormat(currentFormat);
   if(!targetFormat)return;
-  showNotification("convert-teklif","Teklif Programı","Format değiştiriliyor...","info");
+  const _cp=(state.proposals||[]).find(function(p){return p.quotationId===quotationId;});
+  const _co=(state.opportunities||[]).find(function(o){return o.quotationId===quotationId;});
+  const _cust=(state.customers||[]).find(function(c){return c.id===((_cp&&_cp.customerId)||(_co&&_co.customerId));});
+  const _nInfo=function(extra){return _teklifNotifBody(_cust&&(_cust.firmName||_cust.name),(_cp&&_cp.title)||(_co&&_co.title),extra);};
+  showToast('⏳ Teklif formatı değiştiriliyor… '+_nInfo(),'#2563eb');
   try{
     var res=await fetch(TEKLIF_CONVERT_URL,{method:"POST",headers:{"Content-Type":"application/json","x-crm-key":TEKLIF_API_KEY},body:JSON.stringify({quotationId:quotationId,targetFormat:targetFormat})});
     var body=await res.json().catch(function(){return null;});
@@ -733,8 +743,10 @@ async function convertQuotationFormat(quotationId,currentFormat){
     var revNo=Number(body.data.revisionNumber);
     var revLabel=Number.isFinite(revNo)&&revNo>1?("Revizyon #"+(revNo-1)):"İlk Teklif";
     showToast(revLabel+" ("+(fmtNames[targetFormat]||targetFormat)+") oluşturuldu.");
+    showNotification('teklif_fmt_'+quotationId+'_'+Date.now(),'🔄 Teklif formatı değişti',_nInfo([revLabel,fmtNames[targetFormat]||targetFormat]),'info');
     await openQuotationWithSSO(quotationId);
   }catch(e){
+    showNotification('teklif_fmt_err_'+Date.now(),'Teklif formatı değiştirilemedi',_nInfo(['Neden: '+(e.message||e)]),'warning');
     alert("Format değiştirme başarısız: "+(e.message||e));
   }
 }
@@ -1031,8 +1043,10 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId, proposal
     body: JSON.stringify({ salesReps: salesRepsSync, preparedByNames: preparedBySync }),
   }).catch(() => {});
 
+  // Bildirim geçmişine "oluşturuluyor" değil SONUÇ yazılır (firma · iş · format · para birimi); bekleme bilgisi yalnız anlık uyarıdır.
+  const _nInfo = extra => _teklifNotifBody(customer.firmName || customer.name, (proposal && proposal.title) || opportunityTitle, extra);
   try {
-    showNotification('teklif-aciliyor', 'Teklif Programı', 'Teklif oluşturuluyor...', 'info');
+    showToast('⏳ Teklif oluşturuluyor… ' + _nInfo(), '#2563eb');
     // Satış temsilcisi = fırsatın sahibi (assignedTo); yoksa teklifi açan kullanıcı.
     // Hazırlayan = teklifi açan CRM kullanıcısı. Böylece Teklif'te tekrar seçilmez (mükerrer önlenir).
     const _opp = opportunityId ? state.opportunities.find(o => o.id === opportunityId) : null;
@@ -1094,6 +1108,9 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId, proposal
         setState({ opportunities: state.opportunities.map(o => o.id===opportunityId ? updatedOpp : o) });
       }
     }
+    // 201 = yeni teklif; 200 = sunucu fırsatın mevcut teklifini döndürdü (format/para birimi seçimi uygulanmaz)
+    if (res.status === 201) showNotification('teklif_ok_' + quotationId, '📄 Teklif oluşturuldu', _nInfo([TEKLIF_FMT_LABEL[format] || format, currency]), 'info');
+    else showNotification('teklif_ac_' + quotationId + '_' + Date.now(), '📄 Mevcut teklif bağlandı', _nInfo(), 'info');
     // Otomatik oturum: CRM kullanıcısı teklif programına direkt girer
     const sessionToken = await getCrmSessionToken();
     if (!sessionToken) {
@@ -1108,6 +1125,7 @@ async function teklifOlustur(customer, opportunityTitle, opportunityId, proposal
     showToast('✅ Teklif oluşturuldu — Fırsat ve Teklif Talepleri güncellendi!');
   } catch(e) {
     try { _win?.close(); } catch {}
+    showNotification('teklif_err_' + Date.now(), 'Teklif oluşturulamadı', _nInfo(['Neden: ' + (e.message || e)]), 'warning');
     alert('Teklif oluşturulamadı: ' + e.message);
   }
 }
@@ -13068,7 +13086,7 @@ function renderPerfMe(){
   const barColor = sc.skor>=1?'#16a34a':sc.skor>=0.7?'#d97706':'#dc2626';
   const note = h('div',{style:{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:'10px',padding:'10px 14px',marginBottom:'12px',fontSize:'12px',color:'#1e3a6e',lineHeight:'1.55'}},
     'Bu ekran yalnız SİZE aittir; kimsenin skorunu göremezsiniz. Oranlar yıl başından seçili döneme kadar (YTD) hesaplanır. '
-    + 'Veri üretmeyen kriterin ağırlığı skora eklenmez (taralı bölüm). Prim tutarları ve yönetici notu bu ekranda gösterilmez.');
+    + 'Veri üretmeyen kriterin ağırlığı skora eklenmez (taralı bölüm). Yönetici notu bu ekranda gösterilmez.');
   const card = h('div',{style:{background:'#fff',border:'1px solid #d0daea',borderRadius:'12px',padding:'16px'}},
     h('div',{style:{display:'flex',alignItems:'center',gap:'10px',flexWrap:'wrap'}},
       h('div',{style:{flex:'1',minWidth:'140px'}},
@@ -13765,7 +13783,8 @@ function _notifHistKey() {
   return 'apro_notif_hist_'+((cu&&(cu.email||cu.displayName))||'anon');
 }
 function _notifHistLoad() {
-  try { return JSON.parse(localStorage.getItem(_notifHistKey())||'[]')||[]; } catch(e) { return []; }
+  // Eski açıklamasız "Teklif oluşturuluyor… / Format değiştiriliyor…" kayıtları gösterilmez (sonuç bilgisi taşımıyorlardı).
+  try { return (JSON.parse(localStorage.getItem(_notifHistKey())||'[]')||[]).filter(x=>x.k!=='teklif-aciliyor' && x.k!=='convert-teklif'); } catch(e) { return []; }
 }
 function _notifHistSave(arr) {
   try { localStorage.setItem(_notifHistKey(), JSON.stringify(arr.slice(0,100))); } catch(e) {}
