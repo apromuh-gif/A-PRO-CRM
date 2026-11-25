@@ -9305,11 +9305,13 @@ function printPersonelReport(person, period, isAdmin){
   const dept = DEPT_LABEL[person.department]||person.department||'-';
 
   // Genel değerlendirme yorumu (skora göre)
-  let verdict, vColor, vBg;
-  if(sc.skor>=1){ verdict='Üstün Performans — dönem hedeflerinin üzerinde sonuç üretti.'; vColor='#166534'; vBg='#dcfce7'; }
-  else if(sc.skor>=0.85){ verdict='Beklentileri Karşılıyor — hedeflere büyük ölçüde ulaşıldı, birkaç alanda ivme gerekli.'; vColor='#166534'; vBg='#dcfce7'; }
-  else if(sc.skor>=0.70){ verdict='Yeterli / Gelişime Açık — eşik aşıldı ancak belirgin gelişim alanları var.'; vColor='#92400e'; vBg='#fef3c7'; }
-  else { verdict='Gelişim Gerekli — dönem hedeflerinin altında kalındı, aksiyon planı önerilir.'; vColor='#991b1b'; vBg='#fee2e2'; }
+  // 5-BAND BAREM (25 Kasım 2026): Band5=Olağanüstü / Band4=Hedefte / Band3=Gelişime Açık / Band2=Yetersiz / Band1=Başarısız
+  let verdict, vColor, vBg, perfBand;
+  if(sc.skor>=1.10){ verdict='🏆 Olağanüstü — hedeflerin belirgin şekilde üzerinde.'; vColor='#1e3a5f'; vBg='#dbeafe'; perfBand=5; }
+  else if(sc.skor>=0.85){ verdict='✅ Hedefte — dönem hedefleri büyük ölçüde karşılandı.'; vColor='#166534'; vBg='#dcfce7'; perfBand=4; }
+  else if(sc.skor>=0.70){ verdict='⚠️ Gelişime Açık — eşik aşıldı; belirgin gelişim alanları var.'; vColor='#92400e'; vBg='#fef3c7'; perfBand=3; }
+  else if(sc.skor>=0.50){ verdict='🔴 Yetersiz — prim hak edilmedi; yazılı gelişim planı gereklidir.'; vColor='#9a3412'; vBg='#ffedd5'; perfBand=2; }
+  else { verdict='❌ Başarısız — dönem hedeflerinin çok altında kalındı; yönetici görüşmesi zorunludur.'; vColor='#991b1b'; vBg='#fee2e2'; perfBand=1; }
 
   // Görev dökümü (dönem içi)
   const myTasks = (state.tasks||[]).filter(t=>t.assignedTo===person.displayName && (_pInPeriod(t.dueDate,period)||_pInPeriod(t.completedAt,period)));
@@ -9318,7 +9320,7 @@ function printPersonelReport(person, period, isAdmin){
   const tOverdue = myTasks.filter(t=>t.status!=='tamam' && t.dueDate && String(t.dueDate)<today()).length;
   const tTotal = myTasks.length;
 
-  const statusLabel = v => v==null?['Veri yok','#94a3b8']:(v>=1?['Güçlü','#16a34a']:v>=0.7?['Yeterli','#d97706']:['Gelişmeli','#dc2626']);
+  const statusLabel = v => v==null?['Veri yok','#94a3b8']:(v>=1?['Güçlü','#16a34a']:v>=0.7?['Yeterli','#d97706']:v>=0.5?['Yetersiz','#ea580c']:['Başarısız','#dc2626']);
   const critRows = sc.rows.map(r=>{
     const sl = statusLabel(r.oran);
     const num = personelCritNumbers(r.kod, person.displayName, period);
@@ -9439,15 +9441,17 @@ function printPersonelReport(person, period, isAdmin){
     <div style="font-size:11px;color:#64748b;line-height:1.5;margin-top:12px;border-top:1px solid #f1f5f9;padding-top:8px">
       <span style="color:#16a34a;font-weight:700">■ ≥%100 Güçlü</span> ·
       <span style="color:#d97706;font-weight:700">■ %70–99 Yeterli</span> ·
-      <span style="color:#dc2626;font-weight:700">■ &lt;%70 Gelişmeli</span> ·
+      <span style="color:#ea580c;font-weight:700">■ %50–69 Yetersiz</span> ·
+      <span style="color:#dc2626;font-weight:700">■ &lt;%50 Başarısız</span> ·
       <span style="color:#94a3b8;font-weight:700">■ veri yok</span>
     </div>
   </div>`;
 
   // Güçlü yönler / gelişim alanları (otomatik türetim)
-  const strong = sc.rows.filter(r=>r.oran!=null && r.oran>=1).map(r=>escapeHtml(r.label));
-  const improve = sc.rows.filter(r=>r.oran!=null && r.oran<0.7).map(r=>escapeHtml(r.label));
-  const midd  = sc.rows.filter(r=>r.oran!=null && r.oran>=0.7 && r.oran<1).map(r=>escapeHtml(r.label));
+  const strong  = sc.rows.filter(r=>r.oran!=null && r.oran>=1   ).map(r=>escapeHtml(r.label));
+  const midd    = sc.rows.filter(r=>r.oran!=null && r.oran>=0.7 && r.oran<1  ).map(r=>escapeHtml(r.label));
+  const weak    = sc.rows.filter(r=>r.oran!=null && r.oran>=0.5 && r.oran<0.7).map(r=>escapeHtml(r.label));
+  const improve = sc.rows.filter(r=>r.oran!=null && r.oran<0.5 ).map(r=>escapeHtml(r.label));
   const liOr = (arr,empty) => arr.length? arr.map(x=>`<li>${x}</li>`).join('') : `<li style="color:#94a3b8;list-style:none">${empty}</li>`;
 
   const notesBlock = (ev && ev.notes) ? `
@@ -9488,7 +9492,7 @@ function printPersonelReport(person, period, isAdmin){
   const _pp=function(v){ return Math.max(0, Math.min(100, (v/1.5)*100)); };
   const bars=sc.rows.map(function(r){
     const has=r.oran!=null;
-    const c=!has?'#999':(r.oran>=1?'#15803d':r.oran>=0.7?'#d97706':'#b91c1c');
+    const c=!has?'#999':(r.oran>=1?'#15803d':r.oran>=0.7?'#d97706':r.oran>=0.5?'#ea580c':'#b91c1c');
     const w=has?Math.max(2,_pp(Math.min(r.oran,1.5))):0;
     return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px"><div style="width:200px;font-size:8.5px;text-align:right;line-height:1.2">'+_ipEsc(r.label)+' <span style="color:#999">· %'+Math.round((Number(r.weight)||0)*100)+'</span></div>'
       +'<div style="flex:1;position:relative;height:14px;background:#f5f5f5;border:1px solid #e0e0e0"><div style="position:absolute;left:'+_pp(0.7)+'%;top:0;bottom:0;width:1px;background:#d97706"></div><div style="position:absolute;left:'+_pp(1)+'%;top:0;bottom:0;width:2px;background:#333"></div><div style="position:absolute;left:0;top:0;bottom:0;width:'+w+'%;background:'+c+'"></div></div>'
@@ -9496,10 +9500,10 @@ function printPersonelReport(person, period, isAdmin){
   }).join('');
   blocks.push({k:'sec', title:'Kriter performans görünümü ('+_ipEsc(period)+')'});
   blocks.push({k:'html', html:'<div class="dc-p" style="white-space:normal">'+(bars||'<div style="color:#888">Veri yok</div>')
-    +'<div style="font-size:8px;color:#666;margin-top:6px;border-top:1px solid #e0e0e0;padding-top:5px">Koyu çizgi <b>%100 hedef</b>, turuncu çizgi <b>%70 prim eşiği</b> (ölçek %0–%150). <span style="color:#15803d;font-weight:700">■ ≥%100 Güçlü</span> · <span style="color:#d97706;font-weight:700">■ %70–99 Yeterli</span> · <span style="color:#b91c1c;font-weight:700">■ &lt;%70 Gelişmeli</span></div></div>'});
+    +'<div style="font-size:8px;color:#666;margin-top:6px;border-top:1px solid #e0e0e0;padding-top:5px">Koyu çizgi <b>%100 hedef</b>, turuncu çizgi <b>%70 prim eşiği</b> (ölçek %0–%150). <span style="color:#15803d;font-weight:700">■ ≥%100 Güçlü</span> · <span style="color:#d97706;font-weight:700">■ %70–99 Yeterli</span> · <span style="color:#ea580c;font-weight:700">■ %50–69 Yetersiz</span> · <span style="color:#b91c1c;font-weight:700">■ &lt;%50 Başarısız</span></div></div>'});
   blocks.push({k:'sec', title:'Değerlendirme özeti'});
-  blocks.push({k:'html', html:'<div class="dc-two"><div><b style="color:#15803d">✔ Güçlü yönler</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(strong,'Bu dönem hedefi aşan kriter yok.')+'</ul></div><div><b style="color:#b91c1c">⚠ Gelişim alanları</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(improve,'Eşik altı kriter yok.')+'</ul></div></div>'
-    +(midd.length?'<div class="dc-two" style="margin-top:8px"><div><b style="color:#b45309">◐ İzlenecek alanlar (yeterli, hedefe yaklaşıyor)</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(midd,'')+'</ul></div></div>':'')});
+  blocks.push({k:'html', html:'<div class="dc-two"><div><b style="color:#15803d">✔ Güçlü yönler (≥%100)</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(strong,'Bu dönem hedefi aşan kriter yok.')+'</ul></div><div><b style="color:#dc2626">❌ Başarısız (&lt;%50)</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(improve,'Yok.')+'</ul></div></div>'
+    +(midd.length||weak.length?'<div class="dc-two" style="margin-top:8px"><div><b style="color:#b45309">◐ Yeterli (%70–99)</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(midd,'-')+'</ul></div><div><b style="color:#ea580c">🔴 Yetersiz (%50–69)</b><ul style="margin:4px 0 0;padding-left:16px">'+liOr(weak,'Yok.')+'</ul></div></div>':'')});
   blocks.push({k:'sec', title:'Yönetici değerlendirme notu'});
   blocks.push({k:'html', html:'<div class="dc-p"'+((ev&&ev.notes)?'':' style="color:#888"')+'>'+((ev&&ev.notes)?_ipEsc(ev.notes):'— (Performans ekranındaki not alanından doldurulabilir) —')+'</div>'});
   blocks.push({k:'sec', title:'Görüşme notları (personel ile birlikte doldurulur)'});
@@ -12914,7 +12918,7 @@ function renderPersonelPerformans(period, isAdmin){
     const sc = personelScore(u, period);
     if(!sc) return h('span');
     const open = !!PMOD.perfOpen[u.email];
-    const barColor = sc.skor>=1?'#16a34a':sc.skor>=0.7?'#d97706':'#dc2626';
+    const barColor = sc.skor>=1.10?'#1e3a5f':sc.skor>=0.85?'#16a34a':sc.skor>=0.70?'#d97706':sc.skor>=0.50?'#ea580c':'#dc2626';
     // #4: Seçici BU AYIN puanını gösterir; skorda kullanılan değer yıl başından ortalamadır (yanında yazar).
     const msSel = sel([{v:'',l:'Yönetici Puanı (1-5)'},{v:'1',l:'1 — Zayıf'},{v:'2',l:'2'},{v:'3',l:'3 — Orta'},{v:'4',l:'4'},{v:'5',l:'5 — Çok iyi'}], String(sc.managerScoreMonth||''), async v=>{
       const ev = personelEvalFor(u.displayName, period);
@@ -14150,6 +14154,7 @@ function checkAllNotifications() {
   trashAutoPurge();
   monthlyAccountingSync();
   evalManagerScoreSync();
+  evalPerfBandSync();
   projectMonthlySync();
   projectScheduleSync();
   frAutoCleanup();
@@ -14316,6 +14321,67 @@ function evalManagerScoreSync(){
     assignedTo:'Erkan KARACAKALE', dept:'muhasebe', context:'sirket',
     dueDate:dueDate, priority:'yuksek' });
 }
+// ═══ PERFORMANS BAREM GÖREV TETİKLEYİCİ (25 Kas 2026) ═══
+// Çeyrek kapandıktan sonraki ay, Band 1/2 tespit edilirse otomatik görev açar.
+// Band2 (Yetersiz %50-69): "Gelişim Görüşmesi" görevi → Erkan'a
+// Band1 (Başarısız <%50): "HR/Performans Süreci" görevi → Erkan'a + ek uyarı
+// 2 çeyrek üst üste Band1 → "Performans İyileştirme Planı" görevi
+function evalPerfBandSync(){
+  if(!state.currentUser || !state.currentUser.isAdmin) return;
+  const people=(state.users||[]).filter(u=>u.department && u.isActive!==false && u.displayName);
+  if(!people.length) return;
+  const n0=new Date(), y=n0.getFullYear(), m=n0.getMonth(); // m: 0-tabanlı
+  // Çeyrek kapandıktan sonraki ay: Nisan(3), Temmuz(6), Ekim(9), Ocak(0)
+  const Q_NEXT=[3,6,9,0];
+  const qi=Q_NEXT.indexOf(m); if(qi===-1) return;
+  // Önceki çeyreğin son ayı: Mart(2→Q1), Haziran(5→Q2), Eylül(8→Q3), Aralık(11→Q4)
+  let prevQ, prevY, prevMonth;
+  if(m===0){ prevQ=4; prevY=y-1; prevMonth=12; }
+  else { prevQ=qi+1; prevY=y; prevMonth=[3,6,9][qi]; }
+  const period=prevY+'-'+String(prevMonth).padStart(2,'0');
+  const lastDayNext=new Date(y,m+1,0).getDate();
+  const dueDate=y+'-'+String(m+1).padStart(2,'0')+'-'+lastDayNext;
+
+  people.forEach(function(u){
+    const sc=personelScore(u, period);
+    if(!sc || sc.coverage<0.3) return; // veri yoksa atlat
+    const band=sc.skor>=1.10?5:sc.skor>=0.85?4:sc.skor>=0.70?3:sc.skor>=0.50?2:1;
+    if(band>2) return; // Band3+ normal akış, görev açma
+
+    if(band===2){
+      const key='perf_band2_'+u.displayName.replace(/\s+/g,'_')+'_'+prevY+'_Q'+prevQ;
+      if((state.tasks||[]).some(t=>t.dedupeKey===key)) return;
+      autoCreateTask({ id:key, dedupeKey:key,
+        title:'\u{1F534} Gelişim Görüşmesi — '+u.displayName+' · Q'+prevQ+' '+prevY,
+        desc:u.displayName+' · Departman: '+(u.department||'-')+'\nQ'+prevQ+' '+prevY+' dönemi skor: %'+Math.round(sc.skor*100)+' (Band 2 — Yetersiz).\nPrim oluşmadı. Personelle yüz yüze görüşme yapılmalı; yazılı gelişim planı hazırlanmalı ve Personel → Değerlendirme sekmesine not eklenmelidir.',
+        assignedTo:'Erkan KARACAKALE', dept:'muhasebe', context:'sirket',
+        dueDate:dueDate, priority:'yuksek' });
+    } else { // band===1
+      const key='perf_band1_'+u.displayName.replace(/\s+/g,'_')+'_'+prevY+'_Q'+prevQ;
+      if(!(state.tasks||[]).some(t=>t.dedupeKey===key)){
+        autoCreateTask({ id:key, dedupeKey:key,
+          title:'\u{274C} Performans Süreci — '+u.displayName+' · Q'+prevQ+' '+prevY,
+          desc:u.displayName+' · Departman: '+(u.department||'-')+'\nQ'+prevQ+' '+prevY+' dönemi skor: %'+Math.round(sc.skor*100)+' (Band 1 — Başarısız).\nPrim oluşmadı. Yönetici görüşmesi ZORUNLUDUR. Ardışık 2 çeyrek Band1 → Performans İyileştirme Planı (PIP) başlatılır.',
+          assignedTo:'Erkan KARACAKALE', dept:'muhasebe', context:'sirket',
+          dueDate:dueDate, priority:'kritik' });
+      }
+      // 2 ardışık Band1 kontrolü
+      const prevQ2=prevQ===1?4:prevQ-1, prevY2=prevQ===1?prevY-1:prevY, prevMonth2=[12,3,6,9][prevQ2-1];
+      const period2=prevY2+'-'+String(prevMonth2).padStart(2,'0');
+      const sc2=personelScore(u, period2);
+      if(sc2 && sc2.skor<0.50 && sc2.coverage>=0.3){
+        const key2='perf_pip_'+u.displayName.replace(/\s+/g,'_')+'_'+prevY+'_Q'+prevQ;
+        if(!(state.tasks||[]).some(t=>t.dedupeKey===key2)){
+          autoCreateTask({ id:key2, dedupeKey:key2,
+            title:'\u{26A0}\u{FE0F} Performans İyileştirme Planı (PIP) — '+u.displayName,
+            desc:u.displayName+' · Q'+(prevQ2)+' '+prevY2+' ve Q'+prevQ+' '+prevY+' dönemlerinde ardışık Band1 (Başarısız).\nPIP süreci başlatılmalı: 90 günlük ölçülebilir hedefler belirlenmeli, haftalık takip görüşmeleri planlanmalı.',
+            assignedTo:'Erkan KARACAKALE', dept:'muhasebe', context:'sirket',
+            dueDate:dueDate, priority:'kritik' });
+        }
+      }
+    }
+  });
+}
 function monthlyAccountingSync(){
   if(!state.currentUser) return;
   const n0=new Date(); if(n0.getDate()<20) return;
@@ -14350,7 +14416,7 @@ function taxCalendarSync(){
 
 
 // Sürüm kodu: "Oturum alınamadı" uyarısının sonunda görünür (destekte hangi sürümün açık olduğunu anlamak için).
-const CRM_BUILD = '25Kas-EVAL1';
+const CRM_BUILD = '25Kas-BAREM1';
 
 
 
